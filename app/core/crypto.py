@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import hmac
 import os
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.core.config import get_settings
 
@@ -13,19 +14,12 @@ def _key() -> bytes:
 
 
 def encrypt_secret(value: str) -> str:
-    nonce = os.urandom(16)
-    raw = value.encode()
-    stream = hashlib.sha256(_key() + nonce).digest()
-    encrypted = bytes(b ^ stream[i % len(stream)] for i, b in enumerate(raw))
-    mac = hmac.new(_key(), nonce + encrypted, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(nonce + mac + encrypted).decode()
+    nonce = os.urandom(12)
+    ciphertext = AESGCM(_key()).encrypt(nonce, value.encode(), b"atlas-markets-broker-credential")
+    return base64.urlsafe_b64encode(nonce + ciphertext).decode()
 
 
 def decrypt_secret(token: str) -> str:
     payload = base64.urlsafe_b64decode(token.encode())
-    nonce, mac, encrypted = payload[:16], payload[16:48], payload[48:]
-    expected = hmac.new(_key(), nonce + encrypted, hashlib.sha256).digest()
-    if not hmac.compare_digest(mac, expected):
-        raise ValueError("credential integrity check failed")
-    stream = hashlib.sha256(_key() + nonce).digest()
-    return bytes(b ^ stream[i % len(stream)] for i, b in enumerate(encrypted)).decode()
+    nonce, ciphertext = payload[:12], payload[12:]
+    return AESGCM(_key()).decrypt(nonce, ciphertext, b"atlas-markets-broker-credential").decode()
