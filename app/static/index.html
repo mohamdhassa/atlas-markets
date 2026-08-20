@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ATLAS MARKETS</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="loginView" class="login-shell">
+    <div class="login-panel">
+      <div class="brand-mark">AM</div>
+      <p class="eyebrow">ATLAS MARKETS</p>
+      <h1>24/7 FX + Crypto Trading Platform</h1>
+      <p class="muted">Sign in to access your account, system status, markets, signals, positions and performance.</p>
+      <form id="loginForm" class="login-form">
+        <label>Username<input id="username" autocomplete="username" required /></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" required /></label>
+        <button id="loginButton" type="submit">Sign in</button>
+        <p id="loginError" class="error-text" hidden></p>
+      </form>
+      <div class="login-footer">Phase 4 frontend shell · local development</div>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell" hidden>
+    <aside id="sidebar" class="sidebar">
+      <div class="brand-row"><div class="brand-mark small">AM</div><div><strong>ATLAS</strong><span>MARKETS</span></div></div>
+      <nav id="nav" class="nav-list"></nav>
+      <div class="sidebar-bottom">
+        <div class="profile-card"><div id="avatar" class="avatar">A</div><div><strong id="profileName">User</strong><span id="profileRole">USER</span></div></div>
+        <button id="logoutButton" class="ghost-button">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button id="menuButton" class="menu-button" aria-label="Toggle menu">☰</button>
+        <div><p class="eyebrow" id="pageEyebrow">ATLAS MARKETS</p><h2 id="pageTitle">Dashboard</h2></div>
+        <div class="topbar-status"><span id="systemDot" class="status-dot"></span><span id="systemText">Checking system</span></div>
+      </header>
+
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
