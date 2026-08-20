@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 24
     allow_live_trading: bool = False
 
+    bybit_public_base_url: str = "https://api.bybit.com"
+    market_data_timeout_seconds: float = 8.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
