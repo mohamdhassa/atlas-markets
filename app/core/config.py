@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     atlas_markets_master_key: str = "change-me-in-real-environments"
     session_secret: str = "change-me-in-real-environments"
+    session_ttl_hours: int = 24
     allow_live_trading: bool = False
 
     model_config = SettingsConfigDict(
