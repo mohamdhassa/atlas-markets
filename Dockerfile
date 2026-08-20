@@ -7,9 +7,12 @@ WORKDIR /app
 
 COPY pyproject.toml /app/
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir ".[dev]"
 
+COPY alembic.ini /app/alembic.ini
+COPY migrations /app/migrations
 COPY app /app/app
+COPY tests /app/tests
 
 EXPOSE 8000
 
