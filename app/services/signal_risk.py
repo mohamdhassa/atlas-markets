@@ -11,36 +11,31 @@ class GeneratedSignal:
     decision: str
     classification: str
     score: float
+    strength: float
     reasons: list[str]
 
 
 def generate_signal(candles: list[dict]) -> GeneratedSignal:
     analysis = analyze_candles(candles)
-    score = float(analysis.get("signal_score", 0.0))
+    score = float(analysis.get("score", 50.0))
     bias = str(analysis.get("bias", "NEUTRAL")).upper()
+    decision = bias if bias in {"LONG", "SHORT"} else "HOLD"
+    strength = score if decision == "LONG" else 100.0 - score if decision == "SHORT" else 50.0
 
-    if bias == "BULLISH":
-        decision = "LONG"
-    elif bias == "BEARISH":
-        decision = "SHORT"
-    else:
-        decision = "HOLD"
-
-    abs_score = abs(score)
-    if abs_score >= 80:
-        classification = "STRONG_SIGNAL"
-    elif abs_score >= 65:
-        classification = "SIGNAL"
-    elif abs_score >= 45:
-        classification = "WATCH"
-    else:
+    if decision == "HOLD":
         classification = "NO_SIGNAL"
+    elif strength >= 80:
+        classification = "STRONG_SIGNAL"
+    elif strength >= 65:
+        classification = "SIGNAL"
+    else:
+        classification = "WATCH"
 
     reasons: list[str] = []
-    trend = analysis.get("trend_regime")
-    volatility = analysis.get("volatility_regime")
-    structure = analysis.get("market_structure")
-    rsi = analysis.get("rsi")
+    trend = analysis.get("trend")
+    volatility = analysis.get("volatility")
+    structure = analysis.get("structure")
+    rsi = analysis.get("rsi14")
     macd = analysis.get("macd") or {}
 
     if trend:
@@ -64,6 +59,7 @@ def generate_signal(candles: list[dict]) -> GeneratedSignal:
         decision=decision,
         classification=classification,
         score=score,
+        strength=strength,
         reasons=reasons,
     )
 
@@ -82,9 +78,10 @@ def evaluate_risk(
         return False, "ACCOUNT_DISABLED", {"account_enabled": False}
     if signal.decision == "HOLD":
         return False, "NO_DIRECTION", {"decision": signal.decision}
-    if abs(signal.score) < minimum_signal_score:
+    if signal.strength < minimum_signal_score:
         return False, "SIGNAL_SCORE_BELOW_MINIMUM", {
             "score": signal.score,
+            "strength": signal.strength,
             "minimum_signal_score": minimum_signal_score,
         }
     if environment == "LIVE" and not allow_live_trading:
@@ -92,6 +89,7 @@ def evaluate_risk(
 
     return True, "APPROVED_FOR_SIMULATION", {
         "score": signal.score,
+        "strength": signal.strength,
         "minimum_signal_score": minimum_signal_score,
         "environment": environment,
     }
