@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     allow_live_trading: bool = False
 
     bybit_public_base_url: str = "https://api.bybit.com"
+    bybit_demo_base_url: str = "https://api-demo.bybit.com"
+    bybit_testnet_base_url: str = "https://api-testnet.bybit.com"
     market_data_timeout_seconds: float = 8.0
 
     model_config = SettingsConfigDict(
