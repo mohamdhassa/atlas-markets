@@ -14,6 +14,7 @@ def test_root_endpoint_serves_frontend() -> None:
     assert "ATLAS MARKETS" in response.text
     assert "/static/app.js" in response.text
     assert "/static/phase6.css" in response.text
+    assert "/static/phase7.js" in response.text
 
 
 def test_system_info_endpoint() -> None:
@@ -21,7 +22,7 @@ def test_system_info_endpoint() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["name"] == "ATLAS MARKETS"
-    assert payload["phase"] == "6"
+    assert payload["phase"] == "7"
 
 
 def test_health_ok(monkeypatch) -> None:
