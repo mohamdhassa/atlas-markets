@@ -3,7 +3,7 @@
 24/7 FX + Crypto Algorithmic Trading Platform.
 
 ## Status
-Phase 1 — project scaffold implemented locally and ready for repository commit.
+Phase 2 — Docker + PostgreSQL + Redis infrastructure implemented.
 
 Atlas Markets is a completely separate project from Atlas Trader. Atlas Trader is used only as an architectural and UX reference.
 
@@ -44,3 +44,20 @@ uvicorn app.main:app --reload
 DESIGN → BUILD → TEST → COMMIT → DEPLOY → LIVE SMOKE TEST → DOCUMENT → RELEASE
 
 See `docs/ARCHITECTURE.md` and `docs/ERD.md`.
+
+
+## Phase 2 additions
+- SQLAlchemy engine and session factory
+- dependency-aware PostgreSQL and Redis health checks
+- Alembic configuration and baseline migration
+- Docker health checks and startup ordering
+- database and Redis integration-test hooks
+
+### Phase 2 Docker verification
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+docker compose ps
+docker compose exec app alembic current
+docker compose exec app python -m pytest
+```

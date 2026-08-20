@@ -5,8 +5,17 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["/bin/sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - atlas-markets-private
 
@@ -17,6 +26,11 @@ services:
       POSTGRES_DB: atlas_markets
       POSTGRES_USER: atlas
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_markets"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - atlas-markets-postgres-data:/var/lib/postgresql/data
     networks:
@@ -26,6 +40,11 @@ services:
     image: redis:7-alpine
     container_name: atlas-markets-redis
     command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - atlas-markets-redis-data:/data
     networks:
