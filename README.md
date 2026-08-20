@@ -3,7 +3,7 @@
 24/7 FX + Crypto Algorithmic Trading Platform.
 
 ## Status
-Phase 2 — Docker + PostgreSQL + Redis infrastructure implemented.
+Phase 3 — Authentication + RBAC implemented on `feature/phase3-auth-rbac` and awaiting runtime verification.
 
 Atlas Markets is a completely separate project from Atlas Trader. Atlas Trader is used only as an architectural and UX reference.
 
@@ -18,15 +18,18 @@ Atlas Markets is a completely separate project from Atlas Trader. Atlas Trader i
 - Bybit Demo/Testnet first for crypto
 - Provider abstraction for FX (OANDA or IBKR after validation)
 
-## Current Phase 1 contents
+## Implemented foundation
 - FastAPI application shell
 - `/` bootstrap endpoint
-- `/health` health endpoint
+- dependency-aware `/health` endpoint
 - environment-based settings
 - provider-independent `BrokerAdapter`
-- PostgreSQL + Redis Docker foundation
-- unit tests for health, settings, and broker contract
-- project package structure for later engines
+- PostgreSQL + Redis Docker infrastructure
+- SQLAlchemy + Alembic
+- ADMIN / USER authentication and RBAC
+- server-side revocable sessions
+- authentication audit log
+- tests for core infrastructure and authentication
 
 ## Local development
 
@@ -40,20 +43,8 @@ python -m pytest
 uvicorn app.main:app --reload
 ```
 
-## Engineering workflow
-DESIGN → BUILD → TEST → COMMIT → DEPLOY → LIVE SMOKE TEST → DOCUMENT → RELEASE
+## Docker verification
 
-See `docs/ARCHITECTURE.md` and `docs/ERD.md`.
-
-
-## Phase 2 additions
-- SQLAlchemy engine and session factory
-- dependency-aware PostgreSQL and Redis health checks
-- Alembic configuration and baseline migration
-- Docker health checks and startup ordering
-- database and Redis integration-test hooks
-
-### Phase 2 Docker verification
 ```powershell
 Copy-Item .env.example .env
 docker compose up -d --build
@@ -61,3 +52,27 @@ docker compose ps
 docker compose exec app alembic current
 docker compose exec app python -m pytest
 ```
+
+## Phase 3 authentication
+
+After migrations are current, create the first administrator:
+
+```powershell
+docker compose exec app python -m app.scripts.create_admin --username admin
+```
+
+Then use:
+
+- `POST /auth/login`
+- `GET /auth/me`
+- `POST /auth/logout`
+- `GET /admin/users` — ADMIN only
+- `POST /admin/users` — ADMIN only
+- `GET /admin/ping` — ADMIN only
+
+See `docs/AUTHORIZATION.md` for the security model.
+
+## Engineering workflow
+DESIGN → BUILD → TEST → COMMIT → DEPLOY → LIVE SMOKE TEST → DOCUMENT → RELEASE
+
+See `docs/ARCHITECTURE.md`, `docs/ERD.md`, and `docs/AUTHORIZATION.md`.
