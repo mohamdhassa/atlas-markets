@@ -3,47 +3,43 @@
 24/7 FX + Crypto Algorithmic Trading Platform.
 
 ## Status
-Phase 3 — Authentication + RBAC implemented on `feature/phase3-auth-rbac` and awaiting runtime verification.
+Phase 6 — responsive frontend, broker-profile management, and technical-analysis engine implemented on `feature/phase6-analysis-accounts-responsive` and awaiting local runtime verification.
 
-Atlas Markets is a completely separate project from Atlas Trader. Atlas Trader is used only as an architectural and UX reference.
+Atlas Markets is a separate project from Atlas Trader. Atlas Trader is used only as an architectural and UX reference.
 
-## Initial stack
+## Stack
 - Python 3.12
 - FastAPI + Uvicorn
 - PostgreSQL 17 + SQLAlchemy + Alembic
 - Redis
 - Docker / Docker Compose
-- Caddy planned for production edge
-- TradingView Lightweight Charts planned for charting
-- Bybit Demo/Testnet first for crypto
-- Provider abstraction for FX (OANDA or IBKR after validation)
+- Bybit V5 public market data
+- provider-independent broker abstraction
 
-## Implemented foundation
-- FastAPI application shell
-- `/` bootstrap endpoint
-- dependency-aware `/health` endpoint
-- environment-based settings
-- provider-independent `BrokerAdapter`
+## Implemented
+- FastAPI application + dependency-aware health checks
 - PostgreSQL + Redis Docker infrastructure
-- SQLAlchemy + Alembic
-- ADMIN / USER authentication and RBAC
-- server-side revocable sessions
+- SQLAlchemy + Alembic migrations
+- ADMIN / USER authentication and revocable sessions
 - authentication audit log
-- tests for core infrastructure and authentication
+- responsive browser frontend for desktop, tablet and phone
+- role-specific ADMIN and USER dashboards/navigation
+- ADMIN Create User workflow
+- broker-profile create/list/enable-disable workflow with per-user ownership
+- live Bybit Markets page and candle Charts page
+- deterministic technical analysis: SMA, EMA, RSI, MACD, ATR, Bollinger Bands
+- market-structure and support/resistance calculations
+- trend/volatility regime labels and normalized signal score/bias
+- multi-timeframe 4H/1H/15M/5M alignment API
+- unit/integration coverage for infrastructure, auth, market data, analysis and broker profiles
 
-## Local development
+## Role model
+- **ADMIN**: system-wide control, user creation, all broker profiles, strategy/risk/integration administration.
+- **USER**: personal workspace; only their own broker profiles and account-scoped trading records.
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e ".[dev]"
-Copy-Item .env.example .env
-python -m pytest
-uvicorn app.main:app --reload
-```
+Public self-registration is intentionally disabled. Administrators create application users from the **Users** page.
 
-## Docker verification
+## Local Docker verification
 
 ```powershell
 Copy-Item .env.example .env
@@ -53,24 +49,22 @@ docker compose exec app alembic current
 docker compose exec app python -m pytest
 ```
 
-## Phase 3 authentication
-
-After migrations are current, create the first administrator:
+Create the first administrator when needed:
 
 ```powershell
 docker compose exec app python -m app.scripts.create_admin --username admin
 ```
 
-Then use:
-
+## Key APIs
 - `POST /auth/login`
 - `GET /auth/me`
-- `POST /auth/logout`
-- `GET /admin/users` — ADMIN only
-- `POST /admin/users` — ADMIN only
-- `GET /admin/ping` — ADMIN only
-
-See `docs/AUTHORIZATION.md` for the security model.
+- `GET|POST /admin/users` — ADMIN only
+- `GET|POST /accounts`
+- `PATCH /accounts/{profile_id}/toggle`
+- `GET /markets/tickers`
+- `GET /markets/candles/{symbol}`
+- `GET /analysis/{symbol}`
+- `GET /analysis/{symbol}/multi`
 
 ## Engineering workflow
 DESIGN → BUILD → TEST → COMMIT → DEPLOY → LIVE SMOKE TEST → DOCUMENT → RELEASE
