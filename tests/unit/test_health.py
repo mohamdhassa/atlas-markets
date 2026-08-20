@@ -8,10 +8,19 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_root_endpoint() -> None:
+def test_root_endpoint_serves_frontend() -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json()["name"] == "ATLAS MARKETS"
+    assert "ATLAS MARKETS" in response.text
+    assert "/static/app.js" in response.text
+
+
+def test_system_info_endpoint() -> None:
+    response = client.get("/api/system")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "ATLAS MARKETS"
+    assert payload["phase"] == "4"
 
 
 def test_health_ok(monkeypatch) -> None:

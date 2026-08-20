@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.health import router as health_router
 from app.api.routes_admin import router as admin_router
@@ -6,21 +10,28 @@ from app.api.routes_auth import router as auth_router
 from app.core.config import get_settings
 
 settings = get_settings()
+static_dir = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.3.0",
+    version="0.4.0",
     debug=settings.debug,
 )
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-@app.get("/", tags=["system"])
-async def root() -> dict[str, str]:
+@app.get("/", include_in_schema=False)
+async def root() -> FileResponse:
+    return FileResponse(static_dir / "index.html")
+
+
+@app.get("/api/system", tags=["system"])
+async def system_info() -> dict[str, str]:
     return {
         "name": settings.app_name,
         "status": "running",
-        "phase": "3",
+        "phase": "4",
     }
