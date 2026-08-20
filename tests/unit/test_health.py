@@ -20,7 +20,7 @@ def test_system_info_endpoint() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["name"] == "ATLAS MARKETS"
-    assert payload["phase"] == "4"
+    assert payload["phase"] == "5"
 
 
 def test_health_ok(monkeypatch) -> None:
