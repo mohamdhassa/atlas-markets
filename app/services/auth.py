@@ -46,6 +46,10 @@ def create_user(
     actor_user_id=None,
 ) -> User:
     normalized_username = username.strip().lower()
+    if len(normalized_username) < 3:
+        raise ValueError("username must contain at least 3 characters")
+    if len(password) < 12:
+        raise ValueError("password must contain at least 12 characters")
     if db.scalar(select(User).where(User.username == normalized_username)) is not None:
         raise ValueError("username already exists")
     if email and db.scalar(select(User).where(User.email == email.strip().lower())) is not None:
