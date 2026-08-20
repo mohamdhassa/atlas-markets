@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -49,7 +51,7 @@ def create_account(payload: BrokerProfileCreate, user: User = Depends(get_curren
 
 
 @router.patch("/{profile_id}/toggle", response_model=BrokerProfilePublic)
-def toggle_account(profile_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def toggle_account(profile_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     profile = db.get(BrokerProfile, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="account not found")
