@@ -1,0 +1,40 @@
+services:
+  app:
+    build: .
+    container_name: atlas-markets-app
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - atlas-markets-private
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: atlas-markets-postgres
+    environment:
+      POSTGRES_DB: atlas_markets
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - atlas-markets-postgres-data:/var/lib/postgresql/data
+    networks:
+      - atlas-markets-private
+
+  redis:
+    image: redis:7-alpine
+    container_name: atlas-markets-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - atlas-markets-redis-data:/data
+    networks:
+      - atlas-markets-private
+
+networks:
+  atlas-markets-private:
+    name: atlas-markets-private
+
+volumes:
+  atlas-markets-postgres-data:
+  atlas-markets-redis-data:
