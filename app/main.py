@@ -16,11 +16,7 @@ from app.core.config import get_settings
 settings = get_settings()
 static_dir = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(
-    title=settings.app_name,
-    version="0.7.0",
-    debug=settings.debug,
-)
+app = FastAPI(title=settings.app_name, version="0.8.0", debug=settings.debug)
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
@@ -30,17 +26,10 @@ app.include_router(analysis_router)
 app.include_router(signals_router)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-
 @app.get("/", include_in_schema=False)
 async def root() -> FileResponse:
     return FileResponse(static_dir / "index.html")
 
-
 @app.get("/api/system", tags=["system"])
 async def system_info() -> dict[str, str]:
-    return {
-        "name": settings.app_name,
-        "status": "running",
-        "phase": "7",
-        "market_data_provider": "BYBIT",
-    }
+    return {"name": settings.app_name, "status": "running", "phase": "8", "market_data_provider": "BYBIT"}
