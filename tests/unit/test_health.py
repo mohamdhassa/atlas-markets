@@ -1,47 +1,14 @@
 import pytest
 pytest.importorskip("redis")
 from fastapi.testclient import TestClient
-
 import app.api.health as health_module
 from app.main import app
-
-client = TestClient(app)
-
-
-def test_root_endpoint_serves_frontend() -> None:
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "ATLAS MARKETS" in response.text
-    assert "/static/app.js" in response.text
-    assert "/static/phase6.css" in response.text
-    assert "/static/phase7.js" in response.text
-    assert "/static/phase8.js" in response.text
-
-
-def test_system_info_endpoint() -> None:
-    response = client.get("/api/system")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["name"] == "ATLAS MARKETS"
-    assert payload["phase"] == "8"
-
-
-def test_health_ok(monkeypatch) -> None:
-    monkeypatch.setattr(health_module, "check_database", lambda: (True, None))
-    monkeypatch.setattr(health_module, "check_redis", lambda: (True, None))
-    response = client.get("/health")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "ok"
-    assert payload["dependencies"]["database"]["status"] == "ok"
-    assert payload["dependencies"]["redis"]["status"] == "ok"
-
-
-def test_health_degraded(monkeypatch) -> None:
-    monkeypatch.setattr(health_module, "check_database", lambda: (False, "OperationalError"))
-    monkeypatch.setattr(health_module, "check_redis", lambda: (True, None))
-    response = client.get("/health")
-    assert response.status_code == 503
-    payload = response.json()
-    assert payload["status"] == "degraded"
-    assert payload["dependencies"]["database"]["status"] == "error"
+client=TestClient(app)
+def test_root_endpoint_serves_frontend():
+    r=client.get("/");assert r.status_code==200;assert "ATLAS MARKETS" in r.text;assert "/static/app.js" in r.text;assert "/static/phase6.css" in r.text;assert "/static/phase7.js" in r.text;assert "/static/phase8.js" in r.text
+def test_system_info_endpoint():
+    r=client.get("/api/system");assert r.status_code==200;p=r.json();assert p["name"]=="ATLAS MARKETS";assert p["phase"]=="9"
+def test_health_ok(monkeypatch):
+    monkeypatch.setattr(health_module,"check_database",lambda:(True,None));monkeypatch.setattr(health_module,"check_redis",lambda:(True,None));r=client.get("/health");assert r.status_code==200;p=r.json();assert p["status"]=="ok";assert p["dependencies"]["database"]["status"]=="ok";assert p["dependencies"]["redis"]["status"]=="ok"
+def test_health_degraded(monkeypatch):
+    monkeypatch.setattr(health_module,"check_database",lambda:(False,"OperationalError"));monkeypatch.setattr(health_module,"check_redis",lambda:(True,None));r=client.get("/health");assert r.status_code==503;p=r.json();assert p["status"]=="degraded";assert p["dependencies"]["database"]["status"]=="error"
