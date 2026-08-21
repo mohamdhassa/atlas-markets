@@ -1,9 +1,7 @@
 from pathlib import Path
-
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-
 from app.api.health import router as health_router
 from app.api.routes_accounts import router as accounts_router
 from app.api.routes_admin import router as admin_router
@@ -13,25 +11,10 @@ from app.api.routes_markets import router as markets_router
 from app.api.routes_paper import router as paper_router
 from app.api.routes_signals import router as signals_router
 from app.core.config import get_settings
-
-settings = get_settings()
-static_dir = Path(__file__).resolve().parent / "static"
-
-app = FastAPI(title=settings.app_name, version="0.8.1", debug=settings.debug)
-app.include_router(health_router)
-app.include_router(auth_router)
-app.include_router(admin_router)
-app.include_router(markets_router)
-app.include_router(accounts_router)
-app.include_router(analysis_router)
-app.include_router(signals_router)
-app.include_router(paper_router)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-@app.get("/", include_in_schema=False)
-async def root() -> FileResponse:
-    return FileResponse(static_dir / "index.html")
-
-@app.get("/api/system", tags=["system"])
-async def system_info() -> dict[str, str]:
-    return {"name": settings.app_name, "status": "running", "phase": "8", "market_data_provider": "BYBIT", "paper_broker": "ATLAS_PAPER"}
+settings=get_settings();static_dir=Path(__file__).resolve().parent/"static"
+app=FastAPI(title=settings.app_name,version="0.9.0",debug=settings.debug)
+app.include_router(health_router);app.include_router(auth_router);app.include_router(admin_router);app.include_router(markets_router);app.include_router(accounts_router);app.include_router(analysis_router);app.include_router(signals_router);app.include_router(paper_router);app.mount("/static",StaticFiles(directory=static_dir),name="static")
+@app.get("/",include_in_schema=False)
+async def root()->FileResponse:return FileResponse(static_dir/"index.html")
+@app.get("/api/system",tags=["system"])
+async def system_info()->dict[str,str]:return {"name":settings.app_name,"status":"running","phase":"9","market_data_provider":"BYBIT","paper_broker":"ATLAS_PAPER"}
