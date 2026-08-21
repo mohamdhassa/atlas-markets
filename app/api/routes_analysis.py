@@ -1,4 +1,6 @@
 from fastapi import APIRouter,Body,Depends,HTTPException,Query
+from app.analysis.adaptive_strategy import select_strategy
+from app.analysis.asset_universe import profile_for,universe_profiles,universe_summary
 from app.analysis.strategy_intelligence import scenario_from_candles
 from app.analysis.technical import analyze_candles
 from app.api.dependencies import get_current_user
@@ -13,6 +15,13 @@ def _fx_client():
  s=get_settings();return TwelveDataFxMarketData(s.fx_market_data_base_url,s.fx_market_data_api_key,s.market_data_timeout_seconds)
 async def _analyze(client,symbol,interval,category,limit=200):
  candles=await client.get_candles(symbol=symbol,interval=interval,category=category,limit=limit);result=analyze_candles([c.model_dump() for c in candles]);return {"symbol":symbol.upper(),"interval":interval,"category":category,"candles":len(candles),**result}
+@router.get("/universe")
+async def asset_universe(_:User=Depends(get_current_user)):return {"groups":universe_summary(),"profiles":universe_profiles()}
+@router.post("/adaptive/from-candles")
+async def adaptive_from_candles(payload:dict=Body(...),_:User=Depends(get_current_user)):
+ candles=payload.get("candles") or [];symbol=str(payload.get("symbol") or "").upper().replace("/","");profile=profile_for(symbol);families=payload.get("strategy_families") or (profile.strategy_families if profile else ("trend","momentum","breakout","mean_reversion"))
+ if not isinstance(candles,list) or len(candles)<30:raise HTTPException(status_code=400,detail="at least 30 normalized OHLC candles are required")
+ return {"symbol":symbol,"asset_profile":profile.__dict__ if profile else None,**select_strategy(candles,families)}
 @router.get("/{symbol}/multi")
 async def multi_timeframe_analysis(symbol:str,category:str=Query("linear"),_:User=Depends(get_current_user)):
  try:results=[await _analyze(_client(),symbol,f,category) for f in ("4h","1h","15m","5m")]
