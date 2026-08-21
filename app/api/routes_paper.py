@@ -10,6 +10,7 @@ from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
 from app.db.models.paper import PaperOrder, PaperPosition, PaperWallet
 from app.db.models.signal import RiskProfile, Signal
+from app.db.models.strategy import StrategyProfile
 from app.db.session import get_db
 from app.market_data.bybit import BybitPublicMarketData
 from app.services.paper_execution import build_execution_plan, exit_trigger, position_pnl
@@ -25,6 +26,10 @@ def _wallet(db,profile_id):
     w=db.scalar(select(PaperWallet).where(PaperWallet.profile_id==profile_id))
     if w is None: w=PaperWallet(profile_id=profile_id);db.add(w);db.commit();db.refresh(w)
     return w
+def _strategy(db):
+    s=db.scalar(select(StrategyProfile).where(StrategyProfile.name=="Default"))
+    if s is None: s=StrategyProfile(name="Default");db.add(s);db.commit();db.refresh(s)
+    return s
 def _pnl(p): return position_pnl(side=p.side,quantity=p.quantity,entry_price=p.entry_price,mark_price=p.mark_price)
 def _position_value(p): return (p.entry_price*p.quantity)+_pnl(p)
 def _equity(w,ps): return w.cash_balance+sum(_position_value(p) for p in ps)
@@ -40,16 +45,17 @@ def summary(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=
 
 @router.post("/{profile_id}/execute/{signal_id}")
 async def execute(profile_id:uuid.UUID,signal_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    a=_account(db,user,profile_id);s=db.get(Signal,signal_id)
-    if s is None or s.profile_id!=a.id: raise HTTPException(404,"signal not found")
-    if s.risk_status!="APPROVED": raise HTTPException(409,"signal is not risk approved")
-    if s.decision not in {"BUY","SELL"}: raise HTTPException(409,"signal has no executable direction")
-    if db.scalar(select(PaperOrder).where(PaperOrder.signal_id==s.id)) is not None: raise HTTPException(409,"signal already executed")
-    risk=db.scalar(select(RiskProfile).where(RiskProfile.name=="Default"));ps=list(db.scalars(select(PaperPosition).where(PaperPosition.profile_id==profile_id)).all())
+    a=_account(db,user,profile_id);sig=db.get(Signal,signal_id)
+    if sig is None or sig.profile_id!=a.id: raise HTTPException(404,"signal not found")
+    if sig.risk_status!="APPROVED": raise HTTPException(409,"signal is not risk approved")
+    if sig.decision not in {"BUY","SELL"}: raise HTTPException(409,"signal has no executable direction")
+    if db.scalar(select(PaperOrder).where(PaperOrder.signal_id==sig.id)) is not None: raise HTTPException(409,"signal already executed")
+    risk=db.scalar(select(RiskProfile).where(RiskProfile.name=="Default"));strategy=_strategy(db);ps=list(db.scalars(select(PaperPosition).where(PaperPosition.profile_id==profile_id)).all())
+    if not strategy.enabled: raise HTTPException(409,"strategy is disabled")
     if risk and len(ps)>=risk.max_open_positions: raise HTTPException(409,"maximum open positions reached")
-    w=_wallet(db,profile_id);price=await _price(s.symbol);plan=build_execution_plan(decision=s.decision,price=price,equity=_equity(w,ps),available_cash=w.cash_balance,risk_per_trade_pct=(risk.risk_per_trade_pct if risk else 1.0))
+    w=_wallet(db,profile_id);price=await _price(sig.symbol);plan=build_execution_plan(decision=sig.decision,price=price,equity=_equity(w,ps),available_cash=w.cash_balance,risk_per_trade_pct=(risk.risk_per_trade_pct if risk else 1.0),stop_atr_multiplier=strategy.stop_atr_multiplier,take_profit_rr=strategy.take_profit_rr,max_position_notional_pct=strategy.max_position_notional_pct)
     if plan.notional>w.cash_balance: raise HTTPException(409,"insufficient paper cash")
-    w.cash_balance-=plan.notional;order=PaperOrder(profile_id=profile_id,signal_id=s.id,symbol=s.symbol,side=plan.side,quantity=plan.quantity,fill_price=price,notional=plan.notional,status="FILLED");pos=PaperPosition(profile_id=profile_id,signal_id=s.id,symbol=s.symbol,side=plan.side,quantity=plan.quantity,entry_price=price,mark_price=price,stop_loss=plan.stop_loss,take_profit=plan.take_profit);db.add_all([order,pos]);db.commit();db.refresh(pos)
+    w.cash_balance-=plan.notional;order=PaperOrder(profile_id=profile_id,signal_id=sig.id,symbol=sig.symbol,side=plan.side,quantity=plan.quantity,fill_price=price,notional=plan.notional,status="FILLED");pos=PaperPosition(profile_id=profile_id,signal_id=sig.id,symbol=sig.symbol,side=plan.side,quantity=plan.quantity,entry_price=price,mark_price=price,stop_loss=plan.stop_loss,take_profit=plan.take_profit);db.add_all([order,pos]);db.commit();db.refresh(pos)
     return {"status":"FILLED","position_id":pos.id,"symbol":pos.symbol,"side":pos.side,"quantity":pos.quantity,"fill_price":price,"stop_loss":pos.stop_loss,"take_profit":pos.take_profit,"risk_amount":plan.risk_amount}
 
 async def _close_position(db,w,p,reason):
