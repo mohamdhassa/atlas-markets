@@ -1,5 +1,6 @@
 from app.db.models.auth import AuthAuditLog, User, UserRole, UserSession
 from app.db.models.broker import BrokerProfile
+from app.db.models.paper import PaperOrder, PaperPosition, PaperWallet
 from app.db.models.signal import RiskEvent, RiskProfile, Signal
 
 __all__ = [
@@ -11,4 +12,7 @@ __all__ = [
     "Signal",
     "RiskProfile",
     "RiskEvent",
+    "PaperWallet",
+    "PaperPosition",
+    "PaperOrder",
 ]
