@@ -29,9 +29,9 @@ async def lifespan(app:FastAPI):
         for task in (automation_task,report_task):
             try:await asyncio.wait_for(task,timeout=3)
             except (asyncio.TimeoutError,asyncio.CancelledError):task.cancel()
-app=FastAPI(title=settings.app_name,version="0.16.0",debug=settings.debug,lifespan=lifespan)
+app=FastAPI(title=settings.app_name,version="0.17.0",debug=settings.debug,lifespan=lifespan)
 app.include_router(health_router);app.include_router(auth_router);app.include_router(admin_router);app.include_router(markets_router);app.include_router(accounts_router);app.include_router(analysis_router);app.include_router(signals_router);app.include_router(paper_router);app.include_router(automation_router);app.include_router(performance_router);app.include_router(news_router);app.include_router(reporting_router);app.mount("/static",StaticFiles(directory=static_dir),name="static")
 @app.get("/",include_in_schema=False)
 async def root()->FileResponse:return FileResponse(static_dir/"index.html")
 @app.get("/api/system",tags=["system"])
-async def system_info()->dict[str,str]:return {"name":settings.app_name,"status":"running","phase":"16","market_data_provider":"BYBIT_CRYPTO+TWELVE_DATA_FX","paper_broker":"ATLAS_PAPER","automation":"ACTIVE","analytics":"STRATEGY_INTELLIGENCE","news_intelligence":"ACTIVE","reporting":"ACTIVE","market_scope":"FX_CRYPTO_STOCKS_ETFS"}
+async def system_info()->dict[str,str]:return {"name":settings.app_name,"status":"running","phase":"17","market_data_provider":"BYBIT_CRYPTO+TWELVE_DATA_FX","paper_broker":"ATLAS_PAPER","broker_accounts":"BYBIT+MT5+IBKR","live_execution":"GATED","automation":"ACTIVE","analytics":"STRATEGY_INTELLIGENCE","news_intelligence":"ACTIVE","reporting":"ACTIVE","market_scope":"FX_CRYPTO_STOCKS_ETFS"}
