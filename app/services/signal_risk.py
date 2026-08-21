@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from app.analysis.technical import analyze_candles
+from app.analysis.strategy_intelligence import scenario_from_candles
 
 @dataclass(frozen=True)
 class GeneratedSignal:
@@ -13,17 +13,16 @@ class GeneratedSignal:
     reasons:list[str]
 
 def generate_signal(candles:list[dict])->GeneratedSignal:
-    analysis=analyze_candles(candles);score=float(analysis.get("score",50.0));bias=str(analysis.get("bias","NEUTRAL")).upper()
-    decision="BUY" if bias=="LONG" else "SELL" if bias=="SHORT" else "HOLD"
-    strength=score if decision=="BUY" else 100.0-score if decision=="SELL" else 50.0
+    scenario=scenario_from_candles(candles,timeframe="5m",market="CRYPTO")
+    action=str(scenario.get("action","WAIT")).upper();decision="BUY" if action=="BUY" else "SELL" if action=="SELL" else "HOLD"
+    bull=float(scenario.get("bullish_probability",50.0));bear=float(scenario.get("bearish_probability",50.0));score=bull
+    strength=bull if decision=="BUY" else bear if decision=="SELL" else max(bull,bear)
     classification="NO_SIGNAL" if decision=="HOLD" else "STRONG_SIGNAL" if strength>=80 else "SIGNAL" if strength>=65 else "WATCH"
-    reasons=[];trend=analysis.get("trend");volatility=analysis.get("volatility");structure=analysis.get("structure");rsi=analysis.get("rsi14");macd=analysis.get("macd") or {}
-    if trend:reasons.append(f"trend_{str(trend).lower()}")
-    if volatility:reasons.append(f"volatility_{str(volatility).lower()}")
-    if structure:reasons.append(f"structure_{str(structure).lower()}")
-    if isinstance(rsi,(int,float)):reasons.append("rsi_overbought" if rsi>=70 else "rsi_oversold" if rsi<=30 else "rsi_neutral")
-    histogram=macd.get("histogram") if isinstance(macd,dict) else None
-    if isinstance(histogram,(int,float)):reasons.append("macd_positive" if histogram>0 else "macd_negative" if histogram<0 else "macd_flat")
+    reasons=list(scenario.get("reasons") or [])
+    trend=str(scenario.get("trend","NEUTRAL")).lower()
+    trend_reason=f"trend_{trend}"
+    if trend_reason not in reasons:
+        reasons.insert(0,trend_reason)
     return GeneratedSignal(decision=decision,classification=classification,score=score,strength=strength,reasons=reasons)
 
 def evaluate_risk(signal:GeneratedSignal,*,minimum_signal_score:float,account_enabled:bool,allow_live_trading:bool,account_environment:str)->tuple[bool,str,dict]:
