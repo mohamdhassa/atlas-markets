@@ -13,24 +13,26 @@ class PaperExecutionPlan:
     risk_amount: float
 
 
-def build_execution_plan(*, decision: str, price: float, equity: float, available_cash: float, risk_per_trade_pct: float, atr: float | None = None) -> PaperExecutionPlan:
+def build_execution_plan(*, decision: str, price: float, equity: float, available_cash: float, risk_per_trade_pct: float, atr: float | None = None, stop_atr_multiplier: float = 1.5, take_profit_rr: float = 2.0, max_position_notional_pct: float = 20.0) -> PaperExecutionPlan:
     if decision not in {"BUY", "SELL"}:
         raise ValueError("only BUY or SELL signals can be executed")
     if price <= 0 or equity <= 0 or available_cash <= 0:
         raise ValueError("price, equity and available cash must be positive")
+    if stop_atr_multiplier <= 0 or take_profit_rr <= 0 or not 0 < max_position_notional_pct <= 100:
+        raise ValueError("invalid strategy sizing parameters")
     risk_amount = equity * (risk_per_trade_pct / 100.0)
-    stop_distance = max((atr or price * 0.01) * 1.5, price * 0.005)
+    stop_distance = max((atr or price * 0.01) * stop_atr_multiplier, price * 0.005)
     quantity_by_risk = risk_amount / stop_distance
-    max_notional = available_cash * 0.20
+    max_notional = available_cash * (max_position_notional_pct / 100.0)
     quantity = min(quantity_by_risk, max_notional / price)
     if quantity <= 0:
         raise ValueError("calculated position size is zero")
     if decision == "BUY":
         stop_loss = price - stop_distance
-        take_profit = price + (stop_distance * 2.0)
+        take_profit = price + (stop_distance * take_profit_rr)
     else:
         stop_loss = price + stop_distance
-        take_profit = price - (stop_distance * 2.0)
+        take_profit = price - (stop_distance * take_profit_rr)
     return PaperExecutionPlan(decision, round(quantity, 8), round(quantity * price, 8), round(stop_loss, 8), round(take_profit, 8), round(risk_amount, 8))
 
 
