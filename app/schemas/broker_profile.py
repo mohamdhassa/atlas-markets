@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class BrokerProfileCreate(BaseModel):
     account_label: str = Field(min_length=2, max_length=96)
-    provider: Literal["BYBIT"] = "BYBIT"
-    environment: Literal["DEMO", "TESTNET"] = "DEMO"
+    provider: Literal["BYBIT", "ATLAS_PAPER"] = "ATLAS_PAPER"
+    environment: Literal["PAPER", "DEMO", "TESTNET"] = "PAPER"
     external_account_ref: str | None = Field(default=None, max_length=128)
     owner_user_id: uuid.UUID | None = None
 
