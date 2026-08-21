@@ -5,9 +5,9 @@ import app.api.health as health_module
 from app.main import app
 client=TestClient(app)
 def test_root_endpoint_serves_frontend():
-    r=client.get("/");assert r.status_code==200;assert "ATLAS MARKETS" in r.text;assert "/static/app.js" in r.text;assert "/static/phase6.css" in r.text;assert "/static/phase7.js" in r.text;assert "/static/phase8.js" in r.text;assert "/static/phase9.js" in r.text;assert "/static/phase10.js" in r.text;assert "/static/phase11.js" in r.text;assert "/static/phase12.js" in r.text;assert "/static/phase13.js" in r.text
+    r=client.get("/");assert r.status_code==200;assert "ATLAS MARKETS" in r.text;assert "/static/app.js" in r.text;assert "/static/phase6.css" in r.text;assert "/static/phase7.js" in r.text;assert "/static/phase8.js" in r.text;assert "/static/phase9.js" in r.text;assert "/static/phase10.js" in r.text;assert "/static/phase11.js" in r.text;assert "/static/phase12.js" in r.text;assert "/static/phase13.js" in r.text;assert "/static/phase14.css" in r.text;assert "/static/phase14.js" in r.text
 def test_system_info_endpoint():
-    r=client.get("/api/system");assert r.status_code==200;p=r.json();assert p["name"]=="ATLAS MARKETS";assert p["phase"]=="13";assert p["automation"]=="ACTIVE";assert p["analytics"]=="PERFORMANCE";assert p["news_intelligence"]=="ACTIVE";assert p["reporting"]=="ACTIVE"
+    r=client.get("/api/system");assert r.status_code==200;p=r.json();assert p["name"]=="ATLAS MARKETS";assert p["phase"]=="14";assert p["automation"]=="ACTIVE";assert p["analytics"]=="ENHANCED";assert p["news_intelligence"]=="ACTIVE";assert p["reporting"]=="ACTIVE";assert p["market_scope"]=="FX_CRYPTO_STOCKS_ETFS"
 def test_health_ok(monkeypatch):
     monkeypatch.setattr(health_module,"check_database",lambda:(True,None));monkeypatch.setattr(health_module,"check_redis",lambda:(True,None));r=client.get("/health");assert r.status_code==200;p=r.json();assert p["status"]=="ok";assert p["dependencies"]["database"]["status"]=="ok";assert p["dependencies"]["redis"]["status"]=="ok"
 def test_health_degraded(monkeypatch):
