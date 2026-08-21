@@ -21,7 +21,7 @@ def performance_summary(rows: Iterable[dict], starting_balance: float) -> dict:
     losses = [x for x in pnls if x < 0]
     gross_profit = sum(wins)
     gross_loss = abs(sum(losses))
-    profit_factor = (gross_profit / gross_loss) if gross_loss else (None if not wins else float("inf"))
+    profit_factor = (gross_profit / gross_loss) if gross_loss else None
     win_rate = (len(wins) / len(pnls) * 100.0) if pnls else 0.0
 
     equity = starting_balance
