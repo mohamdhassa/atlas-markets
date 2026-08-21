@@ -1,63 +1,41 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
-
+from fastapi import APIRouter,Body,Depends,HTTPException,Query
 from app.analysis.strategy_intelligence import scenario_from_candles
 from app.analysis.technical import analyze_candles
 from app.api.dependencies import get_current_user
 from app.core.config import get_settings
 from app.db.models.auth import User
-from app.market_data.bybit import BybitMarketDataError, BybitPublicMarketData
-
-router = APIRouter(prefix="/analysis", tags=["analysis"])
-
-
-def _client() -> BybitPublicMarketData:
-    settings = get_settings()
-    return BybitPublicMarketData(settings.bybit_public_base_url, settings.market_data_timeout_seconds)
-
-
-async def _analyze(client: BybitPublicMarketData, symbol: str, interval: str, category: str, limit: int = 200) -> dict:
-    candles = await client.get_candles(symbol=symbol, interval=interval, category=category, limit=limit)
-    result = analyze_candles([c.model_dump() for c in candles])
-    return {"symbol": symbol.upper(), "interval": interval, "category": category, "candles": len(candles), **result}
-
-
+from app.market_data.bybit import BybitMarketDataError,BybitPublicMarketData
+from app.market_data.fx import FxMarketDataError,TwelveDataFxMarketData
+router=APIRouter(prefix="/analysis",tags=["analysis"])
+def _client():
+ s=get_settings();return BybitPublicMarketData(s.bybit_public_base_url,s.market_data_timeout_seconds)
+def _fx_client():
+ s=get_settings();return TwelveDataFxMarketData(s.fx_market_data_base_url,s.fx_market_data_api_key,s.market_data_timeout_seconds)
+async def _analyze(client,symbol,interval,category,limit=200):
+ candles=await client.get_candles(symbol=symbol,interval=interval,category=category,limit=limit);result=analyze_candles([c.model_dump() for c in candles]);return {"symbol":symbol.upper(),"interval":interval,"category":category,"candles":len(candles),**result}
 @router.get("/{symbol}/multi")
-async def multi_timeframe_analysis(symbol: str, category: str = Query("linear"), _: User = Depends(get_current_user)):
-    client = _client(); frames = ("4h", "1h", "15m", "5m")
-    try:
-        results = [await _analyze(client, symbol, frame, category) for frame in frames]
-    except (BybitMarketDataError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    directions = [item["bias"] for item in results]; long_count = directions.count("LONG"); short_count = directions.count("SHORT")
-    alignment = "LONG_ALIGNED" if long_count >= 3 else "SHORT_ALIGNED" if short_count >= 3 else "MIXED"
-    confidence = round(max(long_count, short_count) / len(frames) * 100, 1)
-    return {"symbol": symbol.upper(), "category": category, "alignment": alignment, "confidence": confidence, "timeframes": results}
-
-
+async def multi_timeframe_analysis(symbol:str,category:str=Query("linear"),_:User=Depends(get_current_user)):
+ try:results=[await _analyze(_client(),symbol,f,category) for f in ("4h","1h","15m","5m")]
+ except (BybitMarketDataError,ValueError) as exc:raise HTTPException(status_code=502,detail=str(exc)) from exc
+ directions=[x["bias"] for x in results];lc=directions.count("LONG");sc=directions.count("SHORT");return {"symbol":symbol.upper(),"category":category,"alignment":"LONG_ALIGNED" if lc>=3 else "SHORT_ALIGNED" if sc>=3 else "MIXED","confidence":round(max(lc,sc)/4*100,1),"timeframes":results}
+@router.get("/fx/{symbol}/scenario")
+async def fx_strategy_scenario(symbol:str,interval:str=Query("5m"),limit:int=Query(200,ge=60,le=500),_:User=Depends(get_current_user)):
+ try:
+  candles=await _fx_client().get_candles(symbol,interval,limit);return {"symbol":symbol.upper().replace("/",""),**scenario_from_candles(candles,timeframe=interval,market="FX")}
+ except ValueError as exc:raise HTTPException(status_code=503,detail=str(exc)) from exc
+ except FxMarketDataError as exc:raise HTTPException(status_code=502,detail=str(exc)) from exc
 @router.get("/{symbol}/scenario")
-async def strategy_scenario(symbol: str, interval: str = Query("5m"), category: str = Query("linear"), limit: int = Query(200, ge=60, le=500), _: User = Depends(get_current_user)):
-    try:
-        candles = await _client().get_candles(symbol=symbol, interval=interval, category=category, limit=limit)
-        result = scenario_from_candles([c.model_dump() for c in candles], timeframe=interval, market="CRYPTO")
-        return {"symbol": symbol.upper(), **result}
-    except (BybitMarketDataError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
+async def strategy_scenario(symbol:str,interval:str=Query("5m"),category:str=Query("linear"),limit:int=Query(200,ge=60,le=500),_:User=Depends(get_current_user)):
+ try:
+  candles=await _client().get_candles(symbol=symbol,interval=interval,category=category,limit=limit);return {"symbol":symbol.upper(),**scenario_from_candles([c.model_dump() for c in candles],timeframe=interval,market="CRYPTO")}
+ except (BybitMarketDataError,ValueError) as exc:raise HTTPException(status_code=502,detail=str(exc)) from exc
 @router.post("/scenario/from-candles")
-async def scenario_from_external_candles(payload: dict = Body(...), _: User = Depends(get_current_user)):
-    candles = payload.get("candles") or []
-    if not isinstance(candles, list) or len(candles) < 30:
-        raise HTTPException(status_code=400, detail="at least 30 normalized OHLC candles are required")
-    try:
-        return scenario_from_candles(candles, timeframe=str(payload.get("timeframe") or "5m"), market=str(payload.get("market") or "FX"))
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
+async def scenario_from_external_candles(payload:dict=Body(...),_:User=Depends(get_current_user)):
+ candles=payload.get("candles") or []
+ if not isinstance(candles,list) or len(candles)<30:raise HTTPException(status_code=400,detail="at least 30 normalized OHLC candles are required")
+ try:return scenario_from_candles(candles,timeframe=str(payload.get("timeframe") or "5m"),market=str(payload.get("market") or "FX"))
+ except (KeyError,TypeError,ValueError) as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
 @router.get("/{symbol}")
-async def technical_analysis(symbol: str, interval: str = Query("5m"), category: str = Query("linear"), limit: int = Query(200, ge=60, le=500), _: User = Depends(get_current_user)):
-    try:
-        return await _analyze(_client(), symbol, interval, category, limit)
-    except (BybitMarketDataError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+async def technical_analysis(symbol:str,interval:str=Query("5m"),category:str=Query("linear"),limit:int=Query(200,ge=60,le=500),_:User=Depends(get_current_user)):
+ try:return await _analyze(_client(),symbol,interval,category,limit)
+ except (BybitMarketDataError,ValueError) as exc:raise HTTPException(status_code=502,detail=str(exc)) from exc
