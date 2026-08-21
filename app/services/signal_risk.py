@@ -19,6 +19,10 @@ def generate_signal(candles:list[dict])->GeneratedSignal:
     strength=bull if decision=="BUY" else bear if decision=="SELL" else max(bull,bear)
     classification="NO_SIGNAL" if decision=="HOLD" else "STRONG_SIGNAL" if strength>=80 else "SIGNAL" if strength>=65 else "WATCH"
     reasons=list(scenario.get("reasons") or [])
+    trend=str(scenario.get("trend","NEUTRAL")).lower()
+    trend_reason=f"trend_{trend}"
+    if trend_reason not in reasons:
+        reasons.insert(0,trend_reason)
     return GeneratedSignal(decision=decision,classification=classification,score=score,strength=strength,reasons=reasons)
 
 def evaluate_risk(signal:GeneratedSignal,*,minimum_signal_score:float,account_enabled:bool,allow_live_trading:bool,account_environment:str)->tuple[bool,str,dict]:
