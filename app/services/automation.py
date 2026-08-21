@@ -13,6 +13,7 @@ from app.db.models.signal import RiskEvent, RiskProfile, Signal
 from app.db.models.strategy import StrategyProfile
 from app.db.session import SessionLocal
 from app.market_data.bybit import BybitPublicMarketData
+from app.services.news_intelligence import apply_news_context, context_for_symbol, refresh_news
 from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal, reasons_json
 
@@ -54,12 +55,17 @@ async def run_scan() -> dict:
         scan=AutomationScan(status="RUNNING",symbols_count=len(symbols),accounts_count=len(accounts));db.add(scan);db.commit();db.refresh(scan)
         market=BybitPublicMarketData(settings.bybit_public_base_url,settings.market_data_timeout_seconds);risk=_risk(db)
         try:
+            try: await refresh_news(db)
+            except Exception: pass
             for account in accounts:
                 for symbol in symbols:
                     candles=await market.get_candles(symbol=symbol,interval=strategy.timeframe,category="linear",limit=200)
-                    generated=generate_signal([c.model_dump() for c in candles])
+                    technical=generate_signal([c.model_dump() for c in candles])
+                    news=context_for_symbol(db,symbol,hours=24)
+                    generated=apply_news_context(technical,news)
                     minimum=max(risk.minimum_signal_score,strategy.minimum_signal_strength)
                     approved,reason,details=evaluate_risk(generated,minimum_signal_score=minimum,account_enabled=account.is_enabled,allow_live_trading=False,account_environment="PAPER")
+                    details["news"]={"bias":news.bias,"sentiment":news.sentiment,"article_count":news.article_count}
                     sig=Signal(profile_id=account.id,symbol=symbol,timeframe=strategy.timeframe,decision=generated.decision,classification=generated.classification,score=generated.score,reasons_json=reasons_json(generated.reasons),risk_status="APPROVED" if approved else "REJECTED")
                     db.add(sig);db.flush();db.add(RiskEvent(profile_id=account.id,signal_id=sig.id,approved=approved,reason_code=reason,details_json=json.dumps(details,separators=(",",":"))))
                     scan.signals_count+=1
