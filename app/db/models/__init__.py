@@ -7,5 +7,5 @@ from app.db.models.paper import PaperOrder, PaperPosition, PaperWallet
 from app.db.models.reporting import DailyAccountReport
 from app.db.models.signal import RiskEvent, RiskProfile, Signal
 from app.db.models.strategy import StrategyProfile
-
-__all__ = ["AuthAuditLog","User","UserRole","UserSession","AutomationState","AutomationScan","BrokerProfile","HistoricalCandle","HistoricalBacktestRun","NewsArticle","DailyAccountReport","Signal","RiskProfile","RiskEvent","PaperWallet","PaperPosition","PaperOrder","StrategyProfile"]
+from app.db.models.symbol_strategy import SymbolStrategy
+__all__=['AuthAuditLog','User','UserRole','UserSession','AutomationState','AutomationScan','BrokerProfile','HistoricalCandle','HistoricalBacktestRun','NewsArticle','DailyAccountReport','Signal','RiskProfile','RiskEvent','PaperWallet','PaperPosition','PaperOrder','StrategyProfile','SymbolStrategy']
