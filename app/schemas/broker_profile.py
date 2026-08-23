@@ -14,6 +14,16 @@ class BrokerCredentialsUpdate(BaseModel):
     api_key: str | None = Field(default=None, max_length=256)
     api_secret: str | None = Field(default=None, max_length=256)
     credentials: dict[str, Any] | None = None
+class BrokerConnectRequest(BrokerProfileCreate):
+    api_key: str | None = Field(default=None, max_length=256)
+    api_secret: str | None = Field(default=None, max_length=256)
+    credentials: dict[str, Any] | None = None
+    activate: bool = True
+class BrokerConnectResult(BaseModel):
+    profile: "BrokerProfilePublic"
+    connected: bool
+    message: str
+    next_action: str | None = None
 class LiveExecutionUpdate(BaseModel): enabled: bool
 class BrokerProfilePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
