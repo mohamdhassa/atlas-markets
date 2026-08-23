@@ -7,7 +7,7 @@ client=TestClient(app)
 def test_root_endpoint_serves_frontend():
     r=client.get("/");assert r.status_code==200;assert "ATLAS MARKETS" in r.text;assert "/static/app.js" in r.text;assert "/static/phase17.js" in r.text;assert "/static/phase18.js" in r.text;assert "/static/phase19.js" in r.text
 def test_system_info_endpoint():
-    r=client.get("/api/system");assert r.status_code==200;p=r.json();assert p["name"]=="ATLAS MARKETS";assert p["phase"]=="19";assert p["broker_accounts"]=="BYBIT+MT5+IBKR";assert p["live_execution"]=="GATED";assert p["automation"]=="ACTIVE";assert p["historical_learning"]=="ACTIVE";assert p["analytics"]=="ADAPTIVE_STRATEGY+HISTORICAL_INTELLIGENCE";assert "METALS" in p["market_scope"];assert "COMMODITIES" in p["market_scope"]
+    r=client.get("/api/system");assert r.status_code==200;p=r.json();assert p["name"]=="ATLAS MARKETS";assert p["phase"]=="20";assert p["broker_accounts"]=="BYBIT+MT5_FUSION+IBKR";assert p["live_execution"]=="GATED";assert p["provider_switching"]=="FRONTEND";assert p["historical_learning"]=="ACTIVE";assert "METALS" in p["market_scope"]
 def test_health_ok(monkeypatch):
     monkeypatch.setattr(health_module,"check_database",lambda:(True,None));monkeypatch.setattr(health_module,"check_redis",lambda:(True,None));r=client.get("/health");assert r.status_code==200;assert r.json()["status"]=="ok"
 def test_health_degraded(monkeypatch):
