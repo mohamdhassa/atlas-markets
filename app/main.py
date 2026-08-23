@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.api.health import router as health_router
 from app.api.routes_accounts import router as accounts_router
+from app.api.routes_account_lifecycle import router as account_lifecycle_router
 from app.api.routes_admin import router as admin_router
 from app.api.routes_analysis import router as analysis_router
 from app.api.routes_auth import router as auth_router
@@ -32,7 +33,7 @@ async def lifespan(app:FastAPI):
             try:await asyncio.wait_for(task,timeout=3)
             except (asyncio.TimeoutError,asyncio.CancelledError):task.cancel()
 app=FastAPI(title=settings.app_name,version="0.20.0",debug=settings.debug,lifespan=lifespan)
-app.include_router(health_router);app.include_router(auth_router);app.include_router(admin_router);app.include_router(markets_router);app.include_router(accounts_router);app.include_router(analysis_router);app.include_router(signals_router);app.include_router(paper_router);app.include_router(automation_router);app.include_router(performance_router);app.include_router(news_router);app.include_router(reporting_router);app.include_router(historical_router);app.mount("/static",StaticFiles(directory=static_dir),name="static")
+app.include_router(health_router);app.include_router(auth_router);app.include_router(admin_router);app.include_router(markets_router);app.include_router(accounts_router);app.include_router(account_lifecycle_router);app.include_router(analysis_router);app.include_router(signals_router);app.include_router(paper_router);app.include_router(automation_router);app.include_router(performance_router);app.include_router(news_router);app.include_router(reporting_router);app.include_router(historical_router);app.mount("/static",StaticFiles(directory=static_dir),name="static")
 @app.get("/",include_in_schema=False)
 async def root()->FileResponse:return FileResponse(static_dir/"index.html")
 @app.get("/api/system",tags=["system"])
