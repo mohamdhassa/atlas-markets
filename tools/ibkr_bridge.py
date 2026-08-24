@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,os,threading,time
+import argparse,os,threading,time,math
 from datetime import datetime,timedelta
 from fastapi import FastAPI,HTTPException,Header
 from pydantic import BaseModel
@@ -11,7 +11,7 @@ import uvicorn
 
 class State(EWrapper,EClient):
  def __init__(self):
-  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.errors=[];self.quotes={};self.bars={};self._events={}
+  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self._events={}
  def _event(self,k):return self._events.setdefault(k,threading.Event())
  def nextValidId(self,orderId):self.next_id=orderId;self._event('connected').set()
  def managedAccounts(self,accountsList):self.accounts=[x for x in accountsList.split(',') if x]
@@ -23,6 +23,9 @@ class State(EWrapper,EClient):
  def openOrderEnd(self):self._event('orders').set()
  def execDetails(self,reqId,contract,execution):self.executions.append({'execution_id':execution.execId,'order_id':execution.orderId,'account':execution.acctNumber,'symbol':contract.symbol,'sec_type':contract.secType,'side':execution.side,'quantity':float(execution.shares),'price':float(execution.price),'time':execution.time})
  def execDetailsEnd(self,reqId):self._event(f'exec:{reqId}').set()
+ def commissionReport(self,report):
+  realized=float(report.realizedPNL);realized=None if not math.isfinite(realized) or abs(realized)>1e100 else realized
+  self.commissions[str(report.execId)]={'commission':float(report.commission or 0),'commission_currency':report.currency,'realized_pnl':realized}
  def tickPrice(self,reqId,tickType,price,attrib):
   q=self.quotes.setdefault(reqId,{})
   if tickType==1:q['bid']=float(price)
@@ -76,7 +79,11 @@ def orders(x_atlas_bridge_token:str|None=Header(default=None)):
 @app.get('/executions')
 def executions(days:int=30,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);from ibapi.execution import ExecutionFilter
- r=rid();ib.executions=[];f=ExecutionFilter();f.time=(datetime.now()-timedelta(days=max(1,min(days,30)))).strftime('%Y%m%d 00:00:00');ib.reqExecutions(r,f);wait(f'exec:{r}');return {'list':ib.executions}
+ r=rid();ib.executions=[];ib.commissions={};f=ExecutionFilter();f.time=(datetime.now()-timedelta(days=max(1,min(days,30)))).strftime('%Y%m%d 00:00:00');ib.reqExecutions(r,f);wait(f'exec:{r}');time.sleep(.35)
+ rows=[]
+ for x in ib.executions:
+  c=ib.commissions.get(str(x['execution_id']),{});rows.append({**x,**c,'pnl_available':c.get('realized_pnl') is not None})
+ return {'list':rows}
 @app.get('/quote')
 def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);r=rid();ib.quotes[r]={};ib.reqMktData(r,contract(symbol,sec_type,exchange,currency),'',True,False,[]);wait(f'quote:{r}');ib.cancelMktData(r);q=ib.quotes.pop(r,{})
