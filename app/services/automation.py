@@ -13,11 +13,9 @@ from app.db.models.strategy import StrategyProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import SessionLocal
 from app.market_data.bybit import BybitPublicMarketData
-from app.market_data.fx import TwelveDataFxMarketData
 from app.services.historical_intelligence import db_candles,historical_probability
 from app.services.news_intelligence import apply_news_context,context_for_symbol,refresh_news
 from app.services.paper_execution import build_execution_plan
-from app.services.provider_credentials import active_twelve_data_key
 from app.services.signal_risk import GeneratedSignal,evaluate_risk,generate_signal,reasons_json
 
 def get_or_create_state(db):
@@ -74,7 +72,7 @@ async def run_scan()->dict:
      broker=_bybit_demo_client(account,settings);wallet=await broker.wallet();broker_positions=await broker.positions();equity,available=_wallet_numbers(wallet);position_rows=[p for p in broker_positions.get('list',[]) if float(p.get('size') or 0)!=0];open_symbols={str(p.get('symbol') or '').upper() for p in position_rows};account.equity_usd=equity;account.available_balance_usd=available;account.open_positions_count=len(position_rows)
      for cfg in all_configs[account.id]:
       if cfg.market!='CRYPTO':continue
-      symbol=cfg.symbol;timeframe,minimum,risk_pct,stop,rr,max_pos=_params(cfg,default,risk);candles=await crypto_market.get_candles(symbol=symbol,interval=timeframe,category='linear',limit=200);technical=generate_signal([c.model_dump() for c in candles]);news=context_for_symbol(db,symbol,hours=24);generated=_with_history(apply_news_context(technical,news),historical_probability(db_candles(db,'CRYPTO',symbol,timeframe),horizon=6));
+      symbol=cfg.symbol;timeframe,minimum,risk_pct,stop,rr,max_pos=_params(cfg,default,risk);candles=await crypto_market.get_candles(symbol=symbol,interval=timeframe,category='linear',limit=200);technical=generate_signal([c.model_dump() for c in candles]);news=context_for_symbol(db,symbol,hours=24);generated=_with_history(apply_news_context(technical,news),historical_probability(db_candles(db,'CRYPTO',symbol,timeframe),horizon=6))
       if cfg.mode=='WATCH':continue
       approved,reason,details=evaluate_risk(generated,minimum_signal_score=minimum,account_enabled=account.is_enabled,allow_live_trading=False,account_environment=account.environment);details.update({'execution_environment':account.environment,'broker':'BYBIT','strategy_mode':cfg.mode,'market':'CRYPTO'});sig=_record(db,scan,account,cfg,generated,approved,reason,details,timeframe)
       if cfg.mode=='AUTO_TRADE' and approved and state.auto_execute_paper and generated.decision in {'BUY','SELL'} and len(open_symbols)<risk.max_open_positions and symbol not in open_symbols:
@@ -86,14 +84,11 @@ async def run_scan()->dict:
      broker=_mt5_demo_client(account,settings);acct=await broker.account();health=await broker.health();equity=float(acct.get('equity') or 0);available=float(acct.get('margin_free') or equity);pos=await broker.positions();position_rows=pos.get('list',[]);open_symbols={str(x.get('symbol') or '').upper() for x in position_rows};account.equity_usd=equity;account.available_balance_usd=available;account.open_positions_count=len(position_rows)
      terminal=health.get('terminal') or {}
      if terminal and not terminal.get('trade_allowed',False):continue
-     key=active_twelve_data_key(db,account.user_id)
-     if not key:continue
-     fx= TwelveDataFxMarketData(settings.fx_market_data_base_url,key,settings.market_data_timeout_seconds)
      for cfg in all_configs[account.id]:
       if cfg.market!='FX':continue
-      symbol=cfg.symbol;timeframe,minimum,risk_pct,stop,rr,max_pos=_params(cfg,default,risk);candles=await fx.get_candles(symbol,timeframe,200);raw=[c.model_dump() if hasattr(c,'model_dump') else c for c in candles];technical=generate_signal(raw);news=context_for_symbol(db,symbol,hours=24);generated=_with_history(apply_news_context(technical,news),historical_probability(db_candles(db,'FX',symbol,timeframe),horizon=6))
+      symbol=cfg.symbol;timeframe,minimum,risk_pct,stop,rr,max_pos=_params(cfg,default,risk);raw=(await broker.candles(symbol,timeframe,200)).get('list',[]);technical=generate_signal(raw);news=context_for_symbol(db,symbol,hours=24);generated=_with_history(apply_news_context(technical,news),historical_probability(db_candles(db,'FX',symbol,timeframe),horizon=6))
       if cfg.mode=='WATCH':continue
-      approved,reason,details=evaluate_risk(generated,minimum_signal_score=minimum,account_enabled=account.is_enabled,allow_live_trading=False,account_environment=account.environment);details.update({'execution_environment':'DEMO','broker':'MT5_FUSION','strategy_mode':cfg.mode,'market':'FX'});sig=_record(db,scan,account,cfg,generated,approved,reason,details,timeframe)
+      approved,reason,details=evaluate_risk(generated,minimum_signal_score=minimum,account_enabled=account.is_enabled,allow_live_trading=False,account_environment=account.environment);details.update({'execution_environment':'DEMO','broker':'MT5_FUSION','strategy_mode':cfg.mode,'market':'FX','market_data_provider':'MT5_FUSION'});sig=_record(db,scan,account,cfg,generated,approved,reason,details,timeframe)
       if cfg.mode=='AUTO_TRADE' and approved and state.auto_execute_paper and generated.decision in {'BUY','SELL'} and len(open_symbols)<risk.max_open_positions and symbol not in open_symbols:
        info=await broker.symbol(symbol);price=float(info.get('ask') if generated.decision=='BUY' else info.get('bid'));plan=build_execution_plan(decision=generated.decision,price=price,equity=equity,available_cash=available,risk_per_trade_pct=risk_pct,stop_atr_multiplier=stop,take_profit_rr=rr,max_position_notional_pct=max_pos);contract=float(info.get('trade_contract_size') or 100000);volume=_round_volume(plan.quantity/contract,info);await broker.order_check({'symbol':symbol,'side':generated.decision,'volume':volume,'stop_loss':plan.stop_loss,'take_profit':plan.take_profit,'comment':'ATLAS FX DEMO'});await broker.place_demo_order(symbol=symbol,side=generated.decision,volume=volume,stop_loss=plan.stop_loss,take_profit=plan.take_profit,comment='ATLAS FX DEMO');scan.executed_count+=1;open_symbols.add(symbol)
     db.flush()
