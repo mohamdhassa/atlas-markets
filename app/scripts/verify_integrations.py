@@ -5,7 +5,7 @@ from app.brokers.bybit_private import BybitPrivateClient
 from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.brokers.ibkr_bridge import IbkrBridgeClient
 from app.core.config import get_settings
-from app.core.crypto import decrypt_secret
+from app.core.crypto import decrypt_secret,encrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.session import SessionLocal
 from app.market_data.fx import TwelveDataFxMarketData
@@ -26,11 +26,21 @@ async def certify_bybit(p):
 def bridge_creds(p):
  if not p.credential_blob_encrypted:raise RuntimeError('bridge configuration missing')
  return json.loads(decrypt_secret(p.credential_blob_encrypted))
+def _sync_mt5_simulation_identity(p,c0,account):
+ expected=str(c0.get('login') or '').strip();actual=str(account.get('login') or '').strip();changed=[]
+ if expected and actual and expected!=actual:
+  if p.environment!='DEMO':raise RuntimeError(f'account mismatch expected {expected}, got {actual}')
+  c0['login']=actual;p.credential_blob_encrypted=encrypt_secret(json.dumps(c0,separators=(',',':')));p.external_account_ref=actual;changed.append(f'login {expected}->{actual}')
+ elif actual and not p.external_account_ref:p.external_account_ref=actual
+ stored_server=str(c0.get('server') or '').strip();actual_server=str(account.get('server') or '').strip()
+ if stored_server and actual_server and stored_server.lower()!=actual_server.lower():
+  if p.environment!='DEMO':raise RuntimeError(f'server mismatch expected {stored_server}, got {actual_server}')
+  c0['server']=actual_server;p.credential_blob_encrypted=encrypt_secret(json.dumps(c0,separators=(',',':')));changed.append(f'server {stored_server}->{actual_server}')
+ return ', '.join(changed)
 async def certify_mt5(p):
  c0=bridge_creds(p);c=Mt5BridgeClient(c0.get('bridge_url') or 'http://host.docker.internal:8765',c0.get('bridge_token'),get_settings().market_data_timeout_seconds);health=await c.health();account=await c.account()
  if not health.get('connected'):raise RuntimeError('bridge reachable but terminal disconnected')
- expected=str(c0.get('login') or '').strip();actual=str(account.get('login') or '').strip()
- if expected and actual and expected!=actual:raise RuntimeError(f'account mismatch expected {expected}, got {actual}')
+ actual=str(account.get('login') or '').strip();repair=_sync_mt5_simulation_identity(p,c0,account)
  pos=await c.positions();orders=await c.orders();history=await c.history_deals(30);fx=await c.candles('EURUSD','5m',20);market_checks=[f"FX=EURUSD:{len(fx.get('list',[]))}"]
  for label,candidates in [('METAL',['XAUUSD','GOLD']),('COMMODITY',['USOIL','WTI','XTIUSD','UKOIL','BRENT'])]:
   ok=None
@@ -41,8 +51,8 @@ async def certify_mt5(p):
    except Exception:pass
   market_checks.append(f'{label}={ok or "NOT_FOUND_ON_ACCOUNT"}')
  p.equity_usd=f(account.get('equity'));p.wallet_balance_usd=f(account.get('balance'));p.available_balance_usd=f(account.get('margin_free'));p.open_positions_count=len(pos.get('list',[]));p.open_orders_count=len(orders.get('list',[]));p.last_connection_status='CONNECTED'
- terminal=health.get('terminal') or {};trade='ON' if terminal.get('trade_allowed') else 'OFF'
- return f"MT5 {p.environment}: CONNECTED | login={actual} equity={p.equity_usd:.2f} positions={p.open_positions_count} orders={p.open_orders_count} deals={len(history.get('list',[]))} algo={trade} | {' '.join(market_checks)}"
+ terminal=health.get('terminal') or {};trade='ON' if terminal.get('trade_allowed') else 'OFF';repair_text=f' metadata_synced=[{repair}] |' if repair else ''
+ return f"MT5 {p.environment}: CONNECTED | login={actual} equity={p.equity_usd:.2f} positions={p.open_positions_count} orders={p.open_orders_count} deals={len(history.get('list',[]))} algo={trade} |{repair_text} {' '.join(market_checks)}"
 async def certify_ibkr(p):
  c0=bridge_creds(p);c=IbkrBridgeClient(c0.get('bridge_url') or 'http://host.docker.internal:8766',c0.get('bridge_token'),get_settings().market_data_timeout_seconds);health=await c.health();account=await c.account()
  if not health.get('connected'):raise RuntimeError('bridge reachable but TWS/IB Gateway disconnected')
