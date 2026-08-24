@@ -23,8 +23,11 @@ def _profile(db,u,pid):
  if not p:raise HTTPException(404,'account not found')
  if not _admin(u) and p.user_id!=u.id:raise HTTPException(403,'account access denied')
  return p
+def _normalize_symbol(market,symbol):
+ s=symbol.upper().replace(' ','')
+ return s.replace('/','') if market in {'FX','CRYPTO','METAL','COMMODITY'} else s
 def _validate(db,payload):
- market=payload.market.upper();mode=payload.mode.upper();symbol=payload.symbol.upper().replace(' ','')
+ market=payload.market.upper();mode=payload.mode.upper();symbol=_normalize_symbol(market,payload.symbol)
  if market not in MARKETS:raise HTTPException(400,'unsupported market')
  if mode not in MODES:raise HTTPException(400,'mode must be WATCH, SIGNALS or AUTO_TRADE')
  risk=db.scalar(select(RiskProfile).where(RiskProfile.name=='Default'))
@@ -51,6 +54,7 @@ def update_symbol_strategy(row_id:uuid.UUID,payload:SymbolStrategyPatch,user:Use
  risk=db.scalar(select(RiskProfile).where(RiskProfile.name=='Default'))
  if risk and data.get('risk_per_trade_pct') is not None and data['risk_per_trade_pct']>risk.risk_per_trade_pct:raise HTTPException(409,f'risk per trade exceeds Admin safety limit of {risk.risk_per_trade_pct}%')
  for k,v in data.items():setattr(row,k,v)
+ row.symbol=_normalize_symbol(row.market,row.symbol)
  db.commit();db.refresh(row);return row
 @router.delete('/{row_id}',status_code=status.HTTP_204_NO_CONTENT)
 def delete_symbol_strategy(row_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
