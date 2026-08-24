@@ -42,10 +42,32 @@ async def portfolio(user:User=Depends(get_current_user),db:Session=Depends(get_d
     for x in plist:positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'BYBIT','market':'CRYPTO','symbol':x.get('symbol'),'side':x.get('side'),'quantity':_f(x.get('size')),'entry_price':_f(x.get('avgPrice')),'mark_price':_f(x.get('markPrice')),'unrealized_pnl':_f(x.get('unrealisedPnl')),'leverage':x.get('leverage')})
    else:
     c=_mt5(p);a=await c.account();pos=await c.positions();equity=_f(a.get('equity'));available=_f(a.get('margin_free'));plist=pos.get('list',[])
-    for x in plist:positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'MT5','market':'FX','symbol':x.get('symbol'),'side':'BUY' if int(x.get('type',0))==0 else 'SELL','quantity':_f(x.get('volume')),'entry_price':_f(x.get('price_open')),'mark_price':_f(x.get('price_current')),'unrealized_pnl':_f(x.get('profit')),'ticket':x.get('ticket')})
+    for x in plist:positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'MT5','market':'FX','symbol':x.get('symbol'),'side':'BUY' if int(x.get('type',0))==0 else 'SELL','quantity':_f(x.get('volume')),'entry_price':_f(x.get('price_open')),'mark_price':_f(x.get('price_current')),'unrealized_pnl':_f(x.get('profit')),'leverage':None,'ticket':x.get('ticket')})
    out.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_market(p.provider),'environment':p.environment,'active':p.is_active,'status':p.last_connection_status,'equity':equity,'available':available,'positions':len(plist),'unrealized_pnl':round(sum(_f(x.get('unrealisedPnl') if p.provider=='BYBIT' else x.get('profit')) for x in plist),2)})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'error':str(exc)[:240]})
  return {'accounts':out,'positions':positions,'errors':errors,'totals':{'equity':round(sum(x['equity'] for x in out),2),'available':round(sum(x['available'] for x in out),2),'unrealized_pnl':round(sum(x['unrealized_pnl'] for x in out),2),'open_positions':len(positions)}}
+
+@router.get('/broker-orders')
+async def broker_orders(limit:int=Query(default=100,ge=1,le=200),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ accounts=[];orders=[];errors=[]
+ for p in _accounts(db,user):
+  if not p.credentials_configured:continue
+  try:
+   if p.provider=='BYBIT':
+    c=_bybit(p);current=await c.open_orders();history=await c.order_history(limit);seen=set()
+    rows=(current.get('list') or [])+(history.get('list') or [])
+    for x in rows:
+     oid=str(x.get('orderId') or x.get('orderLinkId') or '');key=oid or f"{x.get('symbol')}:{x.get('createdTime')}:{x.get('orderStatus')}"
+     if key in seen:continue
+     seen.add(key);orders.append({'profile_id':str(p.id),'account':p.account_label,'provider':'BYBIT','market':'CRYPTO','environment':p.environment,'order_id':oid,'symbol':x.get('symbol'),'side':x.get('side'),'type':x.get('orderType'),'quantity':_f(x.get('qty')),'filled_quantity':_f(x.get('cumExecQty')),'price':_f(x.get('price') or x.get('avgPrice')),'stop_loss':_f(x.get('stopLoss')) or None,'take_profit':_f(x.get('takeProfit')) or None,'status':x.get('orderStatus') or 'UNKNOWN','time':int(x.get('updatedTime') or x.get('createdTime') or 0)})
+   else:
+    c=_mt5(p);raw=await c.orders();rows=raw.get('list',[]) if isinstance(raw,dict) else []
+    for x in rows:
+     typ=int(x.get('type',0));orders.append({'profile_id':str(p.id),'account':p.account_label,'provider':'MT5','market':'FX','environment':p.environment,'order_id':str(x.get('ticket') or ''),'symbol':x.get('symbol'),'side':'BUY' if typ in {0,2,4,6} else 'SELL','type':x.get('type_description') or str(x.get('type')),'quantity':_f(x.get('volume_current') or x.get('volume_initial')),'filled_quantity':max(0,_f(x.get('volume_initial'))-_f(x.get('volume_current'))),'price':_f(x.get('price_open')),'stop_loss':_f(x.get('sl')) or None,'take_profit':_f(x.get('tp')) or None,'status':x.get('state_description') or str(x.get('state') or 'OPEN'),'time':int(x.get('time_setup_msc') or int(x.get('time_setup',0))*1000)})
+   accounts.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_market(p.provider),'environment':p.environment})
+  except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
+ orders.sort(key=lambda x:x.get('time') or 0,reverse=True)
+ return {'accounts':accounts,'orders':orders[:limit],'errors':errors,'count':min(len(orders),limit)}
 
 @router.get('/performance/broker-native')
 async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
