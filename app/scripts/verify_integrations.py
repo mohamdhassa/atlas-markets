@@ -16,8 +16,9 @@ def f(v):
 async def detect_bybit(p):
  s=get_settings();key=decrypt_secret(p.api_key_encrypted or '');secret=decrypt_secret(p.api_secret_encrypted or '');errors={}
  for env,url in [('TESTNET',s.bybit_testnet_base_url),('DEMO',s.bybit_demo_base_url),('LIVE',s.bybit_public_base_url)]:
-  try:return env,BybitPrivateClient(key,secret,url,s.market_data_timeout_seconds),await BybitPrivateClient(key,secret,url,s.market_data_timeout_seconds).wallet()
-  except Exception as exc:errors[env]=str(exc)
+  try:
+   c=BybitPrivateClient(key,secret,url,s.market_data_timeout_seconds);return env,c,await c.wallet()
+  except Exception as exc:errors[env]=f'{type(exc).__name__}: {str(exc) or repr(exc)}'
  raise RuntimeError('credentials failed in all Bybit environments: '+json.dumps(errors))
 async def certify_bybit(p):
  env,c,w=await detect_bybit(p);pos=await c.positions();orders=await c.open_orders();history=await c.order_history(20);closed=await c.closed_pnl(20);a=(w.get('list') or [{}])[0];plist=[x for x in pos.get('list',[]) if f(x.get('size'))]
@@ -61,6 +62,7 @@ async def certify_ibkr(p):
  if p.environment=='PAPER' and not account.get('simulation'):raise RuntimeError('profile is Simulation but IBKR session is Live Money')
  pos=await c.positions();orders=await c.orders();execs=await c.executions(30);p.equity_usd=f(account.get('equity'));p.wallet_balance_usd=f(account.get('cash'));p.available_balance_usd=f(account.get('available'));p.open_positions_count=len([x for x in pos.get('list',[]) if f(x.get('quantity'))]);p.open_orders_count=len(orders.get('list',[]));p.last_connection_status='CONNECTED'
  return f"IBKR {p.environment}: CONNECTED | account={actual} equity={p.equity_usd:.2f} positions={p.open_positions_count} orders={p.open_orders_count} executions={len(execs.get('list',[]))} simulation={bool(account.get('simulation'))}"
+def _detail(exc):return f'{type(exc).__name__}: {str(exc) or repr(exc)}'
 async def verify():
  db=SessionLocal();out=[]
  try:
@@ -74,8 +76,9 @@ async def verify():
      s=get_settings();key=decrypt_secret(p.api_key_encrypted or '');await TwelveDataFxMarketData(s.fx_market_data_base_url,key,s.market_data_timeout_seconds).get_quote('EURUSD');p.last_connection_status='CONNECTED';msg='TWELVE_DATA: CONNECTED (market data only)'
     out.append('PASS | '+msg)
    except Exception as exc:
-    if p.provider=='TWELVE_DATA' and '429' in str(exc):out.append('WARN | TWELVE_DATA: RATE LIMITED (secondary market data; broker-native data remains available)')
-    else:p.last_connection_status='FAILED';out.append(f'FAIL | {p.provider} {p.account_label}: {exc}')
+    detail=_detail(exc)
+    if p.provider=='TWELVE_DATA' and ('429' in detail or 'Too Many Requests' in detail):out.append('WARN | TWELVE_DATA: RATE LIMITED (secondary market data; broker-native data remains available)')
+    else:p.last_connection_status='FAILED';out.append(f'FAIL | {p.provider} {p.account_label}: {detail}')
   db.commit()
  finally:db.close()
  print('\n'.join(out) if out else 'No enabled external provider profiles found')
