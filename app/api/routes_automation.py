@@ -15,13 +15,14 @@ router=APIRouter(prefix="/automation",tags=["automation"])
 
 class AutomationUpdate(BaseModel):
     enabled: bool
-    auto_execute_paper: bool=True
+    simulation_execution: bool|None=None
+    auto_execute_paper: bool|None=None
     interval_seconds: int=Field(300,ge=30,le=86400)
     symbols: list[str]=Field(default_factory=lambda:["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","BNBUSDT"])
 
 
 def _state_payload(s):
-    return {"enabled":s.enabled,"killed":s.killed,"auto_execute_paper":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at}
+    return {"enabled":s.enabled,"killed":s.killed,"simulation_execution":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at}
 
 @router.get("/state")
 def state(_:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -29,7 +30,10 @@ def state(_:User=Depends(get_current_user),db:Session=Depends(get_db)):
 
 @router.put("/state")
 def update(payload:AutomationUpdate,_:User=Depends(require_admin),db:Session=Depends(get_db)):
-    s=get_or_create_state(db);s.enabled=payload.enabled;s.auto_execute_paper=payload.auto_execute_paper;s.interval_seconds=payload.interval_seconds;s.symbols_csv=",".join(dict.fromkeys(x.strip().upper() for x in payload.symbols if x.strip()));db.commit();db.refresh(s);return _state_payload(s)
+    s=get_or_create_state(db);s.enabled=payload.enabled
+    requested=payload.simulation_execution if payload.simulation_execution is not None else payload.auto_execute_paper
+    if requested is not None:s.auto_execute_paper=requested
+    s.interval_seconds=payload.interval_seconds;s.symbols_csv=",".join(dict.fromkeys(x.strip().upper() for x in payload.symbols if x.strip()));db.commit();db.refresh(s);return _state_payload(s)
 
 @router.post("/kill")
 def kill(_:User=Depends(require_admin),db:Session=Depends(get_db)):
