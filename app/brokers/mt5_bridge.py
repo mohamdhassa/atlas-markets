@@ -24,6 +24,7 @@ class Mt5BridgeClient:
     async def positions(self)->dict:return await self._get('/positions')
     async def orders(self)->dict:return await self._get('/orders')
     async def symbol(self,symbol:str)->dict:return await self._get(f'/symbol/{symbol}')
+    async def candles(self,symbol:str,timeframe:str='5m',limit:int=200)->dict:return await self._get(f'/candles/{symbol}?timeframe={timeframe}&limit={max(2,min(limit,500))}')
     async def history_deals(self,days:int=30)->dict:return await self._get(f'/history/deals?days={max(1,min(days,366))}')
     async def order_check(self,payload:dict)->dict:return await self._request('POST','/order/check',payload)
     async def place_demo_order(self,*,symbol:str,side:str,volume:float,stop_loss:float|None=None,take_profit:float|None=None,comment:str='ATLAS DEMO')->dict:
