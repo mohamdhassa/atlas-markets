@@ -29,20 +29,15 @@ class BybitPrivateClient:
             return
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.get(f"{self.base_url}/v5/market/time")
-        response.raise_for_status()
-        payload = response.json()
-        if payload.get("retCode") != 0:
-            raise BybitPrivateError(f"Bybit time sync failed: {payload.get('retMsg', 'request failed')}")
+        response.raise_for_status();payload=response.json()
+        if payload.get("retCode") != 0:raise BybitPrivateError(f"Bybit time sync failed: {payload.get('retMsg', 'request failed')}")
         result = payload.get("result") or {}
         server_ms = int(result.get("timeNano", "0")) // 1_000_000 if result.get("timeNano") else int(result.get("timeSecond", "0")) * 1000
-        if not server_ms:
-            raise BybitPrivateError("Bybit time sync returned no server timestamp")
-        self._time_offset_ms = server_ms - int(time.time() * 1000)
-        self._time_synced_at = now
+        if not server_ms:raise BybitPrivateError("Bybit time sync returned no server timestamp")
+        self._time_offset_ms = server_ms - int(time.time() * 1000);self._time_synced_at = now
 
     def _headers(self, payload: str) -> dict[str, str]:
-        timestamp = str(int(time.time() * 1000) + self._time_offset_ms)
-        plain = timestamp + self.api_key + self.recv_window + payload
+        timestamp = str(int(time.time() * 1000) + self._time_offset_ms);plain = timestamp + self.api_key + self.recv_window + payload
         signature = hmac.new(self.api_secret.encode(), plain.encode(), hashlib.sha256).hexdigest()
         return {"X-BAPI-API-KEY":self.api_key,"X-BAPI-TIMESTAMP":timestamp,"X-BAPI-RECV-WINDOW":self.recv_window,"X-BAPI-SIGN":signature,"Content-Type":"application/json"}
 
@@ -53,8 +48,7 @@ class BybitPrivateClient:
         return payload.get("result") or {}
 
     async def get(self,path:str,params:dict[str,str|int]|None=None)->dict:
-        await self._sync_time()
-        params=params or {};query=urlencode(params);headers=self._headers(query)
+        await self._sync_time();params=params or {};query=urlencode(params);headers=self._headers(query)
         async with httpx.AsyncClient(timeout=self.timeout) as client:response=await client.get(f"{self.base_url}{path}",params=params,headers=headers)
         payload=response.json() if response.headers.get("content-type","").startswith("application/json") else {}
         if payload.get("retCode")==10002:
@@ -63,8 +57,7 @@ class BybitPrivateClient:
         return self._result(response)
 
     async def post(self,path:str,payload:dict)->dict:
-        await self._sync_time()
-        body=json.dumps(payload,separators=(",",":"),ensure_ascii=False);headers=self._headers(body)
+        await self._sync_time();body=json.dumps(payload,separators=(",",":"),ensure_ascii=False);headers=self._headers(body)
         async with httpx.AsyncClient(timeout=self.timeout) as client:response=await client.post(f"{self.base_url}{path}",content=body,headers=headers)
         raw=response.json() if response.headers.get("content-type","").startswith("application/json") else {}
         if raw.get("retCode")==10002:
@@ -75,6 +68,8 @@ class BybitPrivateClient:
     async def wallet(self)->dict:return await self.get("/v5/account/wallet-balance",{"accountType":"UNIFIED"})
     async def positions(self)->dict:return await self.get("/v5/position/list",{"category":"linear","settleCoin":"USDT"})
     async def open_orders(self)->dict:return await self.get("/v5/order/realtime",{"category":"linear","settleCoin":"USDT","openOnly":0})
+    async def closed_pnl(self,limit:int=100)->dict:return await self.get("/v5/position/closed-pnl",{"category":"linear","limit":max(1,min(limit,100))})
+    async def order_history(self,limit:int=100)->dict:return await self.get("/v5/order/history",{"category":"linear","limit":max(1,min(limit,100))})
 
     async def place_demo_market_order(self,*,symbol:str,side:str,qty:float,stop_loss:float|None=None,take_profit:float|None=None,order_link_id:str|None=None)->dict:
         if self.base_url.rstrip("/")=="https://api.bybit.com":raise BybitPrivateError("ATLAS refuses broker-native demo execution on the Bybit LIVE endpoint")
