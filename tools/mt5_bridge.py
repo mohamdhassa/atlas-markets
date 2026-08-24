@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse,os
 from datetime import datetime,timezone,timedelta
-from fastapi import FastAPI,Header,HTTPException
+from fastapi import FastAPI,Header,HTTPException,Query
 from pydantic import BaseModel,Field
 import uvicorn
 try:
@@ -24,36 +24,31 @@ class OrderRequest(BaseModel):
     take_profit:float|None=None
     deviation:int=Field(default=20,ge=0,le=500)
     comment:str=Field(default='ATLAS DEMO',max_length=31)
-
 class CloseRequest(BaseModel):
     deviation:int=Field(default=20,ge=0,le=500)
     comment:str=Field(default='ATLAS CLOSE',max_length=31)
 
 def auth(x_atlas_bridge_token:str|None):
     if TOKEN and x_atlas_bridge_token!=TOKEN:raise HTTPException(401,'invalid bridge token')
-
 def require_terminal():
     kwargs={}
     if LOGIN:
-        try: kwargs['login']=int(LOGIN)
-        except ValueError: raise HTTPException(503,'ATLAS_MT5_LOGIN must be the numeric MT5 login')
-    if PASSWORD: kwargs['password']=PASSWORD
-    if SERVER: kwargs['server']=SERVER
+        try:kwargs['login']=int(LOGIN)
+        except ValueError:raise HTTPException(503,'ATLAS_MT5_LOGIN must be the numeric MT5 login')
+    if PASSWORD:kwargs['password']=PASSWORD
+    if SERVER:kwargs['server']=SERVER
     ok=mt5.initialize(TERMINAL_PATH,**kwargs) if TERMINAL_PATH else mt5.initialize(**kwargs)
     if not ok:raise HTTPException(503,f'MT5 initialize failed: {mt5.last_error()}')
     info=mt5.account_info()
     if info is None:raise HTTPException(503,f'MT5 account unavailable: {mt5.last_error()}')
     if LOGIN and int(getattr(info,'login',0))!=int(LOGIN):raise HTTPException(503,f'MT5 connected to wrong login {getattr(info,"login",None)}; expected {LOGIN}')
     return info
-
 def require_demo(account):
     server=str(getattr(account,'server',''))
     if 'demo' not in server.lower():raise HTTPException(403,f'ATLAS bridge execution is demo-only; connected server is {server or "unknown"}')
     terminal=mt5.terminal_info()
     if terminal and not getattr(terminal,'trade_allowed',False):raise HTTPException(409,'MT5 Algo Trading is disabled in the terminal')
-
 def obj(v):return v._asdict() if hasattr(v,'_asdict') else v
-
 def symbol_info(symbol:str):
     s=symbol.strip().upper();info=mt5.symbol_info(s)
     if info is None:raise HTTPException(404,f'MT5 symbol {s} not found')
@@ -61,7 +56,14 @@ def symbol_info(symbol:str):
     tick=mt5.symbol_info_tick(s)
     if tick is None:raise HTTPException(503,f'No current tick for {s}')
     d=obj(info);d['bid']=float(tick.bid);d['ask']=float(tick.ask);d['time_msc']=getattr(tick,'time_msc',None);return d
-
+def timeframe_value(tf:str):
+    key=tf.strip().lower();mapping={'1m':mt5.TIMEFRAME_M1,'5m':mt5.TIMEFRAME_M5,'15m':mt5.TIMEFRAME_M15,'30m':mt5.TIMEFRAME_M30,'1h':mt5.TIMEFRAME_H1,'4h':mt5.TIMEFRAME_H4,'1d':mt5.TIMEFRAME_D1}
+    if key not in mapping:raise HTTPException(422,'timeframe must be 1m, 5m, 15m, 30m, 1h, 4h or 1d')
+    return mapping[key]
+def candle_rows(symbol:str,timeframe:str,limit:int):
+    s=symbol.strip().upper();symbol_info(s);rates=mt5.copy_rates_from_pos(s,timeframe_value(timeframe),0,max(2,min(int(limit),500)))
+    if rates is None:raise HTTPException(503,f'MT5 candles unavailable for {s}: {mt5.last_error()}')
+    return [{'timestamp':datetime.fromtimestamp(int(x['time']),timezone.utc).isoformat(),'open':float(x['open']),'high':float(x['high']),'low':float(x['low']),'close':float(x['close']),'volume':float(x['tick_volume'])} for x in rates]
 def build_request(payload:OrderRequest,position:int|None=None):
     s=payload.symbol.strip().upper();info=mt5.symbol_info(s)
     if info is None:raise HTTPException(404,f'MT5 symbol {s} not found')
@@ -90,6 +92,9 @@ def orders(x_atlas_bridge_token:str|None=Header(default=None)):
 @app.get('/symbol/{symbol}')
 def get_symbol(symbol:str,x_atlas_bridge_token:str|None=Header(default=None)):
     auth(x_atlas_bridge_token);require_terminal();return symbol_info(symbol)
+@app.get('/candles/{symbol}')
+def get_candles(symbol:str,timeframe:str=Query('5m'),limit:int=Query(200,ge=2,le=500),x_atlas_bridge_token:str|None=Header(default=None)):
+    auth(x_atlas_bridge_token);require_terminal();return {'symbol':symbol.strip().upper(),'timeframe':timeframe,'provider':'MT5_FUSION','list':candle_rows(symbol,timeframe,limit)}
 @app.get('/history/deals')
 def history_deals(days:int=30,x_atlas_bridge_token:str|None=Header(default=None)):
     auth(x_atlas_bridge_token);require_terminal();days=max(1,min(int(days),366));end=datetime.now(timezone.utc);start=end-timedelta(days=days);rows=mt5.history_deals_get(start,end) or [];return {'from':start.isoformat(),'to':end.isoformat(),'list':[obj(x) for x in rows]}
