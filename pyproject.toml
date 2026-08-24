@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "atlas-markets"
 version = "0.1.0"
-description = "24/7 FX + Crypto Algorithmic Trading Platform"
+description = "Multi-market algorithmic trading platform"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.116,<1.0",
@@ -17,6 +17,7 @@ dependencies = [
   "redis>=6.2,<7.0",
   "httpx>=0.28,<1.0",
   "cryptography>=45,<47",
+  "ibapi>=9.81.1.post1,<10.0",
 ]
 
 [project.optional-dependencies]
