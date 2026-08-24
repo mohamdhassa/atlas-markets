@@ -14,6 +14,23 @@ class BrokerCredentialsUpdate(BaseModel):
     api_key: str | None = Field(default=None, max_length=256)
     api_secret: str | None = Field(default=None, max_length=256)
     credentials: dict[str, Any] | None = None
+class BrokerValidateRequest(BaseModel):
+    provider: Provider
+    environment: Environment
+    external_account_ref: str | None = Field(default=None, max_length=128)
+    api_key: str | None = Field(default=None, max_length=256)
+    api_secret: str | None = Field(default=None, max_length=256)
+    credentials: dict[str, Any] | None = None
+class BrokerValidationResult(BaseModel):
+    valid: bool
+    provider: str
+    environment: str
+    connection_status: str
+    message: str
+    detected_account_ref: str | None = None
+    detected_account_name: str | None = None
+    warnings: list[str] = []
+    details: dict[str, Any] = {}
 class BrokerConnectRequest(BrokerProfileCreate):
     api_key: str | None = Field(default=None, max_length=256)
     api_secret: str | None = Field(default=None, max_length=256)
