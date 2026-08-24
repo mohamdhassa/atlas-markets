@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -19,19 +19,30 @@ def _is_admin(user: User) -> bool:
 
 def _profile(db: Session, user: User, profile_id: uuid.UUID) -> BrokerProfile:
     profile = db.get(BrokerProfile, profile_id)
-    if profile is None:
+    if profile is None or profile.provider == "ATLAS_PAPER":
         raise HTTPException(404, "account not found")
     if not _is_admin(user) and profile.user_id != user.id:
         raise HTTPException(403, "account access denied")
     return profile
 
 
+def _replacement(db: Session, profile: BrokerProfile) -> BrokerProfile | None:
+    return db.scalar(
+        select(BrokerProfile)
+        .where(
+            BrokerProfile.user_id == profile.user_id,
+            BrokerProfile.provider == profile.provider,
+            BrokerProfile.provider != "ATLAS_PAPER",
+            BrokerProfile.id != profile.id,
+            BrokerProfile.is_enabled.is_(True),
+            BrokerProfile.last_connection_status == "CONNECTED",
+        )
+        .order_by(BrokerProfile.created_at.desc())
+    )
+
+
 @router.post("/{profile_id}/disconnect")
-def disconnect_account(
-    profile_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def disconnect_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     profile = _profile(db, user, profile_id)
     profile.live_execution_enabled = False
     profile.live_execution_armed_at = None
@@ -49,53 +60,29 @@ def disconnect_account(
     profile.available_balance_usd = None
     profile.open_positions_count = 0
     profile.open_orders_count = 0
-    replacement = db.scalar(
-        select(BrokerProfile)
-        .where(
-            BrokerProfile.user_id == profile.user_id,
-            BrokerProfile.provider == profile.provider,
-            BrokerProfile.id != profile.id,
-            BrokerProfile.is_enabled.is_(True),
-        )
-        .order_by(BrokerProfile.environment.desc(), BrokerProfile.created_at.desc())
-    )
-    if replacement is not None:
-        replacement.is_active = True
+    replacement = _replacement(db, profile)
+    if replacement is not None: replacement.is_active = True
     db.commit()
-    return {
-        "id": str(profile.id),
-        "status": "DISCONNECTED",
-        "message": f"{profile.account_label} disconnected and stored credentials removed.",
-    }
+    return {"id": str(profile.id),"status": "DISCONNECTED","message": f"{profile.account_label} disconnected and stored credentials removed."}
+
+
+@router.patch("/{profile_id}/toggle")
+def toggle_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
+    profile = _profile(db,user,profile_id);profile.is_enabled = not profile.is_enabled
+    if not profile.is_enabled:
+        profile.is_active=False;profile.live_execution_enabled=False;profile.live_execution_armed_at=None
+        replacement=_replacement(db,profile)
+        if replacement is not None:replacement.is_active=True
+    db.commit();db.refresh(profile);return profile
 
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_account(
-    profile_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def delete_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     profile = _profile(db, user, profile_id)
     if profile.open_positions_count or profile.open_orders_count:
-        raise HTTPException(409, "close open positions and orders before deleting this account")
-    if profile.provider == "ATLAS_PAPER":
-        raise HTTPException(409, "ATLAS Paper accounts keep local trade history; disable them instead of deleting")
+        raise HTTPException(409, "close open positions and orders before removing this connection")
     was_active = profile.is_active
-    owner_id = profile.user_id
-    provider = profile.provider
-    db.delete(profile)
-    db.flush()
-    if was_active:
-        replacement = db.scalar(
-            select(BrokerProfile)
-            .where(
-                BrokerProfile.user_id == owner_id,
-                BrokerProfile.provider == provider,
-                BrokerProfile.is_enabled.is_(True),
-            )
-            .order_by(BrokerProfile.environment.desc(), BrokerProfile.created_at.desc())
-        )
-        if replacement is not None:
-            replacement.is_active = True
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    replacement = _replacement(db, profile) if was_active else None
+    db.delete(profile);db.flush()
+    if replacement is not None: replacement.is_active = True
+    db.commit();return Response(status_code=status.HTTP_204_NO_CONTENT)
