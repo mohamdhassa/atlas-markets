@@ -4,6 +4,7 @@ from datetime import datetime,timedelta,timezone
 from sqlalchemy import select
 from app.brokers.bybit_private import BybitPrivateClient
 from app.brokers.mt5_bridge import Mt5BridgeClient
+from app.brokers.ibkr_bridge import IbkrBridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.automation import AutomationScan,AutomationState
@@ -39,10 +40,15 @@ def _bybit_simulation_client(a,settings):
  if not a.api_key_encrypted or not a.api_secret_encrypted:raise RuntimeError('Bybit Simulation credentials are not configured')
  base=settings.bybit_demo_base_url if a.environment=='DEMO' else settings.bybit_testnet_base_url
  return BybitPrivateClient(decrypt_secret(a.api_key_encrypted),decrypt_secret(a.api_secret_encrypted),base,settings.market_data_timeout_seconds)
+def _bridge_creds(a):
+ if not a.credential_blob_encrypted:raise RuntimeError(f'{a.provider} Simulation bridge configuration is missing')
+ return json.loads(decrypt_secret(a.credential_blob_encrypted))
 def _mt5_simulation_client(a,settings):
  if a.environment!='DEMO':raise RuntimeError('automation refuses MT5 Live Money execution')
- if not a.credential_blob_encrypted:raise RuntimeError('MT5 Simulation credentials are not configured')
- c=json.loads(decrypt_secret(a.credential_blob_encrypted));return Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),settings.market_data_timeout_seconds)
+ c=_bridge_creds(a);return Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),settings.market_data_timeout_seconds)
+def _ibkr_simulation_client(a,settings):
+ if a.environment!='PAPER':raise RuntimeError('automation refuses IBKR Live Money execution')
+ c=_bridge_creds(a);return IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),settings.market_data_timeout_seconds)
 def _wallet_numbers(wallet):
  a=(wallet.get('list') or [{}])[0];equity=float(a.get('totalEquity') or a.get('totalWalletBalance') or 0);available=float(a.get('totalAvailableBalance') or a.get('totalWalletBalance') or equity);return equity,available
 def _configs(db,account,state):
@@ -61,7 +67,7 @@ async def run_scan()->dict:
  with SessionLocal() as db:
   state=get_or_create_state(db);default=_strategy(db)
   if not state.enabled or state.killed or not default.enabled:return {'status':'SKIPPED','reason':'ENGINE_DISABLED' if not state.enabled else 'KILL_SWITCH' if state.killed else 'STRATEGY_DISABLED'}
-  accounts=list(db.scalars(select(BrokerProfile).where(BrokerProfile.provider.in_(['BYBIT','MT5']),BrokerProfile.environment.in_(['DEMO','TESTNET']),BrokerProfile.is_enabled.is_(True),BrokerProfile.is_active.is_(True),BrokerProfile.credentials_configured.is_(True),BrokerProfile.last_connection_status=='CONNECTED')).all())
+  accounts=list(db.scalars(select(BrokerProfile).where(BrokerProfile.provider.in_(['BYBIT','MT5','IBKR']),BrokerProfile.environment.in_(['DEMO','TESTNET','PAPER']),BrokerProfile.is_enabled.is_(True),BrokerProfile.is_active.is_(True),BrokerProfile.credentials_configured.is_(True),BrokerProfile.last_connection_status=='CONNECTED')).all())
   if not accounts:return {'status':'SKIPPED','reason':'NO_CONNECTED_EXTERNAL_SIMULATION_ACCOUNT'}
   all_configs={a.id:_configs(db,a,state) for a in accounts};scan=AutomationScan(status='RUNNING',symbols_count=sum(len(x) for x in all_configs.values()),accounts_count=len(accounts));db.add(scan);db.commit();db.refresh(scan);crypto_market=BybitPublicMarketData(settings.bybit_public_base_url,settings.market_data_timeout_seconds);risk=_risk(db)
   try:
@@ -91,8 +97,20 @@ async def run_scan()->dict:
       approved,reason,details=evaluate_risk(generated,minimum_signal_score=minimum,account_enabled=account.is_enabled,allow_live_trading=False,account_environment=account.environment);details.update({'execution_environment':'SIMULATION','provider_environment':account.environment,'broker':'MT5_FUSION','strategy_mode':cfg.mode,'market':cfg.market,'market_data_provider':'MT5_FUSION'});sig=_record(db,scan,account,cfg,generated,approved,reason,details,timeframe)
       if cfg.mode=='AUTO_TRADE' and approved and state.auto_execute_paper and generated.decision in {'BUY','SELL'} and len(open_symbols)<risk.max_open_positions and symbol not in open_symbols:
        info=await broker.symbol(symbol);price=float(info.get('ask') if generated.decision=='BUY' else info.get('bid'));plan=build_execution_plan(decision=generated.decision,price=price,equity=equity,available_cash=available,risk_per_trade_pct=risk_pct,stop_atr_multiplier=stop,take_profit_rr=rr,max_position_notional_pct=max_pos);contract=float(info.get('trade_contract_size') or 100000);volume=_round_volume(plan.quantity/contract,info);await broker.order_check({'symbol':symbol,'side':generated.decision,'volume':volume,'stop_loss':plan.stop_loss,'take_profit':plan.take_profit,'comment':'ATLAS SIMULATION'});await broker.place_demo_order(symbol=symbol,side=generated.decision,volume=volume,stop_loss=plan.stop_loss,take_profit=plan.take_profit,comment='ATLAS SIMULATION');scan.executed_count+=1;open_symbols.add(symbol)
+    elif account.provider=='IBKR':
+     broker=_ibkr_simulation_client(account,settings);health=await broker.health();acct=await broker.account();equity=float(acct.get('equity') or 0);available=float(acct.get('available') or acct.get('cash') or equity);pos=await broker.positions();position_rows=[x for x in pos.get('list',[]) if float(x.get('quantity') or 0)!=0];open_symbols={str(x.get('symbol') or '').upper() for x in position_rows};account.equity_usd=equity;account.available_balance_usd=available;account.open_positions_count=len(position_rows)
+     if not health.get('connected') or not health.get('simulation'):continue
+     for cfg in all_configs[account.id]:
+      if cfg.market not in {'STOCK','ETF'}:continue
+      symbol=cfg.symbol;timeframe,minimum,risk_pct,stop,rr,max_pos=_params(cfg,default,risk);raw=(await broker.candles(symbol,timeframe,200,sec_type='STK')).get('list',[]);technical=generate_signal(raw);news=context_for_symbol(db,symbol,hours=24);generated=_with_history(apply_news_context(technical,news),historical_probability(db_candles(db,cfg.market,symbol,timeframe),horizon=6))
+      if cfg.mode=='WATCH':continue
+      approved,reason,details=evaluate_risk(generated,minimum_signal_score=minimum,account_enabled=account.is_enabled,allow_live_trading=False,account_environment=account.environment);details.update({'execution_environment':'SIMULATION','provider_environment':'PAPER','broker':'IBKR','strategy_mode':cfg.mode,'market':cfg.market,'market_data_provider':'IBKR'});sig=_record(db,scan,account,cfg,generated,approved,reason,details,timeframe)
+      if cfg.mode=='AUTO_TRADE' and approved and state.auto_execute_paper and generated.decision in {'BUY','SELL'} and len(open_symbols)<risk.max_open_positions and symbol not in open_symbols:
+       quote=await broker.quote(symbol,sec_type='STK');price=float(quote.get('ask') if generated.decision=='BUY' else quote.get('bid') or quote.get('last'));plan=build_execution_plan(decision=generated.decision,price=price,equity=equity,available_cash=available,risk_per_trade_pct=risk_pct,stop_atr_multiplier=stop,take_profit_rr=rr,max_position_notional_pct=max_pos);shares=math.floor(plan.quantity)
+       if shares>=1 and shares*price<=available:
+        payload={'symbol':symbol,'side':generated.decision,'quantity':shares,'order_type':'MKT','sec_type':'STK','exchange':'SMART','currency':'USD','account_id':acct.get('account_id')};await broker.order_check(payload);await broker.place_order(payload);scan.executed_count+=1;open_symbols.add(symbol);available=max(0,available-shares*price)
     db.flush()
-   now=datetime.now(timezone.utc);scan.status='COMPLETED';scan.finished_at=now;state.last_scan_at=now;state.next_scan_at=now+timedelta(seconds=state.interval_seconds);db.commit();return {'status':scan.status,'signals':scan.signals_count,'approved':scan.approved_count,'executed':scan.executed_count,'execution':'EXTERNAL_BROKER_SIMULATION','brokers':['BYBIT','MT5_FUSION'],'strategy_scope':'PER_ACCOUNT_SYMBOL'}
+   now=datetime.now(timezone.utc);scan.status='COMPLETED';scan.finished_at=now;state.last_scan_at=now;state.next_scan_at=now+timedelta(seconds=state.interval_seconds);db.commit();return {'status':scan.status,'signals':scan.signals_count,'approved':scan.approved_count,'executed':scan.executed_count,'execution':'EXTERNAL_BROKER_SIMULATION','brokers':['BYBIT','MT5_FUSION','IBKR'],'strategy_scope':'PER_ACCOUNT_SYMBOL'}
   except Exception as exc:scan.status='FAILED';scan.error_message=str(exc)[:500];scan.finished_at=datetime.now(timezone.utc);db.commit();return {'status':'FAILED','error':scan.error_message}
 async def automation_loop(stop_event:asyncio.Event):
  while not stop_event.is_set():
