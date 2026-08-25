@@ -88,11 +88,13 @@ async def main():
 
         check = await client.order_check({"symbol": symbol, "side": "BUY", "volume": volume, "comment": "ATLAS CERT MT5"})
         check_result = check.get("result") or {}
-        retcode = int(check_result.get("retcode") or -1)
+        raw_retcode = check_result.get("retcode")
+        retcode = int(raw_retcode) if raw_retcode is not None else -1
         if retcode not in {0, 10009}:
             raise RuntimeError(f"MT5 preflight rejected certification order: {check_result}")
 
         print(f"CERTIFY | MT5 DEMO | login={account.get('login')} server={server} equity={f(account.get('equity')):.2f}")
+        print(f"PREFLIGHT| retcode={retcode} comment={check_result.get('comment')}")
         print(f"ORDER   | {symbol} BUY Market volume={volume:g}")
         created = await client.place_demo_order(symbol=symbol, side="BUY", volume=volume, comment="ATLAS CERT MT5")
         result = created.get("result") or {}
