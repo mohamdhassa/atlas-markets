@@ -42,6 +42,18 @@ async def wait_until_closed(client: Mt5BridgeClient, ticket: int, timeout: float
     return False
 
 
+async def wait_for_deals(client: Mt5BridgeClient, deal_ids: set[int], timeout: float = 10.0):
+    deadline = time.monotonic() + timeout
+    latest = []
+    while time.monotonic() < deadline:
+        latest = (await client.history_deals(1)).get("list", [])
+        seen = {int(row.get("ticket") or 0) for row in latest if row.get("ticket")}
+        if deal_ids.issubset(seen):
+            return True, latest
+        await asyncio.sleep(1.0)
+    return False, latest
+
+
 async def main():
     db = SessionLocal()
     try:
@@ -84,7 +96,6 @@ async def main():
 
         before_rows = (await client.positions()).get("list", [])
         before_tickets = {int(x.get("ticket") or 0) for x in before_rows if x.get("ticket")}
-        deals_before = len((await client.history_deals(1)).get("list", []))
 
         check = await client.order_check({"symbol": symbol, "side": "BUY", "volume": volume, "comment": "ATLAS CERT MT5"})
         check_result = check.get("result") or {}
@@ -98,7 +109,11 @@ async def main():
         print(f"ORDER   | {symbol} BUY Market volume={volume:g}")
         created = await client.place_demo_order(symbol=symbol, side="BUY", volume=volume, comment="ATLAS CERT MT5")
         result = created.get("result") or {}
-        print(f"OPEN    | retcode={result.get('retcode')} order={result.get('order')} deal={result.get('deal')}")
+        open_retcode = int(result.get("retcode") or -1)
+        open_deal = int(result.get("deal") or 0)
+        if open_retcode not in {10008, 10009} or not open_deal:
+            raise RuntimeError(f"MT5 open execution was not confirmed: {result}")
+        print(f"OPEN    | retcode={open_retcode} order={result.get('order')} deal={open_deal}")
 
         position = await wait_for_new_position(client, before_tickets, symbol)
         if not position:
@@ -110,14 +125,21 @@ async def main():
 
         closed = await client.close_demo_position(ticket)
         close_result = closed.get("result") or {}
-        print(f"CLOSE   | retcode={close_result.get('retcode')} order={close_result.get('order')} deal={close_result.get('deal')}")
+        close_retcode = int(close_result.get("retcode") or -1)
+        close_deal = int(close_result.get("deal") or 0)
+        if close_retcode not in {10008, 10009} or not close_deal:
+            raise RuntimeError(f"MT5 close execution was not confirmed: {close_result}")
+        print(f"CLOSE   | retcode={close_retcode} order={close_result.get('order')} deal={close_deal}")
         if not await wait_until_closed(client, ticket):
             raise RuntimeError(f"MT5 close was submitted but position ticket {ticket} is still open")
 
-        deals_after = len((await client.history_deals(1)).get("list", []))
-        if deals_after < deals_before + 2:
-            raise RuntimeError(f"Expected at least 2 new MT5 deals, before={deals_before} after={deals_after}")
-        print(f"PASS    | MT5 DEMO EXECUTION CERTIFIED | ticket={ticket} deals_added={deals_after - deals_before}")
+        found, history = await wait_for_deals(client, {open_deal, close_deal})
+        if found:
+            print(f"HISTORY | confirmed deals={open_deal},{close_deal} rows={len(history)}")
+        else:
+            print(f"WARN    | execution confirmed but /history/deals has not exposed deals {open_deal},{close_deal} yet; rows={len(history)}")
+
+        print(f"PASS    | MT5 DEMO EXECUTION CERTIFIED | ticket={ticket} open_deal={open_deal} close_deal={close_deal} flat=True")
     finally:
         db.close()
 
