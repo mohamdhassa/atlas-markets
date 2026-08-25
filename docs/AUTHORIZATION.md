@@ -1,7 +1,5 @@
 # ATLAS MARKETS — Authentication and Authorization
 
-Last reconciled: 2026-08-25.
-
 ## Roles
 
 ATLAS MARKETS has exactly two application roles:
@@ -9,7 +7,7 @@ ATLAS MARKETS has exactly two application roles:
 - `ADMIN`
 - `USER`
 
-There is no intermediate application role hierarchy.
+There is no intermediate role hierarchy.
 
 ## Authentication model
 
@@ -18,149 +16,152 @@ Authentication uses opaque bearer session tokens backed by PostgreSQL.
 Flow:
 
 1. User submits username/password to `POST /auth/login`.
-2. Password is verified against the stored salted password hash.
+2. Password is verified against a salted PBKDF2-SHA256 hash.
 3. A cryptographically random session token is generated.
-4. Only the protected/hash representation required by the server-side session model is persisted.
-5. The raw bearer token is returned to the client for authenticated requests.
+4. Only an HMAC-SHA256 hash of the session token is stored in `user_sessions`.
+5. The raw token is returned once to the client.
 6. Protected requests send `Authorization: Bearer <token>`.
-7. Logout/revocation invalidates the server-side session.
+7. Logout revokes the server-side session immediately.
 
-Session lifetime is controlled by application configuration.
+Sessions expire according to `SESSION_TTL_HOURS`.
 
-## Application identity tables
+## Password storage
 
-### `users`
+Readable passwords are never stored. Password hashes use PBKDF2-HMAC-SHA256 with a per-password random salt.
 
-Stores application identity, password hash, role and active/disabled state.
+## Tables
 
-### `user_sessions`
+### users
 
-Stores revocable server-side session information and expiration/security metadata.
+Stores application identities, password hashes, role and active/disabled state.
 
-### `auth_audit_log`
+### user_sessions
 
-Records authentication/security events such as login attempts and administrative identity actions supported by the implementation.
+Stores hashed session tokens, expiration, revocation state and basic connection metadata.
 
-## Broker/account ownership
+### auth_audit_log
 
-External execution accounts are represented by `BrokerProfile` records.
+Records login attempts, successful logins, logout and user creation events.
 
-Each broker profile has a `user_id` owner and operational fields including provider, environment, external account reference, enabled/active state, encrypted credentials, connection/sync state and Live Money gates.
+## API
 
-Authorization rule:
+### Public
 
-```text
-authenticated user
-      ↓
-resolve permitted BrokerProfile IDs
-      ↓
-account-scoped service/API operation
-```
+- `POST /auth/login`
 
-A client-provided profile ID is never sufficient authorization by itself.
+### Authenticated
 
-`ADMIN` may perform explicitly authorized platform-wide operations. `USER` access must remain constrained to the user's own permitted resources.
+- `GET /auth/me`
+- `POST /auth/logout`
 
-## ADMIN capabilities
+### ADMIN only
 
-The intended ADMIN/Owner role has platform-wide control over:
+- `GET /admin/users`
+- `POST /admin/users`
+- `GET /admin/ping`
 
-- users;
-- external provider/broker profiles;
-- system/integration state;
-- strategy configuration;
-- risk configuration;
-- automation/engine controls;
-- kill/restart/safety controls where implemented;
-- aggregate dashboards/results;
-- viewing user results for administration.
+## Bootstrap the first administrator
 
-ADMIN authority does **not** automatically bypass execution safety or Live Money gates.
-
-## USER capabilities
-
-The intended USER role can access the user's own permitted:
-
-- provider/account state;
-- balances/equity;
-- positions/orders/executions where exposed;
-- signals/analysis;
-- performance/history;
-- permitted account controls.
-
-Users must not be able to enumerate or mutate another user's broker profiles or trading data by changing IDs in frontend/API requests.
-
-## Public registration
-
-Public self-registration is not part of the current intended security model. User creation is an administrative function unless a future approved requirement explicitly changes this decision.
-
-## Bootstrap administrator
-
-For a new local/development database, use the repository's administrator creation script, for example:
+After migrations are current, run inside the application container:
 
 ```powershell
 docker compose exec app python -m app.scripts.create_admin --username admin
 ```
 
-Use a strong password and avoid putting production credentials in shell history.
+The command prompts for a password. Use at least 12 characters.
 
-## Provider credential security
+For non-interactive local automation only, `--password` is also supported. Avoid placing real production passwords in shell history.
 
-The current `BrokerProfile` ORM stores encrypted provider credential fields directly on the profile (`api_key_encrypted`, `api_secret_encrypted`, `credential_blob_encrypted`) together with the safe boolean `credentials_configured`.
+## Authorization rules
 
-Rules:
+`ADMIN` can access platform-wide administration endpoints.
 
-- never log readable API secrets/tokens;
-- never return encrypted credential blobs as normal account API data;
-- do not store new provider secrets in plaintext columns;
-- do not commit `.env` secrets or generated OAuth/access tokens to Git;
-- rotate any credential exposed during development.
+`USER` can authenticate but receives HTTP 403 for ADMIN endpoints.
 
-## Live Money authorization is separate
+Future account-scoped APIs must resolve allowed `profile_id` values from the authenticated user. Client-supplied profile IDs must never be trusted without ownership/authorization validation.
 
-Authentication and ADMIN role do not by themselves authorize Live Money trading.
+## Security notes
 
-The broker profile includes explicit live-safety state:
+- `SESSION_SECRET` must be replaced with a strong secret before production.
+- Session tokens are revocable because sessions are server-side.
+- Failed and successful authentication attempts are audited.
+- Disabled users cannot create or use sessions.
+- Live trading remains independently controlled by server-side trading policy; authentication does not enable live trading.
+
+---
+
+# Current Security / Authorization Addendum — 2026-08-25
+
+The original authentication and role model above remains in force. Later development adds external-provider ownership and execution-safety requirements without replacing the original model.
+
+## Broker/account ownership
+
+External broker/exchange accounts are represented by `BrokerProfile` records with a `user_id` owner.
+
+Account-scoped operations must follow:
+
+```text
+authenticated identity
+→ resolve/validate permitted BrokerProfile IDs
+→ perform account-scoped operation
+```
+
+A client-provided profile ID is never sufficient authorization by itself.
+
+`ADMIN` has explicit platform-wide administrative access where routes/services authorize it. `USER` remains restricted to owned/permitted resources.
+
+## Expanded ADMIN / USER scope
+
+ADMIN/Owner may manage users, provider profiles, strategy/risk configuration, integrations, automation/system controls and aggregate results. USER access remains scoped to the user's own permitted accounts, analysis, orders/positions, history and performance.
+
+There are still only two application roles; later provider work does not introduce another role tier.
+
+## Provider credential handling
+
+The current BrokerProfile implementation stores encrypted credential material in fields such as:
+
+- `api_key_encrypted`
+- `api_secret_encrypted`
+- `credential_blob_encrypted`
+- `credentials_configured` (safe status flag)
+
+Secrets/tokens must not be logged, returned by normal profile reads, or committed to Git/.env examples with real values.
+
+## Live Money authorization remains separate
+
+Authentication, ownership and ADMIN status do **not** by themselves authorize Live Money execution.
+
+The current broker profile includes explicit safety state such as:
 
 - `live_execution_enabled`
 - `live_execution_armed_at`
 
-Execution code must additionally validate provider environment, account state, risk policy and any other required server-side gate.
+Execution paths must also validate provider environment, account status, risk policy and global/server-side Live Money gates.
 
-Current certification policy:
+Current certification environments remain:
 
-- Fusion MT5 execution certification: Demo only;
-- IBKR execution certification: Paper only;
-- Bybit execution work: Testnet only and currently provider-blocked by `10024`;
-- unrestricted Live Money automatic execution: not certified.
+- Fusion MT5: Demo
+- IBKR: Paper
+- Bybit: Testnet
+
+Unrestricted Live Money automatic execution is not certified.
 
 ## Bridge security
 
-MT5 and IBKR use local Windows-side bridges. These bridges should remain local/private and should not become unauthenticated internet-facing execution APIs.
+MT5 and IBKR use local Windows-side bridges. These should remain private/local rather than exposed as unauthenticated internet-facing execution APIs. IBKR Paper/simulation mode must be verified before certification orders, and duplicate TWS/IB Gateway client IDs should be avoided.
 
-For IBKR, simulation/Paper mode must be verified before certification orders. Duplicate TWS/IB Gateway client IDs should be avoided.
+## Provider/regulatory restrictions
 
-## Security invariants
+Provider errors indicating product/regulatory restrictions must be surfaced and respected. In particular, Bybit Testnet execution currently returns provider error `10024`; ATLAS must not attempt to bypass that restriction.
 
-1. Disabled users cannot retain normal authenticated access.
-2. Account ownership is enforced server-side.
-3. ADMIN access is explicit, not an accidental missing ownership filter.
-4. Provider credentials remain encrypted/server-side.
-5. Strategy/AI decisions cannot bypass risk or environment gates.
-6. Live Money requires explicit server-side authorization beyond login/role.
-7. Regulatory/provider restrictions are surfaced, not bypassed.
-8. Authentication/security events should remain auditable.
+## Additional authorization testing expectations
 
-## Testing expectations
-
-Authorization tests should cover at minimum:
+New account/provider features should test:
 
 - unauthenticated rejection;
 - USER rejection from ADMIN-only routes;
-- USER inability to access another user's broker profile/data;
-- ADMIN permitted administrative access;
-- disabled/revoked session behavior;
-- Live Money gate independence from role;
-- secret fields absent from normal API responses.
-
-Any new account-scoped endpoint must add ownership/authorization tests with the feature rather than deferring them to release.
+- USER inability to read/mutate another user's broker profile/data;
+- ADMIN authorized access;
+- revoked/disabled session behavior;
+- Live Money gate independence from login/role;
+- secret/encrypted fields absent from normal API responses.
