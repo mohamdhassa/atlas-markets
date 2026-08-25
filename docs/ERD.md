@@ -1,15 +1,33 @@
-# Atlas Markets — PostgreSQL ERD
+# ATLAS MARKETS — PostgreSQL Model / ERD Reference
 
-## Design principles
+Last reconciled: 2026-08-25.
 
-- Primary keys use UUID unless a high-volume time-series table benefits from bigint identity.
-- All timestamps use `TIMESTAMPTZ` in UTC.
-- Account-scoped trading records carry `profile_id` directly for isolation and indexing.
-- Sensitive provider credentials are separated from normal broker-profile metadata.
-- Strategy and risk configuration changes are versioned/audited.
-- Provider external IDs are stored alongside internal IDs for reconciliation.
+## Important status
 
-## Core ERD
+The original Phase 0 ERD was a target blueprint and no longer exactly matches the implementation. This document now distinguishes the **implemented model families** from longer-term domain targets so developers do not mistake proposed tables for deployed tables.
+
+PostgreSQL remains the durable application store. UUID identifiers are used extensively, timestamps are stored with timezone-aware columns where defined, and user/account ownership is enforced through model relationships plus authorization logic.
+
+## Current implemented model modules
+
+The active branch currently contains these model modules under `app/db/models/`:
+
+```text
+auth.py
+automation.py
+broker.py
+historical.py
+news.py
+paper.py
+reporting.py
+signal.py
+strategy.py
+symbol_strategy.py
+```
+
+`app/db/models/__init__.py` imports the active ORM model set for migration/application use.
+
+## Core implemented relationship map
 
 ```mermaid
 erDiagram
@@ -17,168 +35,141 @@ erDiagram
     USERS ||--o{ AUTH_AUDIT_LOG : generates
     USERS ||--o{ BROKER_PROFILES : owns
 
-    BROKER_PROFILES ||--|| BROKER_CREDENTIALS : secures
-    BROKER_PROFILES ||--o{ SIGNALS : receives
-    BROKER_PROFILES ||--o{ ORDERS : submits
-    BROKER_PROFILES ||--o{ POSITIONS : holds
-    BROKER_PROFILES ||--o{ TRADES : completes
-    BROKER_PROFILES ||--o{ EQUITY : records
-    BROKER_PROFILES ||--o{ RISK_EVENTS : generates
-    BROKER_PROFILES }o--|| RISK_PROFILES : uses
-
-    INSTRUMENTS ||--o{ MARKET_TICKS : has
-    INSTRUMENTS ||--o{ CANDLES : has
-    INSTRUMENTS ||--o{ TECHNICAL_INDICATORS : analyzed_by
-    INSTRUMENTS ||--o{ MARKET_STRUCTURE : structured_by
-    INSTRUMENTS ||--o{ SUPPORT_RESISTANCE : levels
-    INSTRUMENTS ||--o{ MARKET_REGIMES : classified_as
-    INSTRUMENTS ||--o{ SIGNALS : produces
-    INSTRUMENTS ||--o{ ORDERS : traded
-    INSTRUMENTS ||--o{ POSITIONS : held
-
-    SIGNALS ||--o{ SIGNAL_REASONS : explains
-    SIGNALS ||--o| ORDERS : may_create
-
-    ORDERS ||--o{ ORDER_EVENTS : transitions
-    ORDERS ||--o{ TRADES : fills
-
-    POSITIONS ||--o{ POSITION_EVENTS : transitions
-    POSITIONS ||--o{ TRADES : aggregates
-
-    STRATEGIES ||--o{ STRATEGY_VERSIONS : versions
-    STRATEGY_VERSIONS ||--o{ STRATEGY_VARIABLES : defines
-    STRATEGY_VERSIONS ||--o{ SIGNALS : evaluates
-
-    RISK_PROFILES ||--o{ RISK_EVENTS : evaluates
-
-    ENGINE_STATE ||--o{ SYSTEM_EVENTS : emits
-    INTEGRATION_PROFILES ||--o{ SYSTEM_EVENTS : emits
-    CONFIG_VARIABLES ||--o{ CONFIG_AUDIT : changes
+    BROKER_PROFILES {
+        uuid id PK
+        uuid user_id FK
+        string provider
+        string account_label
+        string environment
+        string external_account_ref
+        boolean is_enabled
+        boolean is_active
+        boolean live_execution_enabled
+        datetime live_execution_armed_at
+        boolean credentials_configured
+        string last_connection_status
+        datetime last_connection_test_at
+        datetime last_sync_at
+        float equity_usd
+        float wallet_balance_usd
+        float available_balance_usd
+        int open_positions_count
+        int open_orders_count
+    }
 ```
 
-## Table outline
+Additional implemented persistence families cover automation, historical intelligence/backtesting, news intelligence, paper trading, reporting, signals/decisions, strategy state and per-symbol strategy state. Refer to the ORM modules and migrations as the authoritative column-level schema.
 
-### users
-`id`, `username`, `password_hash`, `role`, `is_active`, `created_at`, `updated_at`, `last_login_at`
+## Authentication tables
 
-Constraints: unique username; role limited to ADMIN/USER.
+The implemented authentication model includes:
 
-### user_sessions
-`id`, `user_id`, `token_hash`, `created_at`, `expires_at`, `revoked_at`, `ip_address`, `user_agent`
+- `users` — application identity, password hash, role and active state;
+- `user_sessions` — server-side revocable session state;
+- `auth_audit_log` — authentication/security audit events.
 
-### auth_audit_log
-`id`, `user_id`, `event_type`, `success`, `ip_address`, `metadata_json`, `created_at`
+Only `ADMIN` and `USER` roles are valid application roles.
 
-### broker_profiles
-`id` (this is the logical `profile_id`), `user_id`, `provider`, `account_label`, `environment`, `external_account_ref`, `credential_fingerprint`, `is_enabled`, `last_connection_test_at`, `last_connection_status`, `created_at`, `updated_at`
+## Broker profiles — current implementation
 
-Constraints: credential fingerprint unique where active; index `(user_id, is_enabled)`.
+`broker_profiles` is the current external-provider account model. Its UUID `id` is the logical broker profile identifier.
 
-### broker_credentials
-`id`, `profile_id`, `encrypted_json`, `key_version`, `updated_at`
+Implemented fields include:
 
-No readable API key/secret columns.
+- `id`
+- `user_id`
+- `provider`
+- `account_label`
+- `environment`
+- `external_account_ref`
+- `is_enabled`
+- `is_active`
+- `live_execution_enabled`
+- `live_execution_armed_at`
+- `last_connection_status`
+- `last_connection_test_at`
+- `api_key_encrypted`
+- `api_secret_encrypted`
+- `credential_blob_encrypted`
+- `credentials_configured`
+- `last_sync_at`
+- `equity_usd`
+- `wallet_balance_usd`
+- `available_balance_usd`
+- `open_positions_count`
+- `open_orders_count`
+- `created_at`
+- `updated_at`
 
-### instruments
-`id`, `provider`, `market_type`, `symbol`, `base_asset`, `quote_asset`, `price_precision`, `quantity_precision`, `min_quantity`, `contract_size`, `is_active`, `metadata_json`
+### Difference from the Phase 0 blueprint
 
-Unique `(provider, market_type, symbol)`.
+The old ERD described a separate one-to-one `broker_credentials` table and a credential fingerprint column on `broker_profiles`. That is **not the current `BrokerProfile` ORM implementation**. Encrypted credential fields currently live directly on `broker_profiles`.
 
-### market_ticks
-`id`, `instrument_id`, `provider_ts`, `received_at`, `bid`, `ask`, `last`, `volume`, `sequence_no`
+Future credential-schema hardening may revisit this design, but documentation must describe the deployed ORM/migrations until an actual migration changes it.
 
-Time-series table with index `(instrument_id, provider_ts DESC)`; partitioning considered later based on volume.
+## Provider/account meaning
 
-### candles
-`id`, `instrument_id`, `timeframe`, `open_time`, `close_time`, `open`, `high`, `low`, `close`, `volume`, `is_closed`, `source`
+Current provider profiles represent external accounts/connections such as:
 
-Unique `(instrument_id, timeframe, open_time)`.
+- IBKR Paper account `DUR980544`
+- Fusion MT5 Demo login `448261`
+- Bybit Testnet AI subaccount `107068845`
 
-### technical_indicators
-`id`, `instrument_id`, `timeframe`, `candle_time`, `indicator_name`, `indicator_version`, `values_json`
+Twelve Data is market-data-only and should not be modeled/routed as an execution broker account when execution semantics are involved.
 
-### market_structure
-`id`, `instrument_id`, `timeframe`, `candle_time`, `structure_class`, `bos`, `breakout`, `failed_breakout`, `details_json`
+## Other implemented persistence families
 
-### support_resistance
-`id`, `instrument_id`, `timeframe`, `detected_at`, `level_type`, `price`, `strength`, `details_json`
+### Automation
 
-### signals
-`id`, `profile_id`, `instrument_id`, `strategy_version_id`, `timeframe`, `decision`, `classification`, `score`, `risk_status`, `execution_status`, `created_at`
+Automation models persist runtime/automation state needed by the automatic trading workflow. Exact fields are defined in `app/db/models/automation.py` and corresponding migrations.
 
-Indexes: `(profile_id, created_at DESC)`, `(instrument_id, created_at DESC)`.
+### Historical intelligence
 
-### signal_reasons
-`id`, `signal_id`, `reason_code`, `factor_score`, `details_json`
+Historical models persist historical-learning/backtesting-related state introduced by the historical intelligence phases. See `app/db/models/historical.py`.
 
-### orders
-`id`, `profile_id`, `instrument_id`, `signal_id`, `provider`, `client_order_id`, `external_order_id`, `side`, `order_type`, `quantity`, `requested_price`, `stop_loss`, `take_profit`, `status`, `submitted_at`, `updated_at`
+### News intelligence
 
-Unique `(profile_id, client_order_id)`; provider external ID indexed.
+News persistence exists in `app/db/models/news.py` for financial/news intelligence inputs and results.
 
-### order_events
-`id`, `order_id`, `event_type`, `provider_status`, `filled_quantity`, `fill_price`, `payload_json`, `created_at`
+### Paper trading
 
-### positions
-`id`, `profile_id`, `instrument_id`, `provider_position_ref`, `side`, `quantity`, `entry_price`, `current_price`, `stop_loss`, `take_profit`, `trailing_stop`, `realized_pnl`, `unrealized_pnl`, `status`, `opened_at`, `closed_at`, `updated_at`
+Paper-trading persistence exists in `app/db/models/paper.py` and supports internal simulated trading functionality separately from external-provider Paper/Demo accounts.
 
-### position_events
-`id`, `position_id`, `event_type`, `quantity`, `price`, `details_json`, `created_at`
+### Reporting
 
-### trades
-`id`, `profile_id`, `position_id`, `order_id`, `instrument_id`, `external_trade_id`, `side`, `quantity`, `price`, `commission`, `funding`, `realized_pnl`, `executed_at`
+Reporting/performance persistence exists in `app/db/models/reporting.py`.
 
-### equity
-`id`, `profile_id`, `recorded_at`, `balance`, `equity`, `available_balance`, `margin_used`, `unrealized_pnl`, `realized_pnl_day`
+### Signals
 
-Index `(profile_id, recorded_at DESC)`.
+Signal/decision persistence exists in `app/db/models/signal.py` and supports recorded strategy decisions/reasons/status information.
 
-### strategies
-`id`, `name`, `description`, `is_active`, `created_at`
+### Strategy and symbol strategy
 
-### strategy_versions
-`id`, `strategy_id`, `version_no`, `status`, `definition_json`, `created_by`, `created_at`, `activated_at`
+Strategy state is implemented in `app/db/models/strategy.py`, with per-symbol/adaptive strategy state in `app/db/models/symbol_strategy.py`.
 
-Unique `(strategy_id, version_no)`.
+## Longer-term domain targets
 
-### strategy_variables
-`id`, `strategy_version_id`, `name`, `value_json`, `data_type`
+The architecture still intends normalized durable records for provider-independent concepts such as instruments, candles, orders, executions/trades, positions, risk decisions/events, equity/performance and reconciliation. Some capabilities currently come directly from provider APIs/bridges or existing phase-specific models rather than the exact Phase 0 table names.
 
-### risk_profiles
-`id`, `name`, `risk_per_trade`, `max_daily_loss`, `max_weekly_loss`, `max_drawdown`, `max_open_positions`, `max_fx_exposure`, `max_crypto_exposure`, `max_leverage`, `max_spread`, `max_slippage`, `minimum_signal_score`, `cooldown_after_loss_seconds`, `max_consecutive_losses`, `config_json`, `version`, `is_active`, `created_at`
-
-### risk_events
-`id`, `profile_id`, `risk_profile_id`, `signal_id`, `event_type`, `approved`, `reason_code`, `metrics_json`, `created_at`
-
-### market_regimes
-`id`, `instrument_id`, `timeframe`, `candle_time`, `trend_regime`, `volatility_regime`, `confidence`, `details_json`
-
-### news_events
-`id`, `source`, `headline`, `event_time`, `symbols_json`, `sentiment`, `importance`, `payload_json`
-
-Kept optional in initial implementation; architecture allows later market-news inputs.
-
-### engine_state
-`id`, `state`, `kill_switch_active`, `safe_mode_active`, `safe_mode_reason`, `updated_by`, `updated_at`
-
-A single logical active row, guarded transactionally.
-
-### system_events
-`id`, `severity`, `component`, `event_type`, `profile_id`, `message`, `details_json`, `created_at`
-
-### integration_profiles
-`id`, `provider`, `name`, `environment`, `config_encrypted_json`, `is_enabled`, `last_test_at`, `last_test_status`, `created_at`, `updated_at`
-
-### config_variables
-`id`, `key`, `value_encrypted`, `is_secret`, `scope`, `updated_at`
-
-### config_audit
-`id`, `config_variable_id`, `changed_by`, `old_value_hash`, `new_value_hash`, `created_at`
+Do not create missing tables solely because the old ERD listed them. Add schema only when the current central-engine design requires it, with an Alembic migration and tests.
 
 ## Isolation requirements
 
-Account-scoped domain tables must use `profile_id`. All repository/service queries require an authorized profile scope. Admin bypass is explicit through authorization policy, not implicit omission of filters.
+All account-scoped data must be constrained to broker profiles/users authorized for the authenticated identity. ADMIN-wide access is explicit authorization behavior; it must not be implemented by accidentally omitting ownership filters.
 
-## Retention notes
+## Credential requirements
 
-`market_ticks` can become extremely large. The first production release should retain only the data needed for operational/reconciliation purposes while candles remain the principal historical analysis dataset. Partitioning and retention jobs can be activated when actual ingestion volume is known.
+Encrypted provider secrets must never be returned as readable API output or written to logs. `credentials_configured` is safe status metadata; encrypted blobs themselves remain server-side.
+
+## Schema change procedure
+
+For every persistent schema change:
+
+1. update the SQLAlchemy model;
+2. create/review the Alembic migration;
+3. test upgrade on the Docker PostgreSQL instance;
+4. run the full test suite;
+5. update this ERD/reference if the logical model changed;
+6. never silently mutate production schema outside migrations.
+
+The ORM models and Alembic migration history are the authoritative source if this document and code ever disagree.
