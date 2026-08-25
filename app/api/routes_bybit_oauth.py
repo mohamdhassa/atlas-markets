@@ -72,17 +72,22 @@ def start_oauth(payload:OAuthStart,user:User=Depends(get_current_user)):
     redirect_uri='http://127.0.0.1:8000/bybit/oauth/callback'
     params={'client_id':CLIENT_ID,'response_type':'code','scope':'ai-account','state':state,'redirect_uri':redirect_uri,'code_challenge':challenge,'code_challenge_method':'S256'}
     _sessions[session_id]={'created_at':time.time(),'user_id':str(user.id),'state':state,'code_verifier':verifier,'redirect_uri':redirect_uri,'account_label':payload.account_label.strip() or 'Bybit Testnet','status':'WAITING_FOR_AUTHORIZATION'}
-    return {'environment':'TESTNET','session_id':session_id,'authorize_url':f'{TESTNET_AUTHORIZE}?{urlencode(params)}','expires_in':SESSION_TTL,'manual_code_supported':True,'message':'Open Bybit Testnet and authorize the isolated AI sub-account connection. If Bybit displays a manual Access Token because the callback cannot connect, paste that value into ATLAS as the authorization code.'}
+    return {'environment':'TESTNET','session_id':session_id,'authorize_url':f'{TESTNET_AUTHORIZE}?{urlencode(params)}','expires_in':SESSION_TTL,'manual_code_supported':True,'message':'Open Bybit Testnet and authorize Agent Connect. For the cloud/manual path, paste the Access Token shown by Bybit directly into ATLAS.'}
 
 @router.post('/manual-code')
 async def manual_code(payload:OAuthManualCode,user:User=Depends(get_current_user)):
     s=_session(payload.session_id,user)
-    if s.get('status') not in {'WAITING_FOR_AUTHORIZATION','FAILED'}:raise HTTPException(409,'OAuth session is not waiting for an authorization code')
-    # Bybit's headless success page labels this one-time OAuth authorization code "Access Token".
-    # It must be exchanged first; it is never used as a Bearer token or persisted by ATLAS.
-    s['status']='WAITING_FOR_AUTHORIZATION';s.pop('error',None)
-    await _exchange_code(s,payload.authorization_code)
-    return {'environment':'TESTNET','status':'AUTHORIZED','message':'Authorization code exchanged successfully. Choose the Bybit AI sub-account to connect.'}
+    if s.get('status') not in {'WAITING_FOR_AUTHORIZATION','FAILED'}:raise HTTPException(409,'OAuth session is not waiting for an access token')
+    token=(payload.authorization_code or '').strip()
+    if not token:raise HTTPException(400,'Bybit Agent Connect access token is required')
+    # Cloud/headless Agent Connect: Bybit already displays the ACCESS TOKEN.
+    # Per Bybit docs, use it directly as Bearer auth for ai_accounts; do not exchange it again.
+    s['access_token']=token;s['refresh_token']=None;s['status']='AUTHORIZED';s.pop('code_verifier',None);s.pop('error',None)
+    try:
+        await _ai_accounts(s)
+    except HTTPException:
+        s['access_token']=None;s['status']='WAITING_FOR_AUTHORIZATION';raise
+    return {'environment':'TESTNET','status':'AUTHORIZED','message':'Bybit access token accepted. Choose an existing AI sub-account; ATLAS will not auto-create one.'}
 
 @router.get('/callback',response_class=HTMLResponse)
 async def oauth_callback(code:str|None=Query(None),state:str|None=Query(None),error:str|None=Query(None)):
@@ -96,13 +101,19 @@ async def oauth_callback(code:str|None=Query(None),state:str|None=Query(None),er
     except HTTPException as exc:return HTMLResponse(f'<h2>ATLAS authorization failed</h2><p>{str(exc.detail)[:240]}</p>',status_code=502)
 
 async def _ai_accounts(s:dict[str,Any],query:str=''):
-    async with httpx.AsyncClient(timeout=30) as client:response=await client.get(f'{TESTNET_OAUTH_BASE}/oauth/v1/resource/restrict/ai_accounts{query}',headers={'Authorization':f"Bearer {s['access_token']}"});data=response.json()
-    ret=data.get('retCode',data.get('ret_code'))
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response=await client.get(f'{TESTNET_OAUTH_BASE}/oauth/v1/resource/restrict/ai_accounts{query}',headers={'Authorization':f"Bearer {s['access_token']}"})
+        try:data=response.json()
+        except ValueError:raise HTTPException(502,f'Bybit OAuth returned HTTP {response.status_code} with a non-JSON response')
+    except HTTPException:raise
+    except Exception as exc:raise HTTPException(502,f'Bybit OAuth request failed: {str(exc)[:240]}')
+    ret=data.get('retCode',data.get('ret_code')) if isinstance(data,dict) else None
     if ret is not None and ret!=0:
         msg=data.get('retMsg',data.get('ret_msg','AI account request failed'))
         if ret==20039:raise HTTPException(409,'Bybit requires 2FA to be bound before Agent Connect can continue')
         raise HTTPException(502,f'Bybit OAuth {ret}: {msg}')
-    return data.get('result',data)
+    return data.get('result',data) if isinstance(data,dict) else data
 @router.get('/status/{session_id}')
 async def oauth_status(session_id:str,user:User=Depends(get_current_user)):
     s=_session(session_id,user);result={'environment':'TESTNET','status':s['status']}
