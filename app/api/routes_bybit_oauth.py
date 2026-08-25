@@ -41,18 +41,49 @@ def _session(session_id:str,user:User|None=None):
     if user is not None and str(user.id)!=s['user_id']:raise HTTPException(403,'OAuth session belongs to another user')
     return s
 class OAuthStart(BaseModel):account_label:str='Bybit Testnet'
+class OAuthManualCode(BaseModel):
+    session_id:str
+    authorization_code:str
 class OAuthSelect(BaseModel):
     session_id:str
     sub_member_id:str|None=None
     create_new:bool=False
     activate:bool=True
+
+async def _exchange_code(s:dict[str,Any],code:str):
+    code=(code or '').strip()
+    if not code:raise HTTPException(400,'Authorization code is required')
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response=await client.post(f'{TESTNET_OAUTH_BASE}/oauth/v1/public/access_token',data={'client_id':CLIENT_ID,'code':code,'code_verifier':s['code_verifier']})
+            data=response.json()
+        ret=data.get('retCode',data.get('ret_code')) if isinstance(data,dict) else None
+        if ret is not None and ret!=0:raise RuntimeError(f"Bybit OAuth {ret}: {data.get('retMsg',data.get('ret_msg','token exchange failed'))}")
+        token=(data.get('result') or data) if isinstance(data,dict) else {}
+        if not token.get('access_token'):raise RuntimeError('Bybit OAuth response did not contain an access token')
+        s['access_token']=token['access_token'];s['refresh_token']=token.get('refresh_token');s['status']='AUTHORIZED';s.pop('code_verifier',None);return token
+    except HTTPException:raise
+    except Exception as exc:
+        s['status']='FAILED';s['error']=str(exc)[:300];raise HTTPException(502,str(exc)[:300])
+
 @router.post('/start')
 def start_oauth(payload:OAuthStart,user:User=Depends(get_current_user)):
     _cleanup();session_id=secrets.token_urlsafe(24);state=secrets.token_urlsafe(24);verifier=_b64url(secrets.token_bytes(32));challenge=_b64url(hashlib.sha256(verifier.encode('ascii')).digest())
     redirect_uri='http://127.0.0.1:8000/bybit/oauth/callback'
     params={'client_id':CLIENT_ID,'response_type':'code','scope':'ai-account','state':state,'redirect_uri':redirect_uri,'code_challenge':challenge,'code_challenge_method':'S256'}
     _sessions[session_id]={'created_at':time.time(),'user_id':str(user.id),'state':state,'code_verifier':verifier,'redirect_uri':redirect_uri,'account_label':payload.account_label.strip() or 'Bybit Testnet','status':'WAITING_FOR_AUTHORIZATION'}
-    return {'environment':'TESTNET','session_id':session_id,'authorize_url':f'{TESTNET_AUTHORIZE}?{urlencode(params)}','expires_in':SESSION_TTL,'message':'Open Bybit Testnet and authorize the isolated AI sub-account connection.'}
+    return {'environment':'TESTNET','session_id':session_id,'authorize_url':f'{TESTNET_AUTHORIZE}?{urlencode(params)}','expires_in':SESSION_TTL,'manual_code_supported':True,'message':'Open Bybit Testnet and authorize the isolated AI sub-account connection. If Bybit displays a manual Access Token because the callback cannot connect, paste that value into ATLAS as the authorization code.'}
+
+@router.post('/manual-code')
+async def manual_code(payload:OAuthManualCode,user:User=Depends(get_current_user)):
+    s=_session(payload.session_id,user)
+    if s.get('status') not in {'WAITING_FOR_AUTHORIZATION','FAILED'}:raise HTTPException(409,'OAuth session is not waiting for an authorization code')
+    # Bybit's headless success page labels this one-time OAuth authorization code "Access Token".
+    # It must be exchanged first; it is never used as a Bearer token or persisted by ATLAS.
+    s['status']='WAITING_FOR_AUTHORIZATION';s.pop('error',None)
+    await _exchange_code(s,payload.authorization_code)
+    return {'environment':'TESTNET','status':'AUTHORIZED','message':'Authorization code exchanged successfully. Choose the Bybit AI sub-account to connect.'}
+
 @router.get('/callback',response_class=HTMLResponse)
 async def oauth_callback(code:str|None=Query(None),state:str|None=Query(None),error:str|None=Query(None)):
     _cleanup();match=next((s for s in _sessions.values() if secrets.compare_digest(s['state'],state or '')),None)
@@ -60,15 +91,10 @@ async def oauth_callback(code:str|None=Query(None),state:str|None=Query(None),er
     if error or not code:
         match['status']='FAILED';match['error']=error or 'authorization_failed';return HTMLResponse('<h2>Bybit authorization was not completed</h2><p>You can close this tab and return to ATLAS.</p>',status_code=400)
     try:
-        async with httpx.AsyncClient(timeout=30) as client:response=await client.post(f'{TESTNET_OAUTH_BASE}/oauth/v1/public/access_token',data={'client_id':CLIENT_ID,'code':code,'code_verifier':match['code_verifier']});data=response.json()
-        ret=data.get('retCode')
-        if ret is not None and ret!=0:raise RuntimeError(f"Bybit OAuth {ret}: {data.get('retMsg') or 'token exchange failed'}")
-        token=data.get('result') or data
-        if not token.get('access_token'):raise RuntimeError('Bybit OAuth response did not contain an access token')
-        match['access_token']=token['access_token'];match['refresh_token']=token.get('refresh_token');match['status']='AUTHORIZED';match.pop('code_verifier',None)
+        await _exchange_code(match,code)
         return HTMLResponse('<h2>Bybit Testnet authorized</h2><p>Return to ATLAS MARKETS to choose the AI sub-account. You can close this tab.</p>')
-    except Exception as exc:
-        match['status']='FAILED';match['error']=str(exc)[:300];return HTMLResponse(f'<h2>ATLAS authorization failed</h2><p>{str(exc)[:240]}</p>',status_code=502)
+    except HTTPException as exc:return HTMLResponse(f'<h2>ATLAS authorization failed</h2><p>{str(exc.detail)[:240]}</p>',status_code=502)
+
 async def _ai_accounts(s:dict[str,Any],query:str=''):
     async with httpx.AsyncClient(timeout=30) as client:response=await client.get(f'{TESTNET_OAUTH_BASE}/oauth/v1/resource/restrict/ai_accounts{query}',headers={'Authorization':f"Bearer {s['access_token']}"});data=response.json()
     ret=data.get('retCode',data.get('ret_code'))
