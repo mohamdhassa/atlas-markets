@@ -54,10 +54,27 @@ def duration(tf,limit):
  if tf=='1d':return f'{max(1,min(limit,365))} D'
  minutes={'1m':1,'5m':5,'15m':15,'30m':30,'1h':60,'4h':240}.get(tf,5)*max(limit,10)
  return f'{max(1,min(365,(minutes//1440)+2))} D'
+def _connect_once():
+ ib._event('connected').clear();ib.next_id=None;ib.errors=[]
+ try:
+  if ib.isConnected():ib.disconnect();time.sleep(.25)
+  ib.connect(cfg['host'],cfg['port'],clientId=cfg['client_id'])
+  threading.Thread(target=ib.run,daemon=True).start()
+  return ib._event('connected').wait(8)
+ except Exception as exc:
+  ib.errors.append({'id':-1,'code':'CONNECT_EXCEPTION','message':repr(exc)});return False
 @app.on_event('startup')
 def startup():
- ib.connect(cfg['host'],cfg['port'],clientId=cfg['client_id']);threading.Thread(target=ib.run,daemon=True).start()
- if not ib._event('connected').wait(10):raise RuntimeError('IBKR TWS/IB Gateway connection failed')
+ for attempt in range(1,4):
+  if _connect_once():
+   print(f"ATLAS IBKR bridge connected to {cfg['host']}:{cfg['port']} client_id={cfg['client_id']} accounts={ib.accounts}")
+   return
+  detail='; '.join(f"{e.get('code')}: {e.get('message')}" for e in ib.errors[-6:]) or 'No IBKR error callback was received. Check that TWS/IB Gateway is running, Enable ActiveX and Socket Clients is ON, socket port matches, and restart TWS after changing API settings.'
+  print(f"IBKR connection attempt {attempt}/3 failed: {detail}")
+  try:ib.disconnect()
+  except Exception:pass
+  time.sleep(1.5)
+ raise RuntimeError(f"IBKR TWS/IB Gateway connection failed at {cfg['host']}:{cfg['port']} client_id={cfg['client_id']}. {detail}")
 @app.on_event('shutdown')
 def shutdown():ib.disconnect()
 @app.get('/health')
