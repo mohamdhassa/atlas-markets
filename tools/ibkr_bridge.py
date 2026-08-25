@@ -43,9 +43,10 @@ app=FastAPI(title='ATLAS IBKR Bridge');ib=State();cfg={}
 def auth(x_atlas_bridge_token:str|None):
  token=cfg.get('token')
  if token and x_atlas_bridge_token!=token:raise HTTPException(401,'invalid bridge token')
+def prepare(key):
+ e=ib._event(key);e.clear();return e
 def wait(key,seconds=10):
- e=ib._event(key);e.clear()
- if not e.wait(seconds):raise HTTPException(504,f'IBKR timeout waiting for {key}')
+ if not ib._event(key).wait(seconds):raise HTTPException(504,f'IBKR timeout waiting for {key}')
 def rid():return int(time.time()*1000000)%2000000000
 def contract(symbol,sec_type='STK',exchange='SMART',currency='USD'):
  c=Contract();c.symbol=symbol.upper();c.secType=sec_type;c.exchange=exchange;c.currency=currency;return c
@@ -82,34 +83,34 @@ def health(x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);return {'status':'ok','connected':ib.isConnected(),'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'errors':ib.errors[-8:]}
 @app.get('/account')
 def account(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);r=rid();ib.reqAccountSummary(r,'All','NetLiquidation,TotalCashValue,AvailableFunds,BuyingPower');wait(f'acct:{r}');ib.cancelAccountSummary(r);acct=cfg.get('account_id') or (ib.accounts[0] if ib.accounts else '')
+ auth(x_atlas_bridge_token);r=rid();key=f'acct:{r}';prepare(key);ib.reqAccountSummary(r,'All','NetLiquidation,TotalCashValue,AvailableFunds,BuyingPower');wait(key);ib.cancelAccountSummary(r);acct=cfg.get('account_id') or (ib.accounts[0] if ib.accounts else '')
  def val(tag):
   try:return float(ib.values.get((acct,tag),('0',''))[0])
   except:return 0.0
  return {'account_id':acct,'equity':val('NetLiquidation'),'cash':val('TotalCashValue'),'available':val('AvailableFunds'),'buying_power':val('BuyingPower'),'simulation':cfg['simulation']}
 @app.get('/positions')
 def positions(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);ib.positions=[];ib.reqPositions();wait('positions');ib.cancelPositions();return {'list':ib.positions}
+ auth(x_atlas_bridge_token);ib.positions=[];prepare('positions');ib.reqPositions();wait('positions');ib.cancelPositions();return {'list':ib.positions}
 @app.get('/orders')
 def orders(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);ib.open_orders=[];ib.reqOpenOrders();wait('orders');return {'list':ib.open_orders}
+ auth(x_atlas_bridge_token);ib.open_orders=[];prepare('orders');ib.reqOpenOrders();wait('orders');return {'list':ib.open_orders}
 @app.get('/executions')
 def executions(days:int=30,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);from ibapi.execution import ExecutionFilter
- r=rid();ib.executions=[];ib.commissions={};f=ExecutionFilter();f.time=(datetime.now()-timedelta(days=max(1,min(days,30)))).strftime('%Y%m%d 00:00:00');ib.reqExecutions(r,f);wait(f'exec:{r}');time.sleep(.35)
+ r=rid();key=f'exec:{r}';ib.executions=[];ib.commissions={};f=ExecutionFilter();f.time=(datetime.now()-timedelta(days=max(1,min(days,30)))).strftime('%Y%m%d 00:00:00');prepare(key);ib.reqExecutions(r,f);wait(key);time.sleep(.35)
  rows=[]
  for x in ib.executions:
   c=ib.commissions.get(str(x['execution_id']),{});rows.append({**x,**c,'pnl_available':c.get('realized_pnl') is not None})
  return {'list':rows}
 @app.get('/quote')
 def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);r=rid();ib.quotes[r]={};ib.reqMktData(r,contract(symbol,sec_type,exchange,currency),'',True,False,[]);wait(f'quote:{r}');ib.cancelMktData(r);q=ib.quotes.pop(r,{})
+ auth(x_atlas_bridge_token);r=rid();key=f'quote:{r}';ib.quotes[r]={};prepare(key);ib.reqMktData(r,contract(symbol,sec_type,exchange,currency),'',True,False,[]);wait(key);ib.cancelMktData(r);q=ib.quotes.pop(r,{})
  if not q:raise HTTPException(502,f'No IBKR quote returned for {symbol}')
  if not q.get('last') and q.get('bid') and q.get('ask'):q['last']=(q['bid']+q['ask'])/2
  return {'symbol':symbol.upper(),'sec_type':sec_type,'currency':currency,**q}
 @app.get('/candles')
 def candles(symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);limit=max(10,min(limit,1000));r=rid();ib.bars[r]=[];ib.reqHistoricalData(r,contract(symbol,sec_type,exchange,currency),'',duration(timeframe,limit),bar_size(timeframe),'TRADES',1,1,False,[]);wait(f'bars:{r}',15);ib.cancelHistoricalData(r);rows=ib.bars.pop(r,[])
+ auth(x_atlas_bridge_token);limit=max(10,min(limit,1000));r=rid();key=f'bars:{r}';ib.bars[r]=[];prepare(key);ib.reqHistoricalData(r,contract(symbol,sec_type,exchange,currency),'',duration(timeframe,limit),bar_size(timeframe),'TRADES',1,1,False,[]);wait(key,15);ib.cancelHistoricalData(r);rows=ib.bars.pop(r,[])
  if not rows:raise HTTPException(502,f'No IBKR candles returned for {symbol}')
  return {'symbol':symbol.upper(),'timeframe':timeframe,'list':rows[-limit:]}
 class OrderPayload(BaseModel):
