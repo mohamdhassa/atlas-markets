@@ -1,426 +1,201 @@
-# Atlas Markets — Architecture Blueprint
+# ATLAS MARKETS — Current Architecture
 
-## 1. Architecture goals
+Last reconciled with active development branch: 2026-08-25.
 
-Atlas Markets is designed as a provider-independent, multi-user, multi-account, real-time trading platform for FX and cryptocurrency. The architecture separates market data, analysis, decisioning, risk, execution, monitoring, persistence, and presentation so each subsystem can be tested independently.
+## 1. Purpose and architecture invariants
+
+ATLAS MARKETS is a provider-independent, multi-user, multi-account, multi-market trading platform. It separates market data, analysis, strategy decisioning, risk, provider routing, execution, reconciliation, persistence and presentation.
 
 Core invariants:
 
-1. Every trading account has a unique internal `profile_id`.
-2. User data is isolated at the database and service layer.
-3. Broker secrets are encrypted and never returned after storage.
-4. Core strategy code never depends directly on Bybit, OANDA, or IBKR APIs.
-5. Every signal stores reasons and every order passes through the risk engine.
-6. Kill Switch and Safe Mode are enforced server-side.
-7. Paper/demo operation precedes any live activation.
+1. External broker/exchange accounts are represented by internal `BrokerProfile` UUIDs.
+2. Account-scoped data is owned by an authenticated user and must be authorization-filtered.
+3. The only application roles are `ADMIN` and `USER`.
+4. Provider credentials are stored encrypted and are never intentionally exposed by read APIs.
+5. Strategy decisions do not directly execute orders; risk and execution gates remain server-side.
+6. Live Money execution is explicitly gated per broker profile and is not certified for unrestricted automation.
+7. Paper/Demo/Testnet validation precedes Live Money.
+8. Certification instruments are test instruments only; the architecture is multi-instrument.
 
-## 2. Runtime topology
-
-```text
-Internet
-   |
-   v
-Caddy :443
-   |
-   v
-FastAPI / Uvicorn (private Docker network)
-   |
-   +-------------------+--------------------+------------------+
-   |                   |                    |                  |
-   v                   v                    v                  v
-PostgreSQL           Redis            Worker Set          WebSocket Hub
-(private)          (private)          (private)           (private)
-                                         |
-                      +------------------+------------------+
-                      |                  |                  |
-                      v                  v                  v
-                 Market Data        Analysis          Execution /
-                   Workers           Workers          Position Monitor
-                      |                  |                  |
-                      +------------------+------------------+
-                                         |
-                                         v
-                                BrokerAdapter Layer
-                                 /             \
-                                v               v
-                         Bybit Adapter       FX Adapter
-                         Demo/Testnet       OANDA/IBKR
-```
-
-Only Caddy is internet-facing. PostgreSQL, Redis, Uvicorn, and workers remain private.
-
-## 3. Logical layers
-
-### API / Web layer
-Responsibilities: authentication, RBAC, dashboards, forms, account management, charts, status, admin controls, WebSocket frontend feeds, and visible action feedback.
-
-### Domain layer
-Contains provider-independent business objects and services for instruments, market snapshots, signals, decisions, risk approvals, orders, positions, trades, strategy versions, and performance.
-
-### Broker abstraction
-`BrokerAdapter` is the only interface the engine uses to communicate with external execution providers.
-
-Initial interface:
-
-```python
-class BrokerAdapter(ABC):
-    async def connect(self): ...
-    async def disconnect(self): ...
-    async def test_connection(self): ...
-    async def get_account(self): ...
-    async def get_balance(self): ...
-    async def get_positions(self): ...
-    async def get_orders(self): ...
-    async def get_instruments(self): ...
-    async def get_quote(self, symbol: str): ...
-    async def get_candles(self, symbol: str, timeframe: str, limit: int): ...
-    async def stream_prices(self, symbols: list[str]): ...
-    async def place_order(self, order): ...
-    async def cancel_order(self, external_order_id: str): ...
-    async def close_position(self, position_id: str): ...
-    async def modify_stop(self, position_id: str, price): ...
-    async def modify_take_profit(self, position_id: str, price): ...
-```
-
-Provider-specific payloads are normalized before entering the domain layer.
-
-## 4. Market-data pipeline
+## 2. Current runtime topology
 
 ```text
-Provider WebSocket
-    ↓
-Provider parser
-    ↓
-Canonical Tick model
-    ↓
-Redis stream / latest-price cache
-    ↓
-Candle builder
-    ↓
-1m base candles
-    ↓
-Timeframe aggregator
-    ↓
-3m / 5m / 15m / 30m / 1h / 4h / 1d
-    ↓
-PostgreSQL historical persistence
-    ↓
-Analysis scheduler / event trigger
+Browser / Mobile UI
+        |
+        v
+FastAPI / Uvicorn (Docker)
+        |
+        +-------------------+--------------------+
+        |                   |                    |
+        v                   v                    v
+   PostgreSQL             Redis          ATLAS services
+                                                |
+                           +--------------------+-------------------+
+                           |                    |                   |
+                           v                    v                   v
+                    Market/History         Strategy/Risk      Provider Routing
+                           |                                        |
+                           |                 +----------------------+------------------+
+                           |                 |                      |                  |
+                           v                 v                      v                  v
+                     Twelve Data       Fusion MT5 Bridge       IBKR Bridge          Bybit
+                     data only          Windows/MT5          Windows/TWS       V5/Testnet API
 ```
 
-Rules:
-- Timestamps stored in UTC.
-- Provider timestamps retained where useful for reconciliation.
-- Idempotency keys prevent duplicate candle/tick ingestion.
-- Stale-feed detection triggers Safe Mode when configured thresholds are exceeded.
+The project currently runs the main application, PostgreSQL and Redis with Docker Compose. MT5 and IBKR require Windows-side bridge connectivity to their native/local trading environments.
 
-## 5. Technical-analysis engine
+## 3. Provider responsibilities
 
-Pure deterministic functions consume normalized OHLCV datasets and output structured results.
+- **Interactive Brokers (IBKR):** stocks and ETFs. Current environment: Paper.
+- **Fusion MT5:** FX, metals and commodities. Current environment: Demo.
+- **Bybit:** crypto. Current environment: Testnet.
+- **Twelve Data:** market/historical data only; never an execution broker.
 
-Modules:
-- trend: EMA, SMA, slopes, ADX, higher-timeframe alignment
-- momentum: RSI, MACD, stochastic, rate of change
-- volatility: ATR, Bollinger Bands, historical volatility, expansion/contraction
-- market structure: HH, HL, LH, LL, BOS, breakout, failed breakout
-- support/resistance: swings, previous-day levels, session levels, pivots, liquidity zones
-- candles: engulfing, hammer, shooting star, pin bar, doji, inside/outside bar
-- regime: trend/range plus low/normal/high volatility
+The older blueprint reference to OANDA is no longer the active provider design. Fusion MT5 is the active FX/metals/commodities execution integration.
 
-All pattern definitions must be mathematical and unit tested.
+## 4. Broker profile implementation
 
-## 6. Multi-timeframe engine
+The current `BrokerProfile` model contains the operational provider/account state directly, including:
 
-Default decision hierarchy:
+- `id` UUID / logical profile identifier
+- `user_id`
+- `provider`
+- `account_label`
+- `environment`
+- `external_account_ref`
+- `is_enabled`
+- `is_active`
+- `live_execution_enabled`
+- `live_execution_armed_at`
+- encrypted API key/secret/credential blob fields
+- `credentials_configured`
+- connection/sync status and timestamps
+- cached equity/wallet/available balance
+- open-position/open-order counts
+
+This is the current implementation and supersedes the original Phase 0 proposal that required a separate one-to-one `broker_credentials` table.
+
+## 5. Execution architecture
+
+Desired execution path:
 
 ```text
-4H  -> macro direction / regime
-1H  -> primary trend
-15M -> setup
-5M  -> entry signal
-1M  -> execution refinement
-```
-
-The engine produces alignment/conflict metadata rather than forcing agreement. A strategy can explicitly reject conflicting higher-timeframe conditions.
-
-## 7. Signal and decision engine
-
-Each strategy produces independent factor scores. The signal engine aggregates them into a versioned score and classification.
-
-Example output:
-
-```json
-{
-  "profile_id": 4,
-  "instrument": "BTCUSDT",
-  "timeframe": "5m",
-  "decision": "LONG",
-  "score": 84,
-  "classification": "STRONG_SIGNAL",
-  "reasons": [
-    "bullish_market_structure",
-    "higher_timeframe_alignment",
-    "support_held",
-    "ema_confirmation",
-    "breakout_confirmed"
-  ]
-}
-```
-
-No signal is executable until risk approval is recorded.
-
-## 8. Risk engine
-
-Risk is account-scoped and runs immediately before execution.
-
-Inputs include:
-- equity and available margin
-- risk per trade
-- daily/weekly loss
-- drawdown
-- current open positions
-- FX and crypto exposure
-- leverage
-- spread and slippage estimates
-- signal score
-- cooldown / consecutive-loss rules
-- stop distance and instrument precision
-
-Output is an immutable approval/rejection event with reasons.
-
-## 9. Position sizing
-
-Separate sizing implementations exist for FX and crypto behind a common domain API. Position size uses equity, risk %, entry, stop distance, instrument precision, minimum quantity, contract size, leverage, and currency conversion.
-
-Fixed arbitrary order quantities are prohibited in automated strategy execution.
-
-## 10. Execution and reconciliation
-
-Execution flow:
-
-```text
-Decision
-  ↓
-Risk Approval
-  ↓
-Position Size
-  ↓
-Execution Request
-  ↓
-BrokerAdapter
-  ↓
-Provider
-  ↓
+Market + historical + intelligence inputs
+        ↓
+Analysis / strategy decision
+        ↓
+Risk evaluation
+        ↓
+Position sizing
+        ↓
+Provider routing
+        ↓
+Environment/live-money gate
+        ↓
+Provider client / local bridge
+        ↓
 Provider acknowledgement
-  ↓
-Order event reconciliation
-  ↓
-Position reconciliation
+        ↓
+Position/order/execution reconciliation
+        ↓
+Performance/history
 ```
 
-Client order IDs / idempotency keys prevent duplicate submissions. Reconciliation workers periodically compare local orders/positions with provider truth.
+No AI or strategy component should bypass risk, environment or provider safety gates.
 
-## 11. Exit engine
+## 6. Current provider certification
 
-Supports hard stop, take profit, trailing stop, break-even, partial take-profit, signal reversal, time exit, volatility exit, risk exit, and emergency exit. Provider-native protective orders are preferred when supported, with server-side monitoring as a complementary layer.
+| Provider | Connectivity | Execution |
+| --- | --- | --- |
+| Fusion MT5 Demo | Certified | **Certified** |
+| IBKR Paper | Certified | Next certification task |
+| Bybit Testnet | Certified | Provider-blocked by Bybit `10024` |
+| Twelve Data | Certified | N/A — data only |
 
-## 12. Safe Mode and Kill Switch
+Fusion MT5 execution has been proven by opening and closing a controlled 0.01-lot EURUSD Demo position and verifying the exact certification ticket returned to flat state.
 
-Kill Switch: immediately blocks all new order execution server-side.
+IBKR Paper connectivity/account/market/order bridge functionality is available; controlled Paper execution certification is the immediate next task.
 
-Safe Mode: automatically blocks new positions when configured operational/risk conditions fail, including stale prices, provider disconnects, DB/Redis failures, abnormal spread/slippage, reconciliation failures, and loss/drawdown limits.
+Bybit private authentication and order-submission path are operational, but a valid Testnet BTCUSDT request was rejected by Bybit error `10024` due to a regulatory product/service restriction. ATLAS must not bypass that restriction.
 
-Existing-position policy is explicit and versioned; Safe Mode must never ambiguously abandon open risk.
+## 7. Multi-instrument architecture
 
-## 13. Backtesting architecture
+The final system is not one-symbol-per-provider. Representative intended universes include stocks/ETFs through IBKR, FX/metals/commodities through MT5 and crypto through Bybit when permitted.
 
-Backtester reuses strategy and analysis logic while replacing live market/broker services with historical feeds and a simulated execution model.
+Provider routing must consider asset class, provider/account capability, symbol availability, account state, environment, connection health, market session, risk authorization and buying power/margin.
 
-Pipeline:
+Provider-supported instrument discovery/validation is preferred over relying only on static symbol lists.
 
-```text
-Historical candles
-   ↓
-Strategy/Analysis
-   ↓
-Signal
-   ↓
-Risk
-   ↓
-Simulated fills
-   ↓
-Portfolio state
-   ↓
-Metrics
+## 8. Analysis and strategy
+
+ATLAS is intended to combine deterministic technical analysis, multi-timeframe information, historical intelligence, market regime/context and financial/news intelligence into explainable BUY/SELL/HOLD decisions.
+
+Strategy methodology must be measurable and testable. Arbitrary unexplained AI scores are not sufficient for production execution.
+
+The repository already contains strategy, signal, historical, news and symbol-strategy persistence/modules. These should be evolved rather than replaced by a disconnected new engine.
+
+## 9. Risk and live-money safety
+
+Risk remains account-scoped and immediately precedes execution. Target controls include position/exposure limits, daily loss, drawdown, maximum open positions, leverage/margin, stop/take-profit policy, spread/slippage, stale signals, duplicate orders, correlated exposure, provider health, market hours and kill-switch behavior.
+
+`BrokerProfile.live_execution_enabled` and `live_execution_armed_at` are part of the current live safety model. Authentication alone never authorizes Live Money execution.
+
+## 10. Authentication and authorization
+
+Exactly two roles exist:
+
+- `ADMIN`: platform-wide administration, users, accounts/providers, strategy/risk, integrations, engine/system controls and aggregate results.
+- `USER`: own authorized accounts/data/results.
+
+Every account-scoped route/service must derive or validate authorized broker profile ownership. Client-supplied profile IDs are never trusted by themselves.
+
+## 11. Persistence
+
+Current model modules include authentication, broker profiles, automation, historical intelligence, news, paper trading, reporting, signals, strategy and symbol-strategy state. `docs/ERD.md` describes the implemented model families and distinguishes current tables from longer-term domain targets.
+
+PostgreSQL is durable truth. Redis is used for transient/runtime coordination/cache roles where implemented.
+
+## 12. Testing and certification
+
+Current known automated baseline: **55 passed, 1 warning**.
+
+Connectivity verification:
+
+```powershell
+docker compose exec app python -m app.scripts.verify_integrations
 ```
 
-Simulation includes spread, commission, slippage, funding and configurable latency assumptions. Validation supports training, validation, out-of-sample, and walk-forward segments.
+MT5 execution certification:
 
-## 14. Authentication and authorization
-
-Only two roles: ADMIN and USER.
-
-ADMIN: platform-wide users, accounts, strategy, risk, integrations, engine state, system health and aggregate performance.
-
-USER: own account connection, balances, equity, P&L, positions, orders, signals, decisions, charts and performance.
-
-Every account-scoped API obtains allowed `profile_id` values from the authenticated identity; client-supplied IDs are never trusted without authorization checks.
-
-## 15. Credential security
-
-Credentials are stored in `broker_credentials.encrypted_json` using a server-held `ATLAS_MARKETS_MASTER_KEY`. A deterministic credential fingerprint supports duplicate-account prevention without revealing secrets.
-
-API keys/secrets are never logged, returned after persistence, or stored in readable columns.
-
-## 16. Frontend page map
-
-ADMIN:
-- Dashboard
-- Markets
-- Charts
-- Signals
-- Positions
-- Orders
-- Performance
-- Users
-- Accounts
-- Strategy
-- Risk
-- Integrations
-- System
-
-USER:
-- Dashboard
-- Markets
-- Charts
-- Signals
-- Positions
-- Orders
-- Performance
-- Accounts
-
-Every mutation uses processing → backend response → success/error → refresh behavior. No silent buttons.
-
-## 17. Proposed Python structure
-
-```text
-atlas-markets/
-├── app/
-│   ├── main.py
-│   ├── api/
-│   │   ├── dependencies.py
-│   │   ├── routes_auth.py
-│   │   ├── routes_admin.py
-│   │   ├── routes_accounts.py
-│   │   ├── routes_markets.py
-│   │   ├── routes_signals.py
-│   │   ├── routes_orders.py
-│   │   ├── routes_positions.py
-│   │   └── routes_performance.py
-│   ├── auth/
-│   ├── brokers/
-│   │   ├── base.py
-│   │   ├── mock.py
-│   │   ├── bybit.py
-│   │   ├── oanda.py
-│   │   └── ibkr.py
-│   ├── core/
-│   │   ├── config.py
-│   │   ├── security.py
-│   │   └── logging.py
-│   ├── db/
-│   │   ├── base.py
-│   │   ├── session.py
-│   │   └── models/
-│   ├── market_data/
-│   ├── analysis/
-│   │   ├── trend.py
-│   │   ├── momentum.py
-│   │   ├── volatility.py
-│   │   ├── structure.py
-│   │   ├── support_resistance.py
-│   │   ├── candles.py
-│   │   └── regime.py
-│   ├── strategies/
-│   ├── signals/
-│   ├── risk/
-│   ├── execution/
-│   ├── positions/
-│   ├── backtesting/
-│   ├── workers/
-│   ├── services/
-│   ├── schemas/
-│   ├── templates/
-│   └── static/
-├── migrations/
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── smoke/
-├── docs/
-├── ops/
-│   └── oracle/
-├── docker-compose.yml
-├── Dockerfile
-├── pyproject.toml
-├── alembic.ini
-├── .env.example
-└── README.md
+```powershell
+docker compose exec app python -m app.scripts.certify_mt5_execution
 ```
 
-## 18. Docker architecture
+Bybit order-path certification:
 
-Initial services:
-- `atlas-markets-app`
-- `atlas-markets-worker-market`
-- `atlas-markets-worker-analysis`
-- `atlas-markets-worker-execution`
-- `atlas-markets-worker-position`
-- `atlas-markets-postgres`
-- `atlas-markets-redis`
-- `atlas-markets-caddy`
+```powershell
+docker compose exec app python -m app.scripts.certify_bybit_execution
+```
 
-Workers may initially share one Python image but run distinct commands. This keeps deployment simple while preserving process isolation.
+See `TESTING_AND_CERTIFICATION.md` for evidence and certification rules.
 
-## 19. Testing strategy
+## 13. Frontend direction
 
-Unit tests cover deterministic logic: indicators, candle patterns, structure, scoring, risk, sizing, encryption helpers, authorization helpers.
+The frontend remains under active development. Final navigation should cover Dashboard, Markets, Analysis, Signals, Positions, Orders, Performance, History, Integrations, Strategy, Risk Management, Users, Settings and System Status as permitted by role.
 
-Integration tests cover PostgreSQL, Redis, migrations, API endpoints, BrokerAdapter contracts, demo adapters, account isolation, duplicate-account rejection, Safe Mode and Kill Switch.
+Desktop and phone responsiveness are requirements. Provider setup must ultimately become simpler than the engineering workflow used during integration development.
 
-Smoke tests cover the deployed system through Caddy: health, login, role access, pages, account connection tests, market feeds, charts, signals, risk, order paths, engine controls and user isolation.
+## 14. Development sequence from current checkpoint
 
-Tests are developed with each phase rather than deferred to release.
+1. Certify IBKR Paper execution.
+2. Validate multi-instrument universes/provider capabilities.
+3. Validate automatic provider routing.
+4. Expand/validate analysis and strategy methodology.
+5. Harden risk controls.
+6. Certify the automatic scan → analyze → signal → risk → route → execute → monitor → exit → record lifecycle.
+7. Expand performance analytics/historical evaluation.
+8. Complete frontend/mobile UX.
+9. Run extended simulation and operational testing.
+10. Only then assess Live Money readiness.
 
-## 20. Oracle deployment architecture
-
-Atlas Markets uses separate resources from Atlas Trader:
-- repository
-- Docker network
-- containers
-- PostgreSQL database/volume
-- Redis volume
-- environment file
-- backup directory
-- Caddy site configuration
-
-Suggested private network: `atlas-markets-private`.
-
-Suggested env path: `~/atlas-markets/.env.oracle` with restrictive permissions.
-
-Database and Redis ports are never published publicly. Uvicorn binds only inside the private Docker network; Caddy terminates HTTPS.
-
-## 21. Phase 0 architecture decisions
-
-Approved design direction:
-- modular monolith + isolated worker processes rather than microservices initially
-- shared PostgreSQL as durable truth
-- Redis for transient/latest market state and worker coordination
-- asynchronous broker adapters
-- event-oriented pipelines with persisted audit records
-- provider-neutral domain models
-- one account = one `profile_id`
-- immutable strategy/risk decision history
-- paper/demo-first release path
-
-This architecture is intentionally scalable without adding distributed-system complexity before it is needed.
+See `CURRENT_STATUS.md`, `PROVIDERS.md`, `ROADMAP.md` and `TESTING_AND_CERTIFICATION.md` for the active development checkpoint.
