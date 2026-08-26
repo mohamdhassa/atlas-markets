@@ -20,6 +20,7 @@ class IbkrBridgeClient:
     async def positions(self):return await self._get('/positions')
     async def orders(self):return await self._get('/orders')
     async def executions(self,days:int=30):return await self._get('/executions',{'days':days})
+    async def contract(self,symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/contract',{'symbol':symbol,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def quote(self,symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/quote',{'symbol':symbol,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def candles(self,symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/candles',{'symbol':symbol,'timeframe':timeframe,'limit':limit,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def order_check(self,payload:dict):return await self._post('/order-check',payload)
