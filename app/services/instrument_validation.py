@@ -28,6 +28,67 @@ def _bridge_cfg(profile) -> dict:
     return json.loads(decrypt_secret(profile.credential_blob_encrypted))
 
 
+def _mt5_search_terms(symbol: str) -> list[str]:
+    s = str(symbol or '').upper().replace('/', '').replace(' ', '')
+    terms = [s]
+    if len(s) >= 3:
+        terms.append(s[:3])
+    aliases = {
+        'XAGUSD': ['SILVER'],
+        'XAUUSD': ['GOLD'],
+        'XTIUSD': ['WTI', 'OIL'],
+    }
+    terms.extend(aliases.get(s, []))
+    result: list[str] = []
+    for term in terms:
+        if term and term not in result:
+            result.append(term)
+    return result
+
+
+async def _resolve_mt5_symbol(client: Mt5BridgeClient, requested: str) -> tuple[str, dict] | None:
+    requested = str(requested or '').upper().replace('/', '').replace(' ', '')
+    candidates: dict[str, dict] = {}
+    for term in _mt5_search_terms(requested):
+        try:
+            rows = (await client.search_symbols(term, 100)).get('list') or []
+        except Exception:
+            continue
+        for row in rows:
+            name = str(row.get('name') or '').upper()
+            if name:
+                candidates[name] = row
+    if not candidates:
+        return None
+
+    def score(entry: tuple[str, dict]) -> tuple[int, int, str]:
+        name, row = entry
+        description = str(row.get('description') or '').upper()
+        value = 0
+        if name == requested:
+            value += 100
+        if name.startswith(requested):
+            value += 80
+        if requested in name:
+            value += 60
+        if requested.startswith('XAG') and ('XAG' in name or 'SILVER' in description or 'SILVER' in name):
+            value += 50
+        if requested.startswith('XAU') and ('XAU' in name or 'GOLD' in description or 'GOLD' in name):
+            value += 50
+        if requested == 'XTIUSD' and ('WTI' in name or 'OIL' in description or 'OIL' in name):
+            value += 50
+        if bool(row.get('visible')):
+            value += 5
+        return (-value, len(name), name)
+
+    for name, _ in sorted(candidates.items(), key=score):
+        try:
+            return name, await client.symbol(name)
+        except Exception:
+            continue
+    return None
+
+
 async def validate_instrument(profile, item: UniverseItem) -> ValidationResult:
     provider = str(getattr(profile, 'provider', '') or '').upper()
     settings = get_settings()
@@ -35,12 +96,23 @@ async def validate_instrument(profile, item: UniverseItem) -> ValidationResult:
         if provider == 'MT5':
             cfg = _bridge_cfg(profile)
             client = Mt5BridgeClient(cfg.get('bridge_url') or 'http://host.docker.internal:8765', cfg.get('bridge_token'), settings.market_data_timeout_seconds)
-            data = await client.symbol(item.symbol)
+            broker_symbol = item.symbol
+            try:
+                data = await client.symbol(item.symbol)
+            except Exception:
+                resolved = await _resolve_mt5_symbol(client, item.symbol)
+                if not resolved:
+                    return ValidationResult(item.market, item.symbol, provider, str(profile.id), False, 'MT5_SYMBOL_NOT_FOUND', {})
+                broker_symbol, data = resolved
             bid = float(data.get('bid') or 0)
             ask = float(data.get('ask') or 0)
             if not data or not bool(data.get('visible', True)):
                 return ValidationResult(item.market, item.symbol, provider, str(profile.id), False, 'MT5_SYMBOL_NOT_VISIBLE', data or {})
-            return ValidationResult(item.market, item.symbol, provider, str(profile.id), True, 'SUPPORTED', {'bid': bid, 'ask': ask, 'digits': data.get('digits'), 'volume_min': data.get('volume_min'), 'volume_step': data.get('volume_step')})
+            details = {'bid': bid, 'ask': ask, 'digits': data.get('digits'), 'volume_min': data.get('volume_min'), 'volume_step': data.get('volume_step'), 'broker_symbol': broker_symbol}
+            if broker_symbol.upper() != item.symbol.upper():
+                details['requested_symbol'] = item.symbol
+                details['alias_resolved'] = True
+            return ValidationResult(item.market, item.symbol, provider, str(profile.id), True, 'SUPPORTED', details)
 
         if provider == 'IBKR':
             cfg = _bridge_cfg(profile)
