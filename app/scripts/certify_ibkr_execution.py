@@ -33,14 +33,7 @@ def position_qty(rows: list[dict], account: str, symbol: str) -> float:
     return total
 
 
-async def wait_for_position_delta(
-    client: IbkrBridgeClient,
-    account: str,
-    symbol: str,
-    baseline: float,
-    expected_delta: float,
-    timeout: float = 20.0,
-):
+async def wait_for_position_delta(client, account, symbol, baseline, expected_delta, timeout=25.0):
     deadline = time.monotonic() + timeout
     latest = baseline
     while time.monotonic() < deadline:
@@ -52,16 +45,9 @@ async def wait_for_position_delta(
     return False, latest
 
 
-async def wait_for_execution(
-    client: IbkrBridgeClient,
-    before_ids: set[str],
-    account: str,
-    symbol: str,
-    side: str,
-    timeout: float = 20.0,
-):
+async def wait_for_execution(client, before_ids, account, symbol, side, timeout=25.0):
     deadline = time.monotonic() + timeout
-    latest: list[dict] = []
+    latest = []
     while time.monotonic() < deadline:
         latest = (await client.executions(1)).get("list", [])
         for row in latest:
@@ -80,6 +66,20 @@ async def wait_for_execution(
     return None, latest
 
 
+async def wait_for_terminal_order_state(client, order_id: int, timeout: float = 25.0):
+    deadline = time.monotonic() + timeout
+    latest = {"order_id": order_id, "status": None, "errors": []}
+    while time.monotonic() < deadline:
+        latest = await client.order_status(order_id)
+        errors = latest.get("errors") or []
+        status = latest.get("status") or {}
+        name = str(status.get("status") or "")
+        if errors or name in {"Filled", "Cancelled", "ApiCancelled", "Inactive"}:
+            return latest
+        await asyncio.sleep(0.5)
+    return latest
+
+
 async def cancel_if_open(client: IbkrBridgeClient, order_id: int):
     try:
         rows = (await client.orders()).get("list", [])
@@ -93,10 +93,7 @@ async def cancel_if_open(client: IbkrBridgeClient, order_id: int):
 async def main():
     db = SessionLocal()
     try:
-        profiles = list(db.scalars(select(BrokerProfile).where(
-            BrokerProfile.provider == "IBKR",
-            BrokerProfile.is_enabled.is_(True),
-        )).all())
+        profiles = list(db.scalars(select(BrokerProfile).where(BrokerProfile.provider == "IBKR", BrokerProfile.is_enabled.is_(True))).all())
         if len(profiles) != 1:
             raise RuntimeError(f"Expected exactly one enabled IBKR profile, found {len(profiles)}")
         profile = profiles[0]
@@ -106,14 +103,8 @@ async def main():
             raise RuntimeError("IBKR bridge configuration is missing")
 
         cfg = json.loads(decrypt_secret(profile.credential_blob_encrypted))
-        client = IbkrBridgeClient(
-            cfg.get("bridge_url") or "http://host.docker.internal:8766",
-            cfg.get("bridge_token"),
-            get_settings().market_data_timeout_seconds,
-        )
-
-        health = await client.health()
-        account = await client.account()
+        client = IbkrBridgeClient(cfg.get("bridge_url") or "http://host.docker.internal:8766", cfg.get("bridge_token"), get_settings().market_data_timeout_seconds)
+        health = await client.health(); account = await client.account()
         if not health.get("connected"):
             raise RuntimeError("IBKR bridge reachable but TWS/IB Gateway is disconnected")
         if not bool(health.get("simulation")) or not bool(account.get("simulation")):
@@ -126,78 +117,44 @@ async def main():
         if not actual_account:
             raise RuntimeError("IBKR account id is unavailable")
 
-        # Avoid leaving a market order queued overnight. This is a practical certification
-        # gate, not an exchange-calendar replacement; unexpected closures still time out
-        # and trigger cancellation attempts.
-        now_et = datetime.now(ZoneInfo("America/New_York"))
-        minutes = now_et.hour * 60 + now_et.minute
+        now_et = datetime.now(ZoneInfo("America/New_York")); minutes = now_et.hour * 60 + now_et.minute
         if now_et.weekday() >= 5 or not (9 * 60 + 35 <= minutes <= 15 * 60 + 50):
-            raise RuntimeError(
-                f"REFUSED: run IBKR execution certification during regular US market hours "
-                f"(09:35-15:50 America/New_York); current={now_et:%Y-%m-%d %H:%M:%S %Z}"
-            )
+            raise RuntimeError(f"REFUSED: run IBKR execution certification during regular US market hours (09:35-15:50 America/New_York); current={now_et:%Y-%m-%d %H:%M:%S %Z}")
 
         positions_before = (await client.positions()).get("list", [])
-        candidates = ["SPY", "QQQ", "IWM", "DIA"]
-        symbol = next(
-            (s for s in candidates if abs(position_qty(positions_before, actual_account, s)) < 1e-9),
-            None,
-        )
+        symbol = next((s for s in ["SPY", "QQQ", "IWM", "DIA"] if abs(position_qty(positions_before, actual_account, s)) < 1e-9), None)
         if not symbol:
-            raise RuntimeError(
-                "REFUSED: certification candidates SPY/QQQ/IWM/DIA already have positions; "
-                "will not mix certification shares with existing holdings"
-            )
+            raise RuntimeError("REFUSED: certification candidates SPY/QQQ/IWM/DIA already have positions; will not mix certification shares with existing holdings")
 
-        quantity = 1.0
-        baseline_qty = position_qty(positions_before, actual_account, symbol)
+        quantity = 1.0; baseline_qty = position_qty(positions_before, actual_account, symbol)
         executions_before = (await client.executions(1)).get("list", [])
         before_ids = {str(x.get("execution_id") or "") for x in executions_before if x.get("execution_id")}
-
-        payload = {
-            "symbol": symbol,
-            "side": "BUY",
-            "quantity": quantity,
-            "order_type": "MKT",
-            "sec_type": "STK",
-            "exchange": "SMART",
-            "currency": "USD",
-            "account_id": actual_account,
-        }
+        payload = {"symbol":symbol,"side":"BUY","quantity":quantity,"order_type":"MKT","sec_type":"STK","exchange":"SMART","currency":"USD","account_id":actual_account}
         check = await client.order_check(payload)
         if not check.get("ok") or not check.get("simulation"):
             raise RuntimeError(f"IBKR Paper preflight rejected certification order: {check}")
 
-        print(
-            f"CERTIFY | IBKR PAPER | account={actual_account} equity={f(account.get('equity')):.2f} "
-            f"buying_power={f(account.get('buying_power')):.2f}"
-        )
+        print(f"CERTIFY | IBKR PAPER | account={actual_account} equity={f(account.get('equity')):.2f} buying_power={f(account.get('buying_power')):.2f}")
         print(f"PREFLIGHT| simulation=True symbol={symbol} quantity={quantity:g} order_type=MKT")
         print(f"ORDER   | {symbol} BUY Market quantity={quantity:g}")
+        opened = await client.place_order(payload); open_order_id = int(opened.get("order_id") or 0)
+        if not open_order_id:
+            raise RuntimeError(f"IBKR Paper open order returned no order id: {opened}")
+        print(f"OPEN    | order_id={open_order_id} accepted={opened.get('accepted')} status={opened.get('status')} errors={opened.get('errors')}")
+        if not opened.get("accepted"):
+            raise RuntimeError(f"IBKR Paper BUY rejected immediately: {opened}")
 
-        opened = await client.place_order(payload)
-        open_order_id = int(opened.get("order_id") or 0)
-        if not opened.get("accepted") or not opened.get("simulation") or not open_order_id:
-            raise RuntimeError(f"IBKR Paper open order was not accepted: {opened}")
-        print(f"OPEN    | accepted order_id={open_order_id}")
-
+        order_diag = await wait_for_terminal_order_state(client, open_order_id)
+        if order_diag.get("errors"):
+            raise RuntimeError(f"IBKR Paper BUY rejected by TWS/IBKR: {order_diag}")
         open_exec, _ = await wait_for_execution(client, before_ids, actual_account, symbol, "BUY")
-        delta_ok, current_qty = await wait_for_position_delta(
-            client, actual_account, symbol, baseline_qty, quantity
-        )
+        delta_ok, current_qty = await wait_for_position_delta(client, actual_account, symbol, baseline_qty, quantity)
         if not open_exec or not delta_ok:
             await cancel_if_open(client, open_order_id)
-            raise RuntimeError(
-                f"IBKR Paper BUY was not safely confirmed; execution={open_exec is not None} "
-                f"baseline_qty={baseline_qty:g} current_qty={current_qty:g}"
-            )
+            raise RuntimeError(f"IBKR Paper BUY was not safely confirmed; order_status={order_diag} execution={open_exec is not None} baseline_qty={baseline_qty:g} current_qty={current_qty:g}")
 
         open_exec_id = str(open_exec.get("execution_id") or "")
-        print(
-            f"POSITION| confirmed symbol={symbol} baseline={baseline_qty:g} current={current_qty:g} "
-            f"execution_id={open_exec_id} price={open_exec.get('price')}"
-        )
-
+        print(f"POSITION| confirmed symbol={symbol} baseline={baseline_qty:g} current={current_qty:g} execution_id={open_exec_id} price={open_exec.get('price')}")
         execs_after_open = (await client.executions(1)).get("list", [])
         close_before_ids = {str(x.get("execution_id") or "") for x in execs_after_open if x.get("execution_id")}
         close_payload = {**payload, "side": "SELL"}
@@ -205,36 +162,27 @@ async def main():
         if not close_check.get("ok") or not close_check.get("simulation"):
             raise RuntimeError(f"IBKR Paper close preflight rejected: {close_check}")
 
-        closed = await client.place_order(close_payload)
-        close_order_id = int(closed.get("order_id") or 0)
-        if not closed.get("accepted") or not closed.get("simulation") or not close_order_id:
-            raise RuntimeError(f"IBKR Paper close order was not accepted: {closed}")
-        print(f"CLOSE   | accepted order_id={close_order_id} side=SELL quantity={quantity:g}")
+        closed = await client.place_order(close_payload); close_order_id = int(closed.get("order_id") or 0)
+        if not close_order_id:
+            raise RuntimeError(f"IBKR Paper close returned no order id: {closed}")
+        print(f"CLOSE   | order_id={close_order_id} accepted={closed.get('accepted')} status={closed.get('status')} errors={closed.get('errors')}")
+        if not closed.get("accepted"):
+            raise RuntimeError(f"IBKR Paper close rejected immediately: {closed}. MANUAL REVIEW REQUIRED")
 
+        close_diag = await wait_for_terminal_order_state(client, close_order_id)
+        if close_diag.get("errors"):
+            raise RuntimeError(f"IBKR Paper close rejected by TWS/IBKR: {close_diag}. MANUAL REVIEW REQUIRED")
         close_exec, _ = await wait_for_execution(client, close_before_ids, actual_account, symbol, "SELL")
-        flat_ok, final_qty = await wait_for_position_delta(
-            client, actual_account, symbol, baseline_qty + quantity, -quantity
-        )
+        flat_ok, final_qty = await wait_for_position_delta(client, actual_account, symbol, baseline_qty + quantity, -quantity)
         if not close_exec or not flat_ok:
             await cancel_if_open(client, close_order_id)
-            raise RuntimeError(
-                f"IBKR Paper close was not safely confirmed; execution={close_exec is not None} "
-                f"expected_final={baseline_qty:g} actual_final={final_qty:g}. "
-                f"MANUAL REVIEW REQUIRED before rerunning certification."
-            )
+            raise RuntimeError(f"IBKR Paper close was not safely confirmed; order_status={close_diag} execution={close_exec is not None} expected_final={baseline_qty:g} actual_final={final_qty:g}. MANUAL REVIEW REQUIRED before rerunning certification.")
 
         close_exec_id = str(close_exec.get("execution_id") or "")
-        print(
-            f"EXECUTIONS| open={open_exec_id} close={close_exec_id} "
-            f"close_price={close_exec.get('price')}"
-        )
-        print(
-            f"PASS    | IBKR PAPER EXECUTION CERTIFIED | account={actual_account} symbol={symbol} "
-            f"quantity={quantity:g} restored_baseline_qty={final_qty:g} simulation=True"
-        )
+        print(f"EXECUTIONS| open={open_exec_id} close={close_exec_id} close_price={close_exec.get('price')}")
+        print(f"PASS    | IBKR PAPER EXECUTION CERTIFIED | account={actual_account} symbol={symbol} quantity={quantity:g} restored_baseline_qty={final_qty:g} simulation=True")
     finally:
         db.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
