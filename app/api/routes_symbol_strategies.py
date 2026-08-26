@@ -10,14 +10,16 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.signal import RiskProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
+from app.services.provider_routing import MARKETS,PROVIDER_MARKETS,normalize_symbol,provider_supports_market,providers_for_market,route_candidates,select_execution_route
 router=APIRouter(prefix='/strategies/symbols',tags=['strategies'])
-MODES={'WATCH','SIGNALS','AUTO_TRADE'};MARKETS={'CRYPTO','FX','STOCK','ETF','METAL','COMMODITY'}
-PROVIDER_MARKETS={'BYBIT':{'CRYPTO'},'MT5':{'FX','METAL','COMMODITY'},'IBKR':{'STOCK','ETF'},'TWELVE_DATA':set()}
+MODES={'WATCH','SIGNALS','AUTO_TRADE'}
 class SymbolStrategyIn(BaseModel):
     profile_id:uuid.UUID;market:str='CRYPTO';symbol:str=Field(min_length=1,max_length=32);mode:str='WATCH';enabled:bool=True
     timeframe:str|None=None;minimum_signal_strength:float|None=Field(default=None,ge=0,le=100);risk_per_trade_pct:float|None=Field(default=None,gt=0,le=100);stop_atr_multiplier:float|None=Field(default=None,gt=0,le=20);take_profit_rr:float|None=Field(default=None,gt=0,le=20);max_position_notional_pct:float|None=Field(default=None,gt=0,le=100)
 class SymbolStrategyPatch(BaseModel):
     mode:str|None=None;enabled:bool|None=None;timeframe:str|None=None;minimum_signal_strength:float|None=Field(default=None,ge=0,le=100);risk_per_trade_pct:float|None=Field(default=None,gt=0,le=100);stop_atr_multiplier:float|None=Field(default=None,gt=0,le=20);take_profit_rr:float|None=Field(default=None,gt=0,le=20);max_position_notional_pct:float|None=Field(default=None,gt=0,le=100)
+class RouteRequest(BaseModel):
+    market:str;symbol:str=Field(min_length=1,max_length=32)
 def _admin(u):return u.role=='ADMIN'
 def _profile(db,u,pid):
  p=db.get(BrokerProfile,pid)
@@ -25,12 +27,13 @@ def _profile(db,u,pid):
  if not _admin(u) and p.user_id!=u.id:raise HTTPException(403,'account access denied')
  return p
 def _normalize_symbol(market,symbol):
- s=symbol.upper().replace(' ','')
- return s.replace('/','') if market in {'FX','CRYPTO','METAL','COMMODITY'} else s
+ try:return normalize_symbol(market,symbol)
+ except ValueError as exc:raise HTTPException(400,str(exc)) from exc
 def _validate_provider_market(p,market):
- allowed=PROVIDER_MARKETS.get(p.provider,set())
- if market not in allowed:
-  text=', '.join(sorted(allowed)) if allowed else 'none'
+ try:supported=provider_supports_market(p.provider,market)
+ except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+ if not supported:
+  allowed=PROVIDER_MARKETS.get(p.provider,set());text=', '.join(sorted(allowed)) if allowed else 'none'
   raise HTTPException(409,f'{p.provider} cannot be assigned to {market}. Supported markets for this trading account: {text}')
  if not p.is_enabled:raise HTTPException(409,'account is disabled')
 def _validate(db,p,payload):
@@ -43,8 +46,16 @@ def _validate(db,p,payload):
  return market,mode,symbol
 @router.get('/capabilities')
 def symbol_capabilities(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
- q=select(BrokerProfile).where(BrokerProfile.provider!='ATLAS_PAPER',BrokerProfile.is_enabled.is_(True));q=q if _admin(user) else q.where(BrokerProfile.user_id==user.id)
- rows=list(db.scalars(q).all());return {'provider_markets':{k:sorted(v) for k,v in PROVIDER_MARKETS.items()},'accounts':[{'id':str(p.id),'provider':p.provider,'label':p.account_label,'markets':sorted(PROVIDER_MARKETS.get(p.provider,set())),'connected':p.last_connection_status=='CONNECTED'} for p in rows if p.provider in PROVIDER_MARKETS]}
+ q=select(BrokerProfile).where(BrokerProfile.provider!='ATLAS_PAPER');q=q if _admin(user) else q.where(BrokerProfile.user_id==user.id)
+ rows=list(db.scalars(q).all());return {'provider_markets':{k:sorted(v) for k,v in PROVIDER_MARKETS.items()},'accounts':[{'id':str(p.id),'provider':p.provider,'label':p.account_label,'markets':sorted(PROVIDER_MARKETS.get(p.provider,set())),'connected':p.last_connection_status=='CONNECTED','enabled':p.is_enabled,'active':p.is_active,'credentials_configured':p.credentials_configured} for p in rows if p.provider in PROVIDER_MARKETS]}
+@router.post('/route')
+def resolve_symbol_route(payload:RouteRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ try:
+  market=payload.market.upper();symbol=normalize_symbol(market,payload.symbol);supported=providers_for_market(market)
+ except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+ q=select(BrokerProfile).where(BrokerProfile.provider.in_(supported));q=q if _admin(user) else q.where(BrokerProfile.user_id==user.id)
+ profiles=list(db.scalars(q).all());candidates=route_candidates(market,profiles);selected=select_execution_route(market,profiles)
+ return {'market':market,'symbol':symbol,'supported_providers':list(supported),'selected':selected.__dict__ if selected else None,'candidates':[{'profile_id':c.profile_id,'provider':c.provider,'label':c.label,'environment':c.environment,'connected':c.connected,'enabled':c.enabled,'active':c.active,'credentials_configured':c.credentials_configured,'executable':c.executable} for c in candidates]}
 @router.get('')
 def list_symbol_strategies(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  q=select(SymbolStrategy).order_by(SymbolStrategy.market,SymbolStrategy.symbol);q=q if _admin(user) else q.where(SymbolStrategy.user_id==user.id)
