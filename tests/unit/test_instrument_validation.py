@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 from app.services.instrument_universe import UniverseItem
-from app.services.instrument_validation import validate_instrument
+from app.services.instrument_validation import _mt5_search_terms, validate_instrument
 
 
 def item(market='STOCK', symbol='AAPL'):
@@ -33,3 +33,17 @@ def test_validation_result_preserves_market_and_profile():
     result = asyncio.run(validate_instrument(profile, item('ETF', 'SPY')))
     assert result.market == 'ETF'
     assert result.profile_id == 'abc'
+
+
+def test_mt5_silver_alias_search_terms_include_xag_and_silver():
+    terms = _mt5_search_terms('XAGUSD')
+    assert 'XAGUSD' in terms
+    assert 'XAG' in terms
+    assert 'SILVER' in terms
+
+
+def test_mt5_oil_alias_search_terms_include_wti_and_oil():
+    terms = _mt5_search_terms('XTIUSD')
+    assert 'XTIUSD' in terms
+    assert 'WTI' in terms
+    assert 'OIL' in terms
