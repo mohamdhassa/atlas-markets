@@ -148,7 +148,7 @@ def place(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
  oid=ib.next_id
  if oid is None:raise HTTPException(503,'IBKR next order id unavailable')
  ib.order_statuses.pop(int(oid),None);ib.errors=[e for e in ib.errors if int(e.get('id') or -1)!=int(oid)];prepare(f'order-status:{int(oid)}')
- o=Order();o.action=p.side.upper();o.totalQuantity=p.quantity;o.orderType=p.order_type.upper();o.transmit=True;o.account=p.account_id or cfg.get('account_id') or ''
+ o=Order();o.action=p.side.upper();o.totalQuantity=p.quantity;o.orderType=p.order_type.upper();o.transmit=True;o.account=p.account_id or cfg.get('account_id') or '';o.tif='DAY'
  # Newer TWS/API combinations reject legacy default order attributes when they
  # are serialized by older Python ibapi clients. Explicitly disable them for
  # ordinary SMART-routed stock/ETF orders.
