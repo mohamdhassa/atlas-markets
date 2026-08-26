@@ -19,6 +19,7 @@ class IbkrBridgeClient:
     async def account(self):return await self._get('/account')
     async def positions(self):return await self._get('/positions')
     async def orders(self):return await self._get('/orders')
+    async def order_status(self,order_id:int):return await self._get(f'/orders/{order_id}/status')
     async def executions(self,days:int=30):return await self._get('/executions',{'days':days})
     async def contract(self,symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/contract',{'symbol':symbol,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def quote(self,symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/quote',{'symbol':symbol,'sec_type':sec_type,'exchange':exchange,'currency':currency})
