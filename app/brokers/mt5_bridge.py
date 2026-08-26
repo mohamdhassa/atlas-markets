@@ -26,6 +26,7 @@ class Mt5BridgeClient:
     async def account(self)->dict:return await self._get('/account')
     async def positions(self)->dict:return await self._get('/positions')
     async def orders(self)->dict:return await self._get('/orders')
+    async def search_symbols(self,query:str,limit:int=50)->dict:return await self._get(f'/symbols/search?q={str(query).strip()}&limit={max(1,min(limit,200))}')
     async def symbol(self,symbol:str)->dict:return await self._get(f'/symbol/{self._symbol(symbol)}')
     async def candles(self,symbol:str,timeframe:str='5m',limit:int=200)->dict:return await self._get(f'/candles/{self._symbol(symbol)}?timeframe={timeframe}&limit={max(2,min(limit,500))}')
     async def history_deals(self,days:int=30)->dict:return await self._get(f'/history/deals?days={max(1,min(days,366))}')
