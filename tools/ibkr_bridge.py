@@ -11,7 +11,7 @@ import uvicorn
 
 class State(EWrapper,EClient):
  def __init__(self):
-  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self._events={}
+  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self.order_statuses={};self._events={}
  def _event(self,k):return self._events.setdefault(k,threading.Event())
  def nextValidId(self,orderId):self.next_id=orderId;self._event('connected').set()
  def managedAccounts(self,accountsList):self.accounts=[x for x in accountsList.split(',') if x]
@@ -21,6 +21,8 @@ class State(EWrapper,EClient):
  def positionEnd(self):self._event('positions').set()
  def openOrder(self,orderId,contract,order,orderState):self.open_orders.append({'order_id':orderId,'symbol':contract.symbol,'sec_type':contract.secType,'side':order.action,'type':order.orderType,'quantity':float(order.totalQuantity),'limit_price':float(order.lmtPrice or 0),'aux_price':float(order.auxPrice or 0),'status':orderState.status})
  def openOrderEnd(self):self._event('orders').set()
+ def orderStatus(self,orderId,status,filled,remaining,avgFillPrice,permId,parentId,lastFillPrice,clientId,whyHeld,mktCapPrice):
+  self.order_statuses[int(orderId)]={'order_id':int(orderId),'status':status,'filled':float(filled),'remaining':float(remaining),'avg_fill_price':float(avgFillPrice or 0),'last_fill_price':float(lastFillPrice or 0),'perm_id':int(permId or 0),'client_id':int(clientId or 0),'why_held':whyHeld or ''};self._event(f'order-status:{int(orderId)}').set()
  def execDetails(self,reqId,contract,execution):self.executions.append({'execution_id':execution.execId,'order_id':execution.orderId,'account':execution.acctNumber,'symbol':contract.symbol,'sec_type':contract.secType,'side':execution.side,'quantity':float(execution.shares),'price':float(execution.price),'time':execution.time})
  def execDetailsEnd(self,reqId):self._event(f'exec:{reqId}').set()
  def commissionReport(self,report):
@@ -39,8 +41,12 @@ class State(EWrapper,EClient):
   c=details.contract;self.contracts.setdefault(reqId,[]).append({'con_id':c.conId,'symbol':c.symbol,'local_symbol':c.localSymbol,'sec_type':c.secType,'exchange':c.exchange,'primary_exchange':c.primaryExchange,'currency':c.currency,'long_name':details.longName,'min_tick':details.minTick})
  def contractDetailsEnd(self,reqId):self._event(f'contract:{reqId}').set()
  def error(self,reqId,errorCode,errorString,advancedOrderRejectJson=''):
-  self.errors.append({'id':reqId,'code':errorCode,'message':errorString})
-  if reqId>=0 and errorCode not in {2104,2106,2158}:self._event(f'quote:{reqId}').set();self._event(f'bars:{reqId}').set();self._event(f'contract:{reqId}').set()
+  row={'id':reqId,'code':errorCode,'message':errorString}
+  if advancedOrderRejectJson:row['advanced_reject']=advancedOrderRejectJson
+  self.errors.append(row)
+  if reqId>=0:
+   self._event(f'order-status:{reqId}').set()
+   if errorCode not in {2104,2106,2158}:self._event(f'quote:{reqId}').set();self._event(f'bars:{reqId}').set();self._event(f'contract:{reqId}').set()
 
 app=FastAPI(title='ATLAS IBKR Bridge');ib=State();cfg={}
 def auth(x_atlas_bridge_token:str|None):
@@ -83,7 +89,7 @@ def startup():
 def shutdown():ib.disconnect()
 @app.get('/health')
 def health(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);return {'status':'ok','connected':ib.isConnected(),'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'errors':ib.errors[-8:]}
+ auth(x_atlas_bridge_token);return {'status':'ok','connected':ib.isConnected(),'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'errors':ib.errors[-12:]}
 @app.get('/account')
 def account(x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);r=rid();key=f'acct:{r}';prepare(key);ib.reqAccountSummary(r,'All','NetLiquidation,TotalCashValue,AvailableFunds,BuyingPower');wait(key);ib.cancelAccountSummary(r);acct=cfg.get('account_id') or (ib.accounts[0] if ib.accounts else '')
@@ -97,6 +103,10 @@ def positions(x_atlas_bridge_token:str|None=Header(default=None)):
 @app.get('/orders')
 def orders(x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);ib.open_orders=[];prepare('orders');ib.reqOpenOrders();wait('orders');return {'list':ib.open_orders}
+@app.get('/orders/{order_id}/status')
+def order_status(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
+ auth(x_atlas_bridge_token);status=ib.order_statuses.get(int(order_id));errs=[e for e in ib.errors if int(e.get('id') or -1)==int(order_id)]
+ return {'order_id':int(order_id),'status':status,'errors':errs[-8:]}
 @app.get('/executions')
 def executions(days:int=30,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);from ibapi.execution import ExecutionFilter
@@ -137,9 +147,13 @@ def place(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
  oid=ib.next_id
  if oid is None:raise HTTPException(503,'IBKR next order id unavailable')
+ ib.order_statuses.pop(int(oid),None);ib.errors=[e for e in ib.errors if int(e.get('id') or -1)!=int(oid)];prepare(f'order-status:{int(oid)}')
  o=Order();o.action=p.side.upper();o.totalQuantity=p.quantity;o.orderType=p.order_type.upper();o.transmit=True;o.account=p.account_id or cfg.get('account_id') or ''
  if o.orderType=='LMT':o.lmtPrice=float(p.limit_price or 0)
- ib.placeOrder(oid,contract(p.symbol,p.sec_type,p.exchange,p.currency),o);ib.next_id+=1;return {'accepted':True,'order_id':oid,'simulation':True,'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity}
+ ib.placeOrder(oid,contract(p.symbol,p.sec_type,p.exchange,p.currency),o);ib.next_id+=1
+ ib._event(f'order-status:{int(oid)}').wait(5)
+ status=ib.order_statuses.get(int(oid));errs=[e for e in ib.errors if int(e.get('id') or -1)==int(oid)]
+ return {'accepted':not bool(errs),'order_id':oid,'simulation':True,'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'status':status,'errors':errs[-8:]}
 @app.post('/orders/{order_id}/cancel')
 def cancel(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token)
