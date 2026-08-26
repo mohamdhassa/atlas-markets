@@ -10,7 +10,8 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.signal import RiskProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
-from app.services.provider_routing import MARKETS,PROVIDER_MARKETS,normalize_symbol,provider_supports_market,providers_for_market,route_candidates,select_execution_route
+from app.services.instrument_universe import STARTER_UNIVERSE,build_universe,starter_symbols
+from app.services.provider_routing import MARKETS,PROVIDER_MARKETS,normalize_market,normalize_symbol,provider_supports_market,providers_for_market,route_candidates,select_execution_route
 router=APIRouter(prefix='/strategies/symbols',tags=['strategies'])
 MODES={'WATCH','SIGNALS','AUTO_TRADE'}
 class SymbolStrategyIn(BaseModel):
@@ -20,6 +21,9 @@ class SymbolStrategyPatch(BaseModel):
     mode:str|None=None;enabled:bool|None=None;timeframe:str|None=None;minimum_signal_strength:float|None=Field(default=None,ge=0,le=100);risk_per_trade_pct:float|None=Field(default=None,gt=0,le=100);stop_atr_multiplier:float|None=Field(default=None,gt=0,le=20);take_profit_rr:float|None=Field(default=None,gt=0,le=20);max_position_notional_pct:float|None=Field(default=None,gt=0,le=100)
 class RouteRequest(BaseModel):
     market:str;symbol:str=Field(min_length=1,max_length=32)
+class UniverseSeedRequest(BaseModel):
+    markets:list[str]|None=None
+    mode:str='WATCH'
 def _admin(u):return u.role=='ADMIN'
 def _profile(db,u,pid):
  p=db.get(BrokerProfile,pid)
@@ -48,6 +52,29 @@ def _validate(db,p,payload):
 def symbol_capabilities(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  q=select(BrokerProfile).where(BrokerProfile.provider!='ATLAS_PAPER');q=q if _admin(user) else q.where(BrokerProfile.user_id==user.id)
  rows=list(db.scalars(q).all());return {'provider_markets':{k:sorted(v) for k,v in PROVIDER_MARKETS.items()},'accounts':[{'id':str(p.id),'provider':p.provider,'label':p.account_label,'markets':sorted(PROVIDER_MARKETS.get(p.provider,set())),'connected':p.last_connection_status=='CONNECTED','enabled':p.is_enabled,'active':p.is_active,'credentials_configured':p.credentials_configured} for p in rows if p.provider in PROVIDER_MARKETS]}
+@router.get('/universe')
+def instrument_universe(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ profiles=list(db.scalars(select(BrokerProfile).where(BrokerProfile.user_id==user.id,BrokerProfile.provider!='ATLAS_PAPER')).all())
+ strategies=list(db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id==user.id)).all())
+ items=build_universe(profiles,strategies)
+ return {'starter_universe':{k:list(v) for k,v in STARTER_UNIVERSE.items()},'configured_count':sum(1 for x in items if x.configured),'routable_count':sum(1 for x in items if x.executable_route),'items':[x.__dict__ for x in items]}
+@router.post('/universe/seed')
+def seed_instrument_universe(payload:UniverseSeedRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ mode=payload.mode.upper()
+ if mode not in {'WATCH','SIGNALS'}:raise HTTPException(400,'bulk universe seed only allows WATCH or SIGNALS; promote symbols to AUTO_TRADE individually after validation')
+ try:markets=[normalize_market(x) for x in payload.markets] if payload.markets else list(STARTER_UNIVERSE)
+ except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+ profiles=list(db.scalars(select(BrokerProfile).where(BrokerProfile.user_id==user.id,BrokerProfile.provider!='ATLAS_PAPER')).all())
+ existing={(x.market,x.symbol) for x in db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id==user.id)).all()}
+ created=[];skipped=[]
+ for market,symbol in starter_symbols(markets):
+  if (market,symbol) in existing:skipped.append({'market':market,'symbol':symbol,'reason':'ALREADY_CONFIGURED'});continue
+  selected=select_execution_route(market,profiles)
+  if selected is None:skipped.append({'market':market,'symbol':symbol,'reason':'NO_EXECUTABLE_ROUTE'});continue
+  p=next((x for x in profiles if str(x.id)==selected.profile_id),None)
+  if p is None:skipped.append({'market':market,'symbol':symbol,'reason':'ROUTE_PROFILE_MISSING'});continue
+  row=SymbolStrategy(user_id=user.id,profile_id=p.id,market=market,symbol=symbol,mode=mode,enabled=True);db.add(row);created.append({'market':market,'symbol':symbol,'profile_id':str(p.id),'provider':p.provider,'mode':mode});existing.add((market,symbol))
+ db.commit();return {'mode':mode,'created_count':len(created),'skipped_count':len(skipped),'created':created,'skipped':skipped}
 @router.post('/route')
 def resolve_symbol_route(payload:RouteRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  try:
