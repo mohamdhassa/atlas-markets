@@ -11,8 +11,7 @@ This file is the operational handover/checkpoint for the active ATLAS MARKETS de
 - Repository: `mohamdhassa/atlas-markets`
 - Current baseline branch: `main`
 - Local Windows path used during development: `C:\Users\USER\Downloads\altas-markets`
-- Last verified automated test baseline before the latest MT5 alias-discovery additions: **69 passed, 1 warning**
-- Expected baseline after the two newly added alias tests: **71 passed, 1 warning**
+- Verified automated test baseline: **71 passed, 1 warning**
 
 ## Product direction
 
@@ -75,35 +74,31 @@ A valid BTCUSDT Testnet order reached Bybit's order endpoint, but Bybit rejected
 
 ## Multi-instrument universe
 
-The current starter universe contains 21 candidate instruments spanning:
-
-- stocks
-- ETFs
-- FX
-- metals
-- commodities
-- crypto
+The current starter universe contains 21 candidate instruments spanning stocks, ETFs, FX, metals, commodities and crypto.
 
 Latest broker-native validation result:
 
 ```text
-supported=20
-failed=1
+supported=21
+failed=0
 skipped=0
 total=21
 ```
 
-Validated examples include:
+Validated instruments:
 
-- IBKR: AAPL, AMZN, META, MSFT, NVDA, TSLA, IWM, QQQ, SPY
-- MT5: AUDUSD, EURUSD, GBPUSD, USDCAD, USDCHF, USDJPY, XAUUSD, XTIUSD
-- Bybit: BTCUSDT, ETHUSDT, SOLUSDT
+- IBKR stocks: AAPL, AMZN, META, MSFT, NVDA, TSLA
+- IBKR ETFs: IWM, QQQ, SPY
+- MT5 FX: AUDUSD, EURUSD, GBPUSD, USDCAD, USDCHF, USDJPY
+- MT5 metals: XAGUSD, XAUUSD
+- MT5 commodity: XTIUSD
+- Bybit crypto: BTCUSDT, ETHUSDT, SOLUSDT
 
-The only failed candidate was `XAGUSD` because Fusion MT5 did not expose that exact symbol name. Broker-native MT5 symbol search/alias resolution is now being added so ATLAS can discover Fusion's actual silver symbol instead of assuming a universal broker symbol name.
+MT5 broker-native symbol discovery/alias resolution is active, and `XAGUSD` now validates successfully.
 
 ## Centralized provider routing
 
-ATLAS now has centralized market/provider routing rules and route-health checks:
+ATLAS has centralized market/provider routing rules and route-health checks:
 
 - stocks / ETFs → IBKR
 - FX / metals / commodities → MT5
@@ -114,16 +109,18 @@ Execution candidates must be connected, enabled, active and credentials-configur
 
 ## Immediate next task
 
-1. Pull/restart the updated MT5 bridge containing `/symbols/search`.
-2. Run the full test suite and confirm the expected **71 passed** baseline.
-3. Rerun `validate_instrument_universe`.
-4. Confirm whether `XAGUSD` resolves to Fusion's broker-specific silver symbol.
-5. Once the universe is fully validated, seed verified instruments into safe `WATCH` / `SIGNALS` modes.
-6. Do not bulk-enable `AUTO_TRADE` yet; MT5 currently has substantial existing Demo exposure and the risk engine must account for that before multi-instrument automatic execution.
+The provider setup/certification and starter-universe validation stage is complete. Next development should focus on the central engine:
+
+1. seed the fully validated universe into safe `WATCH` / `SIGNALS` modes;
+2. build/validate multi-instrument scanning across the seeded universe;
+3. preserve per-symbol/provider routing;
+4. integrate existing analysis/news/historical inputs into explainable BUY/SELL/HOLD decisions;
+5. harden account-wide risk using existing positions/exposure before enabling broad `AUTO_TRADE`;
+6. keep Bybit execution disabled while error `10024` remains in force;
+7. do not bulk-enable `AUTO_TRADE` yet.
 
 ## Central-engine work remaining
 
-- complete broker-symbol alias/capability discovery
 - safe universe seeding
 - multi-instrument scanning
 - technical/fundamental/news intelligence integration
@@ -138,4 +135,4 @@ Execution candidates must be connected, enabled, active and credentials-configur
 
 ## Safety position
 
-Live Money automatic trading is intentionally not ready. Provider certification is currently confined to Paper/Demo/Testnet environments. Live execution remains explicitly gated until routing, strategy, risk, automation and extended simulation have been validated.
+Live Money automatic trading is intentionally not ready. Provider certification is confined to Paper/Demo/Testnet environments. Live execution remains explicitly gated until routing, strategy, risk, automation and extended simulation have been validated.
