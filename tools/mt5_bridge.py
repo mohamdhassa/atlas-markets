@@ -89,6 +89,15 @@ def positions(x_atlas_bridge_token:str|None=Header(default=None)):
 @app.get('/orders')
 def orders(x_atlas_bridge_token:str|None=Header(default=None)):
     auth(x_atlas_bridge_token);require_terminal();return {'list':[obj(x) for x in (mt5.orders_get() or [])]}
+@app.get('/symbols/search')
+def search_symbols(q:str=Query(min_length=1,max_length=32),limit:int=Query(50,ge=1,le=200),x_atlas_bridge_token:str|None=Header(default=None)):
+    auth(x_atlas_bridge_token);require_terminal();needle=q.strip().upper();rows=[]
+    for info in mt5.symbols_get() or []:
+        name=str(getattr(info,'name','') or '').upper();path=str(getattr(info,'path','') or '').upper();desc=str(getattr(info,'description','') or '').upper()
+        if needle in name or needle in path or needle in desc:
+            rows.append({'name':getattr(info,'name',None),'path':getattr(info,'path',None),'description':getattr(info,'description',None),'visible':bool(getattr(info,'visible',False)),'trade_mode':getattr(info,'trade_mode',None),'digits':getattr(info,'digits',None),'volume_min':getattr(info,'volume_min',None),'volume_step':getattr(info,'volume_step',None)})
+            if len(rows)>=limit:break
+    return {'query':needle,'list':rows}
 @app.get('/symbol/{symbol}')
 def get_symbol(symbol:str,x_atlas_bridge_token:str|None=Header(default=None)):
     auth(x_atlas_bridge_token);require_terminal();return symbol_info(symbol)
