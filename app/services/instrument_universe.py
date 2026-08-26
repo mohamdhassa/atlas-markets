@@ -58,6 +58,7 @@ def build_universe(profiles: Iterable[object], strategies: Iterable[object], mar
         strategy = configured.get((market, symbol))
         candidates = route_candidates(market, profiles)
         selected = select_execution_route(market, profiles)
+        matched = None
         profile_id = str(getattr(strategy, 'profile_id')) if strategy is not None else (selected.profile_id if selected else None)
         provider = selected.provider if selected else None
         environment = selected.environment if selected else None
@@ -65,16 +66,17 @@ def build_universe(profiles: Iterable[object], strategies: Iterable[object], mar
             matched = next((c for c in candidates if c.profile_id == profile_id), None)
             if matched is not None:
                 provider, environment = matched.provider, matched.environment
+        route = matched if strategy is not None else selected
         result.append(UniverseItem(
             market=market,
             symbol=symbol,
             configured=strategy is not None,
-            strategy_mode=str(getattr(strategy, 'mode', '') or '') or None if strategy is not None else None,
+            strategy_mode=(str(getattr(strategy, 'mode', '') or '') or None) if strategy is not None else None,
             strategy_enabled=bool(getattr(strategy, 'enabled', False)) if strategy is not None else None,
             profile_id=profile_id,
             provider=provider,
             environment=environment,
-            executable_route=bool(selected and selected.executable),
+            executable_route=bool(route and route.executable),
             route_candidates=len(candidates),
         ))
     return result
