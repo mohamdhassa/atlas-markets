@@ -11,7 +11,7 @@ import uvicorn
 
 class State(EWrapper,EClient):
  def __init__(self):
-  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self._events={}
+  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self._events={}
  def _event(self,k):return self._events.setdefault(k,threading.Event())
  def nextValidId(self,orderId):self.next_id=orderId;self._event('connected').set()
  def managedAccounts(self,accountsList):self.accounts=[x for x in accountsList.split(',') if x]
@@ -35,18 +35,21 @@ class State(EWrapper,EClient):
  def tickSnapshotEnd(self,reqId):self._event(f'quote:{reqId}').set()
  def historicalData(self,reqId,bar):self.bars.setdefault(reqId,[]).append({'time':bar.date,'open':float(bar.open),'high':float(bar.high),'low':float(bar.low),'close':float(bar.close),'volume':float(bar.volume or 0)})
  def historicalDataEnd(self,reqId,start,end):self._event(f'bars:{reqId}').set()
+ def contractDetails(self,reqId,details):
+  c=details.contract;self.contracts.setdefault(reqId,[]).append({'con_id':c.conId,'symbol':c.symbol,'local_symbol':c.localSymbol,'sec_type':c.secType,'exchange':c.exchange,'primary_exchange':c.primaryExchange,'currency':c.currency,'long_name':details.longName,'min_tick':details.minTick})
+ def contractDetailsEnd(self,reqId):self._event(f'contract:{reqId}').set()
  def error(self,reqId,errorCode,errorString,advancedOrderRejectJson=''):
   self.errors.append({'id':reqId,'code':errorCode,'message':errorString})
-  if reqId>=0 and errorCode not in {2104,2106,2158}:self._event(f'quote:{reqId}').set();self._event(f'bars:{reqId}').set()
+  if reqId>=0 and errorCode not in {2104,2106,2158}:self._event(f'quote:{reqId}').set();self._event(f'bars:{reqId}').set();self._event(f'contract:{reqId}').set()
 
 app=FastAPI(title='ATLAS IBKR Bridge');ib=State();cfg={}
 def auth(x_atlas_bridge_token:str|None):
  token=cfg.get('token')
  if token and x_atlas_bridge_token!=token:raise HTTPException(401,'invalid bridge token')
-def prepare(key):
- e=ib._event(key);e.clear();return e
+def prepare(key):ib._event(key).clear()
 def wait(key,seconds=10):
- if not ib._event(key).wait(seconds):raise HTTPException(504,f'IBKR timeout waiting for {key}')
+ e=ib._event(key)
+ if not e.wait(seconds):raise HTTPException(504,f'IBKR timeout waiting for {key}')
 def rid():return int(time.time()*1000000)%2000000000
 def contract(symbol,sec_type='STK',exchange='SMART',currency='USD'):
  c=Contract();c.symbol=symbol.upper();c.secType=sec_type;c.exchange=exchange;c.currency=currency;return c
@@ -102,6 +105,11 @@ def executions(days:int=30,x_atlas_bridge_token:str|None=Header(default=None)):
  for x in ib.executions:
   c=ib.commissions.get(str(x['execution_id']),{});rows.append({**x,**c,'pnl_available':c.get('realized_pnl') is not None})
  return {'list':rows}
+@app.get('/contract')
+def contract_info(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
+ auth(x_atlas_bridge_token);r=rid();key=f'contract:{r}';ib.contracts[r]=[];prepare(key);ib.reqContractDetails(r,contract(symbol,sec_type,exchange,currency));wait(key,12);rows=ib.contracts.pop(r,[])
+ if not rows:raise HTTPException(404,f'No IBKR contract found for {symbol}')
+ exact=next((x for x in rows if x.get('symbol','').upper()==symbol.upper() and x.get('sec_type')==sec_type),rows[0]);return exact
 @app.get('/quote')
 def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);r=rid();key=f'quote:{r}';ib.quotes[r]={};prepare(key);ib.reqMktData(r,contract(symbol,sec_type,exchange,currency),'',True,False,[]);wait(key);ib.cancelMktData(r);q=ib.quotes.pop(r,{})
