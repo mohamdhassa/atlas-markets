@@ -1,13 +1,10 @@
 from __future__ import annotations
 import httpx
 
-class IbkrBridgeClient:
-    """ATLAS client for the local Windows IBKR TWS/IB Gateway bridge.
+from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
 
-    The bridge owns the official IBKR socket API connection. ATLAS Docker talks
-    HTTP to the bridge, matching the MT5 bridge architecture and keeping TWS
-    credentials/session state outside the container.
-    """
+class IbkrBridgeClient:
+    """ATLAS client for the local Windows IBKR TWS/IB Gateway bridge."""
     def __init__(self,base_url:str,token:str|None=None,timeout:float=15.0):
         self.base_url=base_url.rstrip('/');self.token=token;self.timeout=timeout
     def _headers(self):return {'X-ATLAS-Bridge-Token':self.token} if self.token else {}
@@ -25,5 +22,14 @@ class IbkrBridgeClient:
     async def quote(self,symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/quote',{'symbol':symbol,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def candles(self,symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/candles',{'symbol':symbol,'timeframe':timeframe,'limit':limit,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def order_check(self,payload:dict):return await self._post('/order-check',payload)
-    async def place_order(self,payload:dict):return await self._post('/orders',payload)
+    async def place_order(self,payload:dict):
+        payload=dict(payload);symbol=str(payload.get('symbol') or '').strip().upper().replace('/','').replace(' ','');payload['symbol']=symbol
+        account_key=payload.get('account_id') or self.base_url
+        async with reserve_execution(f'IBKR:{account_key}',symbol) as reservation:
+            if reservation is None:raise RuntimeError('EXECUTION_ALREADY_IN_PROGRESS')
+            positions=(await self.positions()).get('list',[])
+            if symbol in exposure_symbols(positions,'quantity'):raise RuntimeError('SYMBOL_ALREADY_HAS_POSITION')
+            orders=(await self.orders()).get('list',[])
+            if symbol in pending_order_symbols(orders):raise RuntimeError('SYMBOL_ALREADY_HAS_OPEN_ORDER')
+            return await self._post('/orders',payload)
     async def cancel_order(self,order_id:int):return await self._post(f'/orders/{order_id}/cancel',{})
