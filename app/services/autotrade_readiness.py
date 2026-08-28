@@ -49,6 +49,19 @@ def _round_volume(raw, info):
     return round(max(mn, value), 8)
 
 
+def _provider_execution_blockers(profile) -> list[str]:
+    """Hard execution-certification gates independent of connectivity/signal readiness.
+
+    Bybit Testnet connectivity is valid for balances, positions, market data and signals,
+    but this deployment's execution certification was rejected by the provider (10024).
+    Keep crypto signal-ready while refusing to report it as execution-ready until a
+    provider execution path is explicitly certified and this gate is deliberately removed.
+    """
+    if profile.provider == 'BYBIT':
+        return ['PROVIDER_EXECUTION_NOT_CERTIFIED']
+    return []
+
+
 async def autotrade_readiness(db, *, user_id) -> dict:
     settings = get_settings(); risk = _risk(db); default = _strategy(db)
     configs = list(db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id == user_id, SymbolStrategy.enabled.is_(True))).all())
@@ -95,7 +108,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 rows.append({**base, 'readiness': 'BLOCK', 'reason': 'UNSUPPORTED_PROVIDER'}); continue
 
             approved, reason, details = evaluate_risk(generated, minimum_signal_score=minimum, account_enabled=profile.is_enabled, allow_live_trading=False, account_environment=profile.environment)
-            blockers = []
+            blockers = _provider_execution_blockers(profile)
             if not approved: blockers.append(reason)
             if existing_positions >= risk.max_open_positions: blockers.append('MAX_OPEN_POSITIONS_REACHED')
             if existing_qty != 0: blockers.append('SYMBOL_ALREADY_HAS_POSITION')
@@ -106,7 +119,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 if profile.provider == 'MT5': proposed['volume'] = _round_volume(plan.quantity / sizing['contract_size'], sizing['symbol_info'])
                 if profile.provider == 'IBKR': proposed['shares'] = math.floor(plan.quantity)
                 if plan.notional > available: blockers.append('INSUFFICIENT_AVAILABLE_BALANCE')
-            rows.append({**base, 'timeframe': timeframe, 'decision': generated.decision, 'classification': generated.classification, 'strength': generated.strength, 'signal_reason': reason, 'risk_details': details, 'account': {'equity': equity, 'available': available, 'open_positions': existing_positions}, 'existing_symbol_quantity': existing_qty, 'proposed_order': proposed, 'readiness': 'PASS' if not blockers else 'BLOCK', 'blockers': blockers})
+            signal_ready = approved and price > 0
+            rows.append({**base, 'timeframe': timeframe, 'decision': generated.decision, 'classification': generated.classification, 'strength': generated.strength, 'signal_reason': reason, 'risk_details': details, 'account': {'equity': equity, 'available': available, 'open_positions': existing_positions}, 'existing_symbol_quantity': existing_qty, 'proposed_order': proposed, 'signal_ready': signal_ready, 'execution_ready': not blockers, 'readiness': 'PASS' if not blockers else 'BLOCK', 'blockers': blockers})
         except Exception as exc:
             rows.append({**base, 'readiness': 'BLOCK', 'reason': f'{type(exc).__name__}: {str(exc) or repr(exc)}'})
 
