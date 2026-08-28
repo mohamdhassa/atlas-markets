@@ -17,3 +17,7 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+.venv-ibkr/
+.venv-mt5/
+tools/*.pre-whatif.bak
+tools/*.pre-quote-fallback.bak
