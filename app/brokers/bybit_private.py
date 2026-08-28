@@ -58,6 +58,8 @@ class BybitPrivateClient:
         return self._result(response)
 
     async def wallet(self)->dict:return await self.get("/v5/account/wallet-balance",{"accountType":"UNIFIED"})
+    async def account_info(self)->dict:return await self.get("/v5/account/info")
+    async def api_key_info(self)->dict:return await self.get("/v5/user/query-api")
     async def positions(self)->dict:return await self.get("/v5/position/list",{"category":"linear","settleCoin":"USDT"})
     async def open_orders(self)->dict:return await self.get("/v5/order/realtime",{"category":"linear","settleCoin":"USDT","openOnly":0})
     async def closed_pnl(self,limit:int=100)->dict:return await self.get("/v5/position/closed-pnl",{"category":"linear","limit":max(1,min(limit,100))})
