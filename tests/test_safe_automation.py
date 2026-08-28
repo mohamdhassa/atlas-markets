@@ -14,7 +14,7 @@ def test_ibkr_paper_is_certified_for_automation():
 
 
 def test_ibkr_live_remains_blocked():
-    assert automation_certification_blocker('IBKR', 'LIVE') == 'AUTOMATION_ROUTE_NOT_CERTIFIED'
+    assert automation_certification_blocker('IBKR', 'LIVE') == 'IBKR_PAPER_ONLY_CERTIFIED'
 
 
 def test_bybit_remains_hard_blocked():
