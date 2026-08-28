@@ -8,6 +8,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
+
 
 class BybitPrivateError(RuntimeError):
     pass
@@ -15,30 +17,20 @@ class BybitPrivateError(RuntimeError):
 
 class BybitPrivateClient:
     def __init__(self, api_key: str, api_secret: str, base_url: str, timeout: float = 8.0):
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.recv_window = "5000"
-        self._time_offset_ms = 0
-        self._time_synced_at = 0.0
+        self.api_key = api_key;self.api_secret = api_secret;self.base_url = base_url.rstrip("/");self.timeout = timeout;self.recv_window = "5000";self._time_offset_ms = 0;self._time_synced_at = 0.0
 
     async def _sync_time(self, force: bool = False) -> None:
         now = time.monotonic()
-        if not force and now - self._time_synced_at < 60:
-            return
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(f"{self.base_url}/v5/market/time")
+        if not force and now - self._time_synced_at < 60:return
+        async with httpx.AsyncClient(timeout=self.timeout) as client:response = await client.get(f"{self.base_url}/v5/market/time")
         response.raise_for_status();payload=response.json()
         if payload.get("retCode") != 0:raise BybitPrivateError(f"Bybit time sync failed: {payload.get('retMsg', 'request failed')}")
-        result = payload.get("result") or {}
-        server_ms = int(result.get("timeNano", "0")) // 1_000_000 if result.get("timeNano") else int(result.get("timeSecond", "0")) * 1000
+        result = payload.get("result") or {};server_ms = int(result.get("timeNano", "0")) // 1_000_000 if result.get("timeNano") else int(result.get("timeSecond", "0")) * 1000
         if not server_ms:raise BybitPrivateError("Bybit time sync returned no server timestamp")
         self._time_offset_ms = server_ms - int(time.time() * 1000);self._time_synced_at = now
 
     def _headers(self, payload: str) -> dict[str, str]:
-        timestamp = str(int(time.time() * 1000) + self._time_offset_ms);plain = timestamp + self.api_key + self.recv_window + payload
-        signature = hmac.new(self.api_secret.encode(), plain.encode(), hashlib.sha256).hexdigest()
+        timestamp = str(int(time.time() * 1000) + self._time_offset_ms);plain = timestamp + self.api_key + self.recv_window + payload;signature = hmac.new(self.api_secret.encode(), plain.encode(), hashlib.sha256).hexdigest()
         return {"X-BAPI-API-KEY":self.api_key,"X-BAPI-TIMESTAMP":timestamp,"X-BAPI-RECV-WINDOW":self.recv_window,"X-BAPI-SIGN":signature,"Content-Type":"application/json"}
 
     @staticmethod
@@ -73,9 +65,17 @@ class BybitPrivateClient:
 
     async def place_demo_market_order(self,*,symbol:str,side:str,qty:float,stop_loss:float|None=None,take_profit:float|None=None,order_link_id:str|None=None)->dict:
         if self.base_url.rstrip("/")=="https://api.bybit.com":raise BybitPrivateError("ATLAS refuses broker-native demo execution on the Bybit LIVE endpoint")
-        payload={"category":"linear","symbol":symbol.upper(),"side":side,"orderType":"Market","qty":f"{qty:.8f}".rstrip("0").rstrip("."),"timeInForce":"IOC","reduceOnly":False}
-        if stop_loss is not None:payload["stopLoss"]=f"{stop_loss:.8f}".rstrip("0").rstrip(".")
-        if take_profit is not None:payload["takeProfit"]=f"{take_profit:.8f}".rstrip("0").rstrip(".")
-        if stop_loss is not None or take_profit is not None:payload["tpslMode"]="Full"
-        if order_link_id:payload["orderLinkId"]=order_link_id[:36]
-        return await self.post("/v5/order/create",payload)
+        symbol=str(symbol or '').strip().upper().replace('/','').replace(' ','')
+        async with reserve_execution(f'BYBIT:{self.api_key}',symbol) as reservation:
+            if reservation is None:raise BybitPrivateError('EXECUTION_ALREADY_IN_PROGRESS')
+            positions=(await self.positions()).get('list',[])
+            active_positions=[p for p in positions if float(p.get('size') or 0)!=0]
+            if symbol in exposure_symbols(active_positions):raise BybitPrivateError('SYMBOL_ALREADY_HAS_POSITION')
+            orders=(await self.open_orders()).get('list',[])
+            if symbol in pending_order_symbols(orders):raise BybitPrivateError('SYMBOL_ALREADY_HAS_OPEN_ORDER')
+            payload={"category":"linear","symbol":symbol,"side":side,"orderType":"Market","qty":f"{qty:.8f}".rstrip("0").rstrip("."),"timeInForce":"IOC","reduceOnly":False}
+            if stop_loss is not None:payload["stopLoss"]=f"{stop_loss:.8f}".rstrip("0").rstrip(".")
+            if take_profit is not None:payload["takeProfit"]=f"{take_profit:.8f}".rstrip("0").rstrip(".")
+            if stop_loss is not None or take_profit is not None:payload["tpslMode"]="Full"
+            if order_link_id:payload["orderLinkId"]=order_link_id[:36]
+            return await self.post("/v5/order/create",payload)
