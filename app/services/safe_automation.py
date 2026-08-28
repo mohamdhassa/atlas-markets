@@ -31,11 +31,15 @@ def _canonical_symbol(value):return str(value or '').strip().upper().replace('/'
 def _profile_for_item(db,user_id,item):
     cfg=db.scalar(select(SymbolStrategy).where(SymbolStrategy.user_id==user_id,SymbolStrategy.market==str(item.get('market') or '').upper(),SymbolStrategy.symbol==_canonical_symbol(item.get('symbol'))))
     return cfg,db.get(BrokerProfile,cfg.profile_id) if cfg else None
+def _short(value,limit):
+    if value is None:return None
+    text=str(value)
+    return text if len(text)<=limit else text[:max(0,limit-3)]+'...'
 def _persist_action(db,scan,user_id,item,result):
     cfg,profile=_profile_for_item(db,user_id,item);broker_result=result.get('broker_result') or {};qty=result.get('shares') if result.get('shares') is not None else result.get('volume')
     if qty is None:qty=(item.get('request') or {}).get('shares') if (item.get('request') or {}).get('shares') is not None else (item.get('request') or {}).get('volume')
     order_id=broker_result.get('order_id') or broker_result.get('order') or broker_result.get('ticket')
-    db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id if profile else None,provider=str(result.get('provider') or item.get('provider') or ''),environment=result.get('environment') or (profile.environment if profile else None),market=str(result.get('market') or item.get('market') or ''),symbol=_canonical_symbol(result.get('symbol') or item.get('symbol')),side=result.get('side') or (item.get('request') or {}).get('side'),status=str(result.get('status') or 'UNKNOWN'),reason=result.get('reason'),quantity=float(qty) if qty is not None else None,sizing_policy=result.get('sizing_policy') or (item.get('request') or {}).get('sizing_policy'),broker_order_id=str(order_id) if order_id is not None else None,broker_position_id=str(broker_result.get('position_id')) if broker_result.get('position_id') is not None else None,raw_json=json.dumps({'preflight':item,'result':result},default=str)))
+    db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id if profile else None,provider=_short(result.get('provider') or item.get('provider') or '',32),environment=_short(result.get('environment') or (profile.environment if profile else None),24),market=_short(result.get('market') or item.get('market') or '',24),symbol=_short(_canonical_symbol(result.get('symbol') or item.get('symbol')),32),side=_short(result.get('side') or (item.get('request') or {}).get('side'),8),status=_short(result.get('status') or 'UNKNOWN',24),reason=_short(result.get('reason'),128),quantity=float(qty) if qty is not None else None,sizing_policy=_short(result.get('sizing_policy') or (item.get('request') or {}).get('sizing_policy'),64),broker_order_id=_short(order_id,128),broker_position_id=_short(broker_result.get('position_id'),128),raw_json=json.dumps({'preflight':item,'result':result},default=str)))
 
 async def _execute_mt5(db,*,user_id,item):
     market=str(item.get('market') or '').upper();symbol=_canonical_symbol(item.get('symbol'));cfg=db.scalar(select(SymbolStrategy).where(SymbolStrategy.user_id==user_id,SymbolStrategy.market==market,SymbolStrategy.symbol==symbol,SymbolStrategy.enabled.is_(True),SymbolStrategy.mode=='AUTO_TRADE'))
@@ -106,7 +110,13 @@ async def run_safe_scan():
                     results.append(result);_persist_action(db,scan,user_id,item,result)
                     if result.get('status')=='EXECUTED':scan.executed_count+=1
             finished=datetime.now(timezone.utc);scan.status='COMPLETED';scan.finished_at=finished;state.last_scan_at=finished;state.next_scan_at=finished+timedelta(seconds=state.interval_seconds);db.commit();return {'status':'COMPLETED','purpose':'CERTIFIED_AUTOMATIC_SIMULATION_EXECUTION','execution_enabled':True,'certified_routes':[{'provider':'MT5','environment':'DEMO'},{'provider':'IBKR','environment':'PAPER','max_shares_per_order':IBKR_CERTIFIED_MAX_SHARES_PER_ORDER}],'blocked_routes':{'BYBIT':'PROVIDER_EXECUTION_NOT_CERTIFIED'},'signals':scan.signals_count,'approved':scan.approved_count,'executed':scan.executed_count,'results':results}
-        except Exception as exc:scan.status='FAILED';scan.error_message=str(exc)[:500];scan.finished_at=datetime.now(timezone.utc);db.commit();return {'status':'FAILED','error':scan.error_message,'results':results}
+        except Exception as exc:
+            error=_short(exc,500)
+            db.rollback()
+            persisted=db.get(AutomationScan,scan.id)
+            if persisted is not None:
+                persisted.status='FAILED';persisted.error_message=error;persisted.finished_at=datetime.now(timezone.utc);db.commit()
+            return {'status':'FAILED','error':error,'results':results}
 
 async def safe_automation_loop(stop_event):
     while not stop_event.is_set():
