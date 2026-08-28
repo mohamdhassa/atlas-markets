@@ -38,7 +38,10 @@ def main() -> None:
      v=getattr(orderState,name,None);return float(v) if v not in {None,''} else None
     except:return None
    self.whatif_results[int(orderId)]={'status':getattr(orderState,'status',''),'init_margin_before':f('initMarginBefore'),'init_margin_change':f('initMarginChange'),'init_margin_after':f('initMarginAfter'),'maint_margin_before':f('maintMarginBefore'),'maint_margin_change':f('maintMarginChange'),'maint_margin_after':f('maintMarginAfter'),'equity_with_loan_before':f('equityWithLoanBefore'),'equity_with_loan_change':f('equityWithLoanChange'),'equity_with_loan_after':f('equityWithLoanAfter'),'commission':f('commission'),'min_commission':f('minCommission'),'max_commission':f('maxCommission'),'commission_currency':getattr(orderState,'commissionCurrency',''),'warning':getattr(orderState,'warningText','') or ''};self._event(f'whatif:{int(orderId)}').set()"""
-    updated = replace_once(updated, old_open, new_open, 'what-if callback')
+    if "if getattr(order,'whatIf',False):" in updated and "self.whatif_results[int(orderId)]=" in updated:
+        print('what-if callback: already applied')
+    else:
+        updated = replace_once(updated, old_open, new_open, 'what-if callback')
 
     old_check = """@app.post('/order-check')
 def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
@@ -68,18 +71,20 @@ def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None
  if result is None:return {'ok':False,'what_if':True,'simulation':True,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper(),'errors':errs[-8:],'reason':'NO_WHAT_IF_RESPONSE'}
  margin={k:result.get(k) for k in ('init_margin_before','init_margin_change','init_margin_after','maint_margin_before','maint_margin_change','maint_margin_after','equity_with_loan_before','equity_with_loan_change','equity_with_loan_after')}
  return {'ok':not bool(errs),'what_if':True,'simulation':True,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper(),'margin':margin,'commission':{'estimate':result.get('commission'),'min':result.get('min_commission'),'max':result.get('max_commission'),'currency':result.get('commission_currency')},'warning':result.get('warning'),'errors':errs[-8:]}"""
-    # Also recognize the first-run variant that used transmit=False and normalize it.
-    old_check_applied = new_check.replace("o.transmit=True", "o.transmit=False")
-    if old_check_applied in updated:
-        print('order-check endpoint: normalizing transmit flag')
-        updated = updated.replace(old_check_applied, new_check, 1)
+
+    if "o.whatIf=True" in updated and "result=ib.whatif_results.pop" in updated:
+        if "o.transmit=False;o.whatIf=True" in updated:
+            print('order-check endpoint: normalizing transmit flag')
+            updated = updated.replace("o.transmit=False;o.whatIf=True", "o.transmit=True;o.whatIf=True", 1)
+        else:
+            print('order-check endpoint: already applied')
     else:
         updated = replace_once(updated, old_check, new_check, 'order-check endpoint')
 
     compile(updated, str(TARGET), 'exec')
 
     if updated == original:
-        print('IBKR WhatIf upgrade is already present and syntax is valid; no changes needed.')
+        print('SUCCESS: IBKR WhatIf upgrade is already present and Python syntax is valid.')
         return
 
     backup = TARGET.with_suffix('.py.pre-whatif.bak')
