@@ -1,6 +1,8 @@
 from __future__ import annotations
 import httpx
 
+from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
+
 class Mt5BridgeError(RuntimeError):
     pass
 
@@ -33,5 +35,12 @@ class Mt5BridgeClient:
     async def order_check(self,payload:dict)->dict:
         p=dict(payload);p['symbol']=self._symbol(p.get('symbol'));return await self._request('POST','/order/check',p)
     async def place_demo_order(self,*,symbol:str,side:str,volume:float,stop_loss:float|None=None,take_profit:float|None=None,comment:str='ATLAS SIMULATION')->dict:
-        return await self._request('POST','/order',{'symbol':self._symbol(symbol),'side':side,'volume':volume,'stop_loss':stop_loss,'take_profit':take_profit,'comment':comment})
+        symbol=self._symbol(symbol)
+        async with reserve_execution(f'MT5:{self.base_url}',symbol) as reservation:
+            if reservation is None:raise Mt5BridgeError('EXECUTION_ALREADY_IN_PROGRESS')
+            positions=(await self.positions()).get('list',[])
+            if symbol in exposure_symbols(positions):raise Mt5BridgeError('SYMBOL_ALREADY_HAS_POSITION')
+            orders=(await self.orders()).get('list',[])
+            if symbol in pending_order_symbols(orders):raise Mt5BridgeError('SYMBOL_ALREADY_HAS_OPEN_ORDER')
+            return await self._request('POST','/order',{'symbol':symbol,'side':side,'volume':volume,'stop_loss':stop_loss,'take_profit':take_profit,'comment':comment})
     async def close_demo_position(self,ticket:int)->dict:return await self._request('POST',f'/positions/{ticket}/close',{})
