@@ -10,7 +10,7 @@ from app.db.models.auth import User
 from app.db.models.automation import AutomationScan
 from app.db.session import get_db
 from app.services.automation import get_or_create_state
-from app.services.safe_automation import run_safe_scan
+from app.services.safe_automation import IBKR_CERTIFIED_MAX_SHARES_PER_ORDER, run_safe_scan
 
 router=APIRouter(prefix="/automation",tags=["automation"])
 
@@ -23,7 +23,7 @@ class AutomationUpdate(BaseModel):
 
 
 def _state_payload(s):
-    return {"enabled":s.enabled,"killed":s.killed,"simulation_execution":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at,"execution_policy":"CERTIFIED_ROUTES_ONLY","certified_routes":[{"provider":"MT5","environment":"DEMO"}],"blocked_routes":{"IBKR":"IBKR_PAPER_EXECUTION_NOT_CERTIFIED","BYBIT":"PROVIDER_EXECUTION_NOT_CERTIFIED"}}
+    return {"enabled":s.enabled,"killed":s.killed,"simulation_execution":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at,"execution_policy":"CERTIFIED_ROUTES_ONLY","certified_routes":[{"provider":"MT5","environment":"DEMO"},{"provider":"IBKR","environment":"PAPER","max_shares_per_order":IBKR_CERTIFIED_MAX_SHARES_PER_ORDER}],"blocked_routes":{"BYBIT":"PROVIDER_EXECUTION_NOT_CERTIFIED"}}
 
 @router.get("/state")
 def state(_:User=Depends(get_current_user),db:Session=Depends(get_db)):
