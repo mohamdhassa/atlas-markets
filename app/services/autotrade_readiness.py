@@ -17,6 +17,12 @@ from app.market_data.bybit import BybitPublicMarketData
 from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal
 
+# Readiness is deliberately more conservative than the per-symbol sizing model.
+# These guards prevent a set of individually valid signals from collectively
+# consuming an unsafe amount of one broker account during certification.
+READINESS_MAX_GROSS_EXPOSURE_PCT = 50.0
+READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT = 5
+
 
 def _secret(profile) -> dict:
     if not profile.credential_blob_encrypted:
@@ -66,16 +72,49 @@ def _ibkr_quote_price(quote: dict, decision: str) -> float:
 
 
 def _provider_execution_blockers(profile) -> list[str]:
-    """Hard execution-certification gates independent of connectivity/signal readiness.
-
-    Bybit Testnet connectivity is valid for balances, positions, market data and signals,
-    but this deployment's execution certification was rejected by the provider (10024).
-    Keep crypto signal-ready while refusing to report it as execution-ready until a
-    provider execution path is explicitly certified and this gate is deliberately removed.
-    """
+    """Hard execution-certification gates independent of connectivity/signal readiness."""
     if profile.provider == 'BYBIT':
         return ['PROVIDER_EXECUTION_NOT_CERTIFIED']
     return []
+
+
+def _portfolio_guard(*, equity: float, existing_positions: int, existing_gross_notional: float, reserved_new_notional: float, reserved_new_positions: int, proposed_notional: float) -> list[str]:
+    """Return portfolio-level blockers for a proposed new position.
+
+    The readiness endpoint evaluates all signals as a batch. Reservations represent
+    earlier PASS candidates in that batch, so later candidates cannot each assume the
+    full account buying power independently.
+    """
+    blockers: list[str] = []
+    if equity <= 0:
+        return ['PORTFOLIO_EQUITY_UNAVAILABLE']
+    max_gross = equity * (READINESS_MAX_GROSS_EXPOSURE_PCT / 100.0)
+    projected = max(0.0, existing_gross_notional) + max(0.0, reserved_new_notional) + max(0.0, proposed_notional)
+    if projected > max_gross + 1e-8:
+        blockers.append('PORTFOLIO_GROSS_EXPOSURE_LIMIT')
+    if existing_positions + reserved_new_positions + 1 > READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT:
+        blockers.append('PORTFOLIO_POSITION_LIMIT')
+    return blockers
+
+
+def _position_notional(position: dict) -> float:
+    """Best-effort gross notional from normalized broker position payloads."""
+    for key in ('market_value', 'marketValue', 'notional', 'position_value', 'positionValue'):
+        try:
+            value = abs(float(position.get(key) or 0))
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            return value
+    qty = abs(float(position.get('quantity') or position.get('volume') or position.get('size') or 0))
+    for key in ('market_price', 'marketPrice', 'price', 'markPrice', 'current_price', 'currentPrice'):
+        try:
+            price = abs(float(position.get(key) or 0))
+        except (TypeError, ValueError):
+            price = 0.0
+        if price > 0:
+            return qty * price
+    return 0.0
 
 
 async def autotrade_readiness(db, *, user_id) -> dict:
@@ -84,6 +123,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
     profiles = {p.id: p for p in db.scalars(select(BrokerProfile).where(BrokerProfile.user_id == user_id)).all()}
     market = BybitPublicMarketData(settings.bybit_public_base_url, settings.market_data_timeout_seconds)
     rows = []
+    portfolio_reservations: dict[str, dict[str, float | int]] = {}
 
     for cfg in sorted(configs, key=lambda x: (x.market, x.symbol)):
         profile = profiles.get(cfg.profile_id)
@@ -95,7 +135,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             rows.append({**base, 'readiness': 'BLOCK', 'reason': 'ROUTE_NOT_READY'}); continue
         try:
             timeframe, minimum, risk_pct, stop, rr, max_pos = _params(cfg, default, risk)
-            existing_qty = 0.0; existing_positions = 0; equity = 0.0; available = 0.0; price = 0.0; sizing = {}
+            existing_qty = 0.0; existing_positions = 0; existing_gross = 0.0; equity = 0.0; available = 0.0; price = 0.0; sizing = {}
             if profile.provider == 'BYBIT':
                 candles = await market.get_candles(symbol=cfg.symbol, interval=timeframe, category='linear', limit=200)
                 generated = generate_signal([x.model_dump() for x in candles])
@@ -104,20 +144,20 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 broker = BybitPrivateClient(decrypt_secret(profile.api_key_encrypted), decrypt_secret(profile.api_secret_encrypted), base_url, settings.market_data_timeout_seconds)
                 wallet = await broker.wallet(); positions = await broker.positions(); account = (wallet.get('list') or [{}])[0]
                 equity = float(account.get('totalEquity') or account.get('totalWalletBalance') or 0); available = float(account.get('totalAvailableBalance') or account.get('totalWalletBalance') or equity)
-                active = [p for p in positions.get('list', []) if float(p.get('size') or 0) != 0]; existing_positions = len(active)
+                active = [p for p in positions.get('list', []) if float(p.get('size') or 0) != 0]; existing_positions = len(active); existing_gross = sum(_position_notional(p) for p in active)
                 own = [p for p in active if str(p.get('symbol') or '').upper() == cfg.symbol.upper()]; existing_qty = sum(float(p.get('size') or 0) for p in own)
                 ticker = await market.get_tickers(category='linear', symbols=(cfg.symbol,)); price = float(ticker.tickers[0].last_price) if ticker.tickers else 0
             elif profile.provider == 'MT5':
                 c = _secret(profile); broker = Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765', c.get('bridge_token'), settings.market_data_timeout_seconds)
                 generated = generate_signal((await broker.candles(cfg.symbol, timeframe, 200)).get('list', [])); acct = await broker.account(); positions = (await broker.positions()).get('list', [])
-                equity = float(acct.get('equity') or 0); available = float(acct.get('margin_free') or equity); existing_positions = len(positions)
+                equity = float(acct.get('equity') or 0); available = float(acct.get('margin_free') or equity); existing_positions = len(positions); existing_gross = sum(_position_notional(p) for p in positions)
                 own = [p for p in positions if str(p.get('symbol') or '').upper() == cfg.symbol.upper()]; existing_qty = sum(float(p.get('volume') or p.get('quantity') or 0) for p in own)
                 info = await broker.symbol(cfg.symbol); price = float(info.get('ask') if generated.decision == 'BUY' else info.get('bid') or 0)
                 sizing['contract_size'] = float(info.get('trade_contract_size') or 100000); sizing['symbol_info'] = info
             elif profile.provider == 'IBKR':
                 c = _secret(profile); broker = IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766', c.get('bridge_token'), settings.market_data_timeout_seconds)
                 generated = generate_signal((await broker.candles(cfg.symbol, timeframe, 200, sec_type='STK')).get('list', [])); acct = await broker.account(); positions = [p for p in (await broker.positions()).get('list', []) if float(p.get('quantity') or 0) != 0]
-                equity = float(acct.get('equity') or 0); available = float(acct.get('available') or acct.get('cash') or equity); existing_positions = len(positions)
+                equity = float(acct.get('equity') or 0); available = float(acct.get('available') or acct.get('cash') or equity); existing_positions = len(positions); existing_gross = sum(_position_notional(p) for p in positions)
                 own = [p for p in positions if str(p.get('symbol') or '').upper() == cfg.symbol.upper()]; existing_qty = sum(float(p.get('quantity') or 0) for p in own)
                 quote = await broker.quote(cfg.symbol, sec_type='STK'); price = _ibkr_quote_price(quote, generated.decision)
             else:
@@ -129,15 +169,22 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             if existing_positions >= risk.max_open_positions: blockers.append('MAX_OPEN_POSITIONS_REACHED')
             if existing_qty != 0: blockers.append('SYMBOL_ALREADY_HAS_POSITION')
             proposed = None
+            reservation = portfolio_reservations.setdefault(str(profile.id), {'notional': 0.0, 'positions': 0})
+            portfolio = {'existing_gross_notional': round(existing_gross, 8), 'reserved_new_notional': round(float(reservation['notional']), 8), 'gross_exposure_limit_pct': READINESS_MAX_GROSS_EXPOSURE_PCT, 'new_position_limit': READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT}
             if approved and price > 0:
                 plan = build_execution_plan(decision=generated.decision, price=price, equity=equity, available_cash=available, risk_per_trade_pct=risk_pct, stop_atr_multiplier=stop, take_profit_rr=rr, max_position_notional_pct=max_pos)
                 proposed = {'side': plan.side, 'price': price, 'notional': plan.notional, 'quantity': plan.quantity, 'stop_loss': plan.stop_loss, 'take_profit': plan.take_profit}
                 if profile.provider == 'MT5': proposed['volume'] = _round_volume(plan.quantity / sizing['contract_size'], sizing['symbol_info'])
                 if profile.provider == 'IBKR': proposed['shares'] = math.floor(plan.quantity)
                 if plan.notional > available: blockers.append('INSUFFICIENT_AVAILABLE_BALANCE')
+                blockers.extend(_portfolio_guard(equity=equity, existing_positions=existing_positions, existing_gross_notional=existing_gross, reserved_new_notional=float(reservation['notional']), reserved_new_positions=int(reservation['positions']), proposed_notional=plan.notional))
+                if not blockers:
+                    reservation['notional'] = float(reservation['notional']) + plan.notional
+                    reservation['positions'] = int(reservation['positions']) + 1
+                portfolio['projected_gross_notional'] = round(existing_gross + float(reservation['notional']) + (0.0 if not blockers else plan.notional), 8)
             signal_ready = approved and price > 0
-            rows.append({**base, 'timeframe': timeframe, 'decision': generated.decision, 'classification': generated.classification, 'strength': generated.strength, 'signal_reason': reason, 'risk_details': details, 'account': {'equity': equity, 'available': available, 'open_positions': existing_positions}, 'existing_symbol_quantity': existing_qty, 'proposed_order': proposed, 'signal_ready': signal_ready, 'execution_ready': not blockers, 'readiness': 'PASS' if not blockers else 'BLOCK', 'blockers': blockers})
+            rows.append({**base, 'timeframe': timeframe, 'decision': generated.decision, 'classification': generated.classification, 'strength': generated.strength, 'signal_reason': reason, 'risk_details': details, 'account': {'equity': equity, 'available': available, 'open_positions': existing_positions}, 'portfolio': portfolio, 'existing_symbol_quantity': existing_qty, 'proposed_order': proposed, 'signal_ready': signal_ready, 'execution_ready': not blockers, 'readiness': 'PASS' if not blockers else 'BLOCK', 'blockers': blockers})
         except Exception as exc:
             rows.append({**base, 'readiness': 'BLOCK', 'reason': f'{type(exc).__name__}: {str(exc) or repr(exc)}'})
 
-    return {'execution_enabled': False, 'purpose': 'AUTO_TRADE_READINESS_DRY_RUN', 'configured_count': len(configs), 'pass_count': sum(x.get('readiness') == 'PASS' for x in rows), 'block_count': sum(x.get('readiness') == 'BLOCK' for x in rows), 'items': rows}
+    return {'execution_enabled': False, 'purpose': 'AUTO_TRADE_READINESS_DRY_RUN', 'portfolio_policy': {'max_gross_exposure_pct': READINESS_MAX_GROSS_EXPOSURE_PCT, 'max_new_positions_per_account': READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT}, 'configured_count': len(configs), 'pass_count': sum(x.get('readiness') == 'PASS' for x in rows), 'block_count': sum(x.get('readiness') == 'BLOCK' for x in rows), 'items': rows}
