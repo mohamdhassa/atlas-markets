@@ -23,11 +23,20 @@ def _mt5_check_ok(result: dict) -> bool:
     except (TypeError,ValueError):return False
     return retcode in {0,10009}
 
+def _readiness_reason(row: dict) -> str:
+    blockers=row.get('blockers') or []
+    if isinstance(blockers,str):
+        return blockers or 'READINESS_BLOCKED'
+    if isinstance(blockers,dict):
+        blockers=[k for k,v in blockers.items() if v]
+    blockers=[str(x) for x in blockers if x]
+    return '|'.join(blockers) if blockers else 'READINESS_BLOCKED'
+
 async def autotrade_preflight(db,*,user_id)->dict:
     readiness=await autotrade_readiness(db,user_id=user_id);settings=get_settings();configs={(x.market,x.symbol):x for x in db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id==user_id)).all()};profiles={p.id:p for p in db.scalars(select(BrokerProfile).where(BrokerProfile.user_id==user_id)).all()};items=[]
     for row in readiness['items']:
         base={'market':row.get('market'),'symbol':row.get('symbol'),'provider':row.get('provider'),'readiness':row.get('readiness'),'execution':'NONE'}
-        if row.get('readiness')!='PASS':items.append({**base,'preflight':'SKIP','reason':'READINESS_BLOCKED'});continue
+        if row.get('readiness')!='PASS':items.append({**base,'preflight':'SKIP','reason':_readiness_reason(row),'readiness_blockers':row.get('blockers') or []});continue
         cfg=configs.get((row.get('market'),row.get('symbol')))
         if cfg is None:items.append({**base,'preflight':'BLOCK','reason':'STRATEGY_NOT_FOUND'});continue
         profile=profiles.get(cfg.profile_id)
@@ -45,4 +54,4 @@ async def autotrade_preflight(db,*,user_id)->dict:
             else:items.append({**base,'preflight':'BLOCK','reason':'PROVIDER_PREFLIGHT_NOT_SUPPORTED'});continue
             items.append({**base,'preflight':'PASS' if ok else 'BLOCK','reason':None if ok else 'BROKER_PREFLIGHT_REJECTED','request':{'side':proposed.get('side'),'notional':proposed.get('notional'),'shares':shares if profile.provider=='IBKR' else proposed.get('shares'),'strategy_requested_shares':proposed.get('strategy_requested_shares'),'sizing_policy':proposed.get('sizing_policy'),'volume':proposed.get('volume'),'stop_loss':proposed.get('stop_loss'),'take_profit':proposed.get('take_profit')},'broker_check':result})
         except Exception as exc:items.append({**base,'preflight':'BLOCK','reason':f'{type(exc).__name__}: {str(exc) or repr(exc)}'})
-    return {'execution_enabled':False,'purpose':'BROKER_PREFLIGHT_NO_EXECUTION','checked_count':sum(x.get('preflight') in {'PASS','BLOCK'} and x.get('reason')!='READINESS_BLOCKED' for x in items),'pass_count':sum(x.get('preflight')=='PASS' for x in items),'block_count':sum(x.get('preflight')=='BLOCK' for x in items),'items':items}
+    return {'execution_enabled':False,'purpose':'BROKER_PREFLIGHT_NO_EXECUTION','checked_count':sum(x.get('preflight') in {'PASS','BLOCK'} for x in items),'pass_count':sum(x.get('preflight')=='PASS' for x in items),'block_count':sum(x.get('preflight')=='BLOCK' for x in items),'items':items}
