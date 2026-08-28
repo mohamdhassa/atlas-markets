@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import argparse,os,threading,time,math
 from datetime import datetime,timedelta
 from fastapi import FastAPI,HTTPException,Header
@@ -190,26 +190,22 @@ def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None
 def place(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token)
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
+ if p.quantity<=0:raise HTTPException(400,'quantity must be positive')
+ if p.side.upper() not in {'BUY','SELL'}:raise HTTPException(400,'side must be BUY or SELL')
+ if p.order_type.upper() not in {'MKT','LMT'}:raise HTTPException(400,'order_type must be MKT or LMT')
  oid=ib.next_id
  if oid is None:raise HTTPException(503,'IBKR next order id unavailable')
- ib.order_statuses.pop(int(oid),None);ib.errors=[e for e in ib.errors if int(e.get('id') or -1)!=int(oid)];prepare(f'order-status:{int(oid)}')
  o=Order();o.action=p.side.upper();o.totalQuantity=p.quantity;o.orderType=p.order_type.upper();o.transmit=True;o.account=p.account_id or cfg.get('account_id') or '';o.tif='DAY'
- # Newer TWS/API combinations reject legacy default order attributes when they
- # are serialized by older Python ibapi clients. Explicitly disable them for
- # ordinary SMART-routed stock/ETF orders.
  if hasattr(o,'eTradeOnly'):o.eTradeOnly=False
  if hasattr(o,'firmQuoteOnly'):o.firmQuoteOnly=False
  if o.orderType=='LMT':o.lmtPrice=float(p.limit_price or 0)
  ib.placeOrder(oid,contract(p.symbol,p.sec_type,p.exchange,p.currency),o);ib.next_id+=1
- ib._event(f'order-status:{int(oid)}').wait(5)
- status=ib.order_statuses.get(int(oid));errs=[e for e in ib.errors if int(e.get('id') or -1)==int(oid)]
- return {'accepted':not bool(errs),'order_id':oid,'simulation':True,'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'status':status,'errors':errs[-8:]}
-@app.post('/orders/{order_id}/cancel')
+ return {'accepted':True,'simulation':True,'order_id':oid,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper()}
+@app.delete('/orders/{order_id}')
 def cancel(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token)
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
- ib.cancelOrder(order_id,'');return {'cancel_requested':True,'order_id':order_id}
+ ib.cancelOrder(order_id);return {'cancel_requested':True,'order_id':order_id,'simulation':True}
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--host',default=os.getenv('ATLAS_IBKR_HOST','127.0.0.1'));p.add_argument('--port',type=int,default=int(os.getenv('ATLAS_IBKR_PORT','7497')));p.add_argument('--client-id',type=int,default=int(os.getenv('ATLAS_IBKR_CLIENT_ID','27')));p.add_argument('--account-id',default=os.getenv('ATLAS_IBKR_ACCOUNT_ID',''));p.add_argument('--bridge-port',type=int,default=int(os.getenv('ATLAS_IBKR_BRIDGE_PORT','8766')));a=p.parse_args();cfg.update(host=a.host,port=a.port,client_id=a.client_id,account_id=a.account_id,token=os.getenv('ATLAS_IBKR_BRIDGE_TOKEN'),simulation=a.port in {7497,4002});uvicorn.run(app,host='0.0.0.0',port=a.bridge_port)
-
