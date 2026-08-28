@@ -22,15 +22,11 @@ def exposure_symbols(rows: Iterable[dict] | None, quantity_key: str | None = Non
 
 
 def pending_order_symbols(rows: Iterable[dict] | None) -> set[str]:
-    """Return canonical symbols for broker orders that still represent pending exposure.
-
-    Broker bridges do not expose one common status vocabulary, so terminal states are
-    explicitly ignored and unknown/non-terminal states are treated conservatively as open.
-    """
-    terminal = {"FILLED", "CANCELLED", "CANCELED", "REJECTED", "EXPIRED", "INACTIVE", "DONE"}
+    """Return canonical symbols for broker orders that still represent pending exposure."""
+    terminal = {"FILLED", "CANCELLED", "CANCELED", "REJECTED", "EXPIRED", "INACTIVE", "DONE", "DEACTIVATED"}
     out: set[str] = set()
     for row in rows or []:
-        status = str(row.get("status") or row.get("order_status") or "").strip().upper()
+        status = str(row.get("status") or row.get("order_status") or row.get("orderStatus") or "").strip().upper()
         remaining = row.get("remaining")
         if status in terminal:
             continue
@@ -71,11 +67,12 @@ async def _lock_for(key: str) -> asyncio.Lock:
 
 @asynccontextmanager
 async def reserve_execution(profile_id: Any, symbol: Any) -> AsyncIterator[ExecutionReservation | None]:
-    """Try to reserve one profile+symbol execution slot without waiting.
+    """Try to reserve one profile+canonical-symbol execution slot without waiting.
 
-    This prevents overlapping scans in the same ATLAS process from both passing the
-    pre-order exposure check. The caller must still re-read broker positions/orders
-    after acquiring the reservation and immediately before submitting the order.
+    The reservation is process-local and always released in ``finally``. The caller
+    must re-read broker positions and pending orders after acquisition immediately
+    before submitting an order. ATLAS currently runs one automation worker process;
+    a future multi-worker deployment must additionally use a database/distributed lock.
     """
     reservation = ExecutionReservation(str(profile_id), canonical_symbol(symbol))
     lock = await _lock_for(reservation.key)
