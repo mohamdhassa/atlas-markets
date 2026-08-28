@@ -33,6 +33,7 @@ def _profile_for_item(db,user_id,item):
     return cfg,db.get(BrokerProfile,cfg.profile_id) if cfg else None
 def _persist_action(db,scan,user_id,item,result):
     cfg,profile=_profile_for_item(db,user_id,item);broker_result=result.get('broker_result') or {};qty=result.get('shares') if result.get('shares') is not None else result.get('volume')
+    if qty is None:qty=(item.get('request') or {}).get('shares') if (item.get('request') or {}).get('shares') is not None else (item.get('request') or {}).get('volume')
     order_id=broker_result.get('order_id') or broker_result.get('order') or broker_result.get('ticket')
     db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id if profile else None,provider=str(result.get('provider') or item.get('provider') or ''),environment=result.get('environment') or (profile.environment if profile else None),market=str(result.get('market') or item.get('market') or ''),symbol=_canonical_symbol(result.get('symbol') or item.get('symbol')),side=result.get('side') or (item.get('request') or {}).get('side'),status=str(result.get('status') or 'UNKNOWN'),reason=result.get('reason'),quantity=float(qty) if qty is not None else None,sizing_policy=result.get('sizing_policy') or (item.get('request') or {}).get('sizing_policy'),broker_order_id=str(order_id) if order_id is not None else None,broker_position_id=str(broker_result.get('position_id')) if broker_result.get('position_id') is not None else None,raw_json=json.dumps({'preflight':item,'result':result},default=str)))
 
@@ -94,8 +95,11 @@ async def run_safe_scan():
             for user_id in user_ids:
                 preflight=await autotrade_preflight(db,user_id=user_id)
                 for item in preflight.get('items',[]):
-                    if item.get('preflight')!='PASS':continue
-                    scan.signals_count+=1;scan.approved_count+=1;provider=str(item.get('provider') or '').upper()
+                    provider=str(item.get('provider') or '').upper()
+                    if item.get('preflight')!='PASS':
+                        result={'market':item.get('market'),'symbol':item.get('symbol'),'provider':provider,'status':'BLOCK','reason':item.get('reason') or 'READINESS_BLOCKED'}
+                        results.append(result);_persist_action(db,scan,user_id,item,result);continue
+                    scan.signals_count+=1;scan.approved_count+=1
                     if provider=='MT5':result=await _execute_mt5(db,user_id=user_id,item=item)
                     elif provider=='IBKR':result=await _execute_ibkr(db,user_id=user_id,item=item)
                     else:result={'market':item.get('market'),'symbol':item.get('symbol'),'provider':provider,'status':'BLOCK','reason':automation_certification_blocker(provider,None)}
