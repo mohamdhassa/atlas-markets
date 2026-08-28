@@ -49,6 +49,22 @@ def _round_volume(raw, info):
     return round(max(mn, value), 8)
 
 
+def _ibkr_quote_price(quote: dict, decision: str) -> float:
+    """Choose the best usable IBKR quote without failing on missing delayed bid/ask fields."""
+    order = ('ask', 'last', 'bid') if decision == 'BUY' else ('bid', 'last', 'ask')
+    for field in order:
+        value = quote.get(field)
+        if value is None or value == '':
+            continue
+        try:
+            price = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(price) and price > 0:
+            return price
+    return 0.0
+
+
 def _provider_execution_blockers(profile) -> list[str]:
     """Hard execution-certification gates independent of connectivity/signal readiness.
 
@@ -103,7 +119,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 generated = generate_signal((await broker.candles(cfg.symbol, timeframe, 200, sec_type='STK')).get('list', [])); acct = await broker.account(); positions = [p for p in (await broker.positions()).get('list', []) if float(p.get('quantity') or 0) != 0]
                 equity = float(acct.get('equity') or 0); available = float(acct.get('available') or acct.get('cash') or equity); existing_positions = len(positions)
                 own = [p for p in positions if str(p.get('symbol') or '').upper() == cfg.symbol.upper()]; existing_qty = sum(float(p.get('quantity') or 0) for p in own)
-                quote = await broker.quote(cfg.symbol, sec_type='STK'); price = float(quote.get('ask') if generated.decision == 'BUY' else quote.get('bid') or quote.get('last') or 0)
+                quote = await broker.quote(cfg.symbol, sec_type='STK'); price = _ibkr_quote_price(quote, generated.decision)
             else:
                 rows.append({**base, 'readiness': 'BLOCK', 'reason': 'UNSUPPORTED_PROVIDER'}); continue
 
