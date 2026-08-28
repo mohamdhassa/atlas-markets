@@ -25,22 +25,22 @@ from app.api.routes_signals import router as signals_router
 from app.api.routes_symbol_strategies import router as symbol_strategies_router
 from app.api.routes_universe_engine import router as universe_engine_router
 from app.core.config import get_settings
-from app.services.automation import automation_loop
+from app.services.safe_automation import safe_automation_loop
 from app.services.historical_intelligence import historical_loop
 from app.services.reporting import reporting_loop
 settings=get_settings();static_dir=Path(__file__).resolve().parent/'static'
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    stop=asyncio.Event();tasks=[asyncio.create_task(automation_loop(stop)),asyncio.create_task(reporting_loop(stop)),asyncio.create_task(historical_loop(stop))];app.state.automation_stop=stop;app.state.background_tasks=tasks
+    stop=asyncio.Event();tasks=[asyncio.create_task(safe_automation_loop(stop)),asyncio.create_task(reporting_loop(stop)),asyncio.create_task(historical_loop(stop))];app.state.automation_stop=stop;app.state.background_tasks=tasks
     try:yield
     finally:
         stop.set()
         for task in tasks:
             try:await asyncio.wait_for(task,timeout=3)
             except (asyncio.TimeoutError,asyncio.CancelledError):task.cancel()
-app=FastAPI(title=settings.app_name,version='0.31.0',debug=settings.debug,lifespan=lifespan)
+app=FastAPI(title=settings.app_name,version='0.32.0',debug=settings.debug,lifespan=lifespan)
 app.include_router(health_router);app.include_router(auth_router);app.include_router(admin_router);app.include_router(markets_router);app.include_router(accounts_router);app.include_router(account_lifecycle_router);app.include_router(bybit_environment_router);app.include_router(bybit_oauth_router);app.include_router(ibkr_external_router);app.include_router(analysis_router);app.include_router(signals_router);app.include_router(legacy_account_router);app.include_router(automation_router);app.include_router(broker_native_router);app.include_router(performance_router);app.include_router(news_router);app.include_router(reporting_router);app.include_router(historical_router);app.include_router(symbol_strategies_router);app.include_router(universe_engine_router);app.mount('/static',StaticFiles(directory=static_dir),name='static')
 @app.get('/',include_in_schema=False)
 async def root()->FileResponse:return FileResponse(static_dir/'index.html')
 @app.get('/api/system',tags=['system'])
-async def system_info()->dict[str,str]:return {'name':settings.app_name,'status':'running','phase':'31','account_model':'EXTERNAL_PROVIDERS_ONLY','account_modes':'SIMULATION+LIVE_MONEY','broker_accounts':'BYBIT+MT5_FUSION+IBKR','market_data_providers':'BYBIT+MT5_FUSION+TWELVE_DATA+IBKR','live_money_execution':'GATED','provider_switching':'FRONTEND','automation':'BROKER_NATIVE_ACCOUNT_AWARE','analytics':'MULTI_MARKET+PER_ACCOUNT+PER_SYMBOL_STRATEGY','historical_learning':'ACTIVE','news_intelligence':'ACTIVE','reporting':'BROKER_NATIVE','market_scope':'FX+CRYPTO+STOCKS+ETFS+METALS+COMMODITIES','ibkr':'BRIDGE_READY','bybit_agent_connect':'TESTNET_OAUTH'}
+async def system_info()->dict[str,str]:return {'name':settings.app_name,'status':'running','phase':'32','account_model':'EXTERNAL_PROVIDERS_ONLY','account_modes':'SIMULATION+LIVE_MONEY','broker_accounts':'BYBIT+MT5_FUSION+IBKR','market_data_providers':'BYBIT+MT5_FUSION+TWELVE_DATA+IBKR','live_money_execution':'GATED','provider_switching':'FRONTEND','automation':'CERTIFIED_ROUTES_ONLY','certified_automation':'MT5_DEMO','analytics':'MULTI_MARKET+PER_ACCOUNT+PER_SYMBOL_STRATEGY','historical_learning':'ACTIVE','news_intelligence':'ACTIVE','reporting':'BROKER_NATIVE','market_scope':'FX+CRYPTO+STOCKS+ETFS+METALS+COMMODITIES','ibkr':'PAPER_EXECUTION_NOT_CERTIFIED','bybit_agent_connect':'TESTNET_OAUTH'}
