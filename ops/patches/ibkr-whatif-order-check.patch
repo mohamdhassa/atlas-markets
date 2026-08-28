@@ -1,10 +1,10 @@
 diff --git a/tools/ibkr_bridge.py b/tools/ibkr_bridge.py
 --- a/tools/ibkr_bridge.py
 +++ b/tools/ibkr_bridge.py
-@@
+@@ -15 +15 @@
 -  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self.order_statuses={};self._events={}
 +  EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self.order_statuses={};self.whatif_results={};self._events={}
-@@
+@@ -22 +22,7 @@
 - def openOrder(self,orderId,contract,order,orderState):self.open_orders.append({'order_id':orderId,'symbol':contract.symbol,'sec_type':contract.secType,'side':order.action,'type':order.orderType,'quantity':float(order.totalQuantity),'limit_price':float(order.lmtPrice or 0),'aux_price':float(order.auxPrice or 0),'status':orderState.status})
 + def openOrder(self,orderId,contract,order,orderState):
 +  self.open_orders.append({'order_id':orderId,'symbol':contract.symbol,'sec_type':contract.secType,'side':order.action,'type':order.orderType,'quantity':float(order.totalQuantity),'limit_price':float(order.lmtPrice or 0),'aux_price':float(order.auxPrice or 0),'status':orderState.status})
@@ -14,7 +14,7 @@ diff --git a/tools/ibkr_bridge.py b/tools/ibkr_bridge.py
 +     v=getattr(orderState,name,None);return float(v) if v not in {None,''} else None
 +    except:return None
 +   self.whatif_results[int(orderId)]={'status':getattr(orderState,'status',''),'init_margin_before':f('initMarginBefore'),'init_margin_change':f('initMarginChange'),'init_margin_after':f('initMarginAfter'),'maint_margin_before':f('maintMarginBefore'),'maint_margin_change':f('maintMarginChange'),'maint_margin_after':f('maintMarginAfter'),'equity_with_loan_before':f('equityWithLoanBefore'),'equity_with_loan_change':f('equityWithLoanChange'),'equity_with_loan_after':f('equityWithLoanAfter'),'commission':f('commission'),'min_commission':f('minCommission'),'max_commission':f('maxCommission'),'commission_currency':getattr(orderState,'commissionCurrency',''),'warning':getattr(orderState,'warningText','') or ''};self._event(f'whatif:{int(orderId)}').set()
-@@
+@@ -137,8 +143,20 @@
  @app.post('/order-check')
  def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
   auth(x_atlas_bridge_token)
