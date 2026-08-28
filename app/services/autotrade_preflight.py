@@ -26,17 +26,22 @@ def _mt5_check_ok(result: dict) -> bool:
 def _readiness_reason(row: dict) -> str:
     blockers=row.get('blockers') or []
     if isinstance(blockers,str):
-        return blockers or 'READINESS_BLOCKED'
-    if isinstance(blockers,dict):
+        blockers=[blockers] if blockers else []
+    elif isinstance(blockers,dict):
         blockers=[k for k,v in blockers.items() if v]
     blockers=[str(x) for x in blockers if x]
-    return '|'.join(blockers) if blockers else 'READINESS_BLOCKED'
+    if blockers:
+        return '|'.join(blockers)
+    reason=row.get('reason') or row.get('signal_reason')
+    if reason:
+        return str(reason)
+    return 'READINESS_BLOCKED'
 
 async def autotrade_preflight(db,*,user_id)->dict:
     readiness=await autotrade_readiness(db,user_id=user_id);settings=get_settings();configs={(x.market,x.symbol):x for x in db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id==user_id)).all()};profiles={p.id:p for p in db.scalars(select(BrokerProfile).where(BrokerProfile.user_id==user_id)).all()};items=[]
     for row in readiness['items']:
         base={'market':row.get('market'),'symbol':row.get('symbol'),'provider':row.get('provider'),'readiness':row.get('readiness'),'execution':'NONE'}
-        if row.get('readiness')!='PASS':items.append({**base,'preflight':'SKIP','reason':_readiness_reason(row),'readiness_blockers':row.get('blockers') or []});continue
+        if row.get('readiness')!='PASS':items.append({**base,'preflight':'SKIP','reason':_readiness_reason(row),'readiness_blockers':row.get('blockers') or [],'readiness_reason':row.get('reason')});continue
         cfg=configs.get((row.get('market'),row.get('symbol')))
         if cfg is None:items.append({**base,'preflight':'BLOCK','reason':'STRATEGY_NOT_FOUND'});continue
         profile=profiles.get(cfg.profile_id)
