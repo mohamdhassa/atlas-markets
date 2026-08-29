@@ -53,8 +53,14 @@ async def autotrade_preflight(db,*,user_id)->dict:
                 if volume<=0:raise RuntimeError('INVALID_MT5_VOLUME')
                 c=_secret(profile);broker=Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),settings.market_data_timeout_seconds);result=await broker.order_check({'symbol':row['symbol'],'side':proposed['side'],'volume':volume,'stop_loss':proposed.get('stop_loss'),'take_profit':proposed.get('take_profit'),'comment':'ATLAS PREFLIGHT'});ok=_mt5_check_ok(result)
             elif profile.provider=='IBKR':
-                shares=int(proposed.get('shares') or math.floor(float(proposed.get('quantity') or 0)));shares=min(shares,IBKR_CERTIFIED_MAX_SHARES_PER_ORDER)
-                if shares<=0:raise RuntimeError('INVALID_IBKR_QUANTITY')
+                raw_quantity=proposed.get('shares') if proposed.get('shares') is not None else proposed.get('quantity')
+                try:requested_quantity=float(raw_quantity or 0)
+                except (TypeError,ValueError):requested_quantity=0.0
+                if not math.isfinite(requested_quantity) or requested_quantity<=0:
+                    items.append({**base,'preflight':'BLOCK','reason':'INVALID_IBKR_QUANTITY'});continue
+                shares=min(math.floor(requested_quantity),IBKR_CERTIFIED_MAX_SHARES_PER_ORDER)
+                if shares<=0:
+                    items.append({**base,'preflight':'BLOCK','reason':'IBKR_QUANTITY_BELOW_ONE_SHARE'});continue
                 c=_secret(profile);broker=IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),settings.market_data_timeout_seconds);result=await broker.order_check({'symbol':row['symbol'],'side':proposed['side'],'quantity':shares,'order_type':'MKT','sec_type':'STK','exchange':'SMART','currency':'USD','account_id':c.get('account_id')});ok=bool(result.get('ok')) and bool(result.get('what_if')) and bool(result.get('simulation'))
             else:items.append({**base,'preflight':'BLOCK','reason':'PROVIDER_PREFLIGHT_NOT_SUPPORTED'});continue
             items.append({**base,'preflight':'PASS' if ok else 'BLOCK','reason':None if ok else 'BROKER_PREFLIGHT_REJECTED','request':{'side':proposed.get('side'),'notional':proposed.get('notional'),'shares':shares if profile.provider=='IBKR' else proposed.get('shares'),'strategy_requested_shares':proposed.get('strategy_requested_shares'),'sizing_policy':proposed.get('sizing_policy'),'volume':proposed.get('volume'),'stop_loss':proposed.get('stop_loss'),'take_profit':proposed.get('take_profit')},'broker_check':result})
