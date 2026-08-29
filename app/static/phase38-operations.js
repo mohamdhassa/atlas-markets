@@ -5,7 +5,7 @@ const dti=v=>v?new Date(v).toLocaleString():'—';
 const good=s=>['EXECUTED','FILLED','COMPLETED','CONNECTED','READY'].includes(String(s||'').toUpperCase());
 const badge=s=>good(s)?'good':['BLOCK','CANCELLED','FAILED','KILLED','NOT READY'].includes(String(s||'').toUpperCase())?'warn':'';
 function reasonGroup(r){r=String(r||'');if(r.includes('NO_DIRECTION'))return 'NO TRADE SIGNAL';if(r.includes('AUTO_TRADE_NOT_ENABLED'))return 'STRATEGY NOT AUTO';if(r.includes('POSITION_LIMIT')||r.includes('SYMBOL_ALREADY_HAS_POSITION'))return 'RISK PREVENTED';if(r.includes('PROVIDER_EXECUTION_NOT_CERTIFIED'))return 'PROVIDER BLOCKED';if(r.includes('BROKER_ORDER')||r.includes('IBKR_QUANTITY'))return 'BROKER / SIZING';return r||'OTHER'}
-function ensureNav(){const nav=document.getElementById('nav');if(!nav)return;let b=nav.querySelector('[data-page="Automation"]');if(!b){b=document.createElement('button');b.className='nav-button';b.dataset.page='Automation';b.textContent='Automation';const sys=nav.querySelector('[data-page="System"]');sys?sys.insertAdjacentElement('beforebegin',b):nav.appendChild(b)}b.onclick=render}
+function ensureNav(){const nav=document.getElementById('nav');if(!nav)return;let b=nav.querySelector('[data-page="Automation"]');if(!b){b=document.createElement('button');b.className='nav-button';b.dataset.page='Automation';b.textContent='Automation';const dash=nav.querySelector('[data-page="Dashboard"]');dash?dash.insertAdjacentElement('afterend',b):nav.prepend(b)}b.onclick=render}
 async function render(e){e?.preventDefault?.();if(typeof setActive==='function')setActive('Automation');const root=document.getElementById('content');root.innerHTML='<div class="panel empty-state">Loading automation operations…</div>';try{
  const [stateData,scans,actions,portfolio,accounts,strategies,ready,perf]=await Promise.all([
   api('/automation/state'),api('/automation/scans?limit=20'),api('/automation/actions?limit=200'),api('/portfolio'),api('/accounts'),api('/strategies/symbols'),api('/execution-readiness'),api('/performance/unified?days=30')
@@ -30,5 +30,11 @@ async function render(e){e?.preventDefault?.();if(typeof setActive==='function')
  }
  }catch(x){root.innerHTML=`<div class="panel empty-state"><strong>Automation Operations unavailable</strong><br>${esc(x.message)}</div>`}}
 }
-const obs=new MutationObserver(ensureNav);obs.observe(document.documentElement,{childList:true,subtree:true});ensureNav();window.AtlasPhase38={render};
+const previousRenderPage=window.renderPage;
+if(typeof previousRenderPage==='function')window.renderPage=function(page,...args){if(page==='Automation')return render();return previousRenderPage.call(this,page,...args)};
+function capture(e){const b=e.target.closest?.('.nav-button');if(b?.dataset?.page!=='Automation')return;e.preventDefault();e.stopImmediatePropagation();render()}
+document.addEventListener('click',capture,true);
+const obs=new MutationObserver(ensureNav);obs.observe(document.documentElement,{childList:true,subtree:true});
+ensureNav();setInterval(ensureNav,1000);
+window.AtlasPhase38={render,ensureNav};
 })();
