@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -19,6 +20,23 @@ def _f(v):
         return float(v or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _ibkr_fill_confirmed(action: AutomationAction) -> bool:
+    if str(action.provider or '').upper() != 'IBKR':
+        return True
+    try:
+        raw = json.loads(action.raw_json or '{}')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    result = raw.get('result') or {}
+    broker_result = result.get('broker_result') or {}
+    final = broker_result.get('final_status') or {}
+    status = final.get('status') or {}
+    broker_state = str(status.get('status') or '').upper()
+    filled = _f(status.get('filled'))
+    requested = _f(action.quantity)
+    return broker_state == 'FILLED' and filled > 0 and (requested <= 0 or filled >= requested)
 
 
 def _match_action(trade, order_ids, actions):
@@ -51,7 +69,9 @@ async def verified_strategy_attribution(
     )
     if user.role != 'ADMIN':
         action_q = action_q.where(AutomationAction.user_id == user.id)
-    actions = list(db.scalars(action_q).all())
+    raw_actions = list(db.scalars(action_q).all())
+    actions = [action for action in raw_actions if _ibkr_fill_confirmed(action)]
+    excluded_unconfirmed_ibkr = [action for action in raw_actions if str(action.provider or '').upper() == 'IBKR' and not _ibkr_fill_confirmed(action)]
 
     mt5_orders_by_position: dict[tuple[str, str], set[str]] = defaultdict(set)
     mt5_errors = []
@@ -144,6 +164,7 @@ async def verified_strategy_attribution(
             'atlas_verified_trades': len(verified),
             'unverified_broker_trades': len(unverified),
             'executed_actions': len(actions),
+            'excluded_unconfirmed_ibkr_actions': len(excluded_unconfirmed_ibkr),
             'matched_actions': len(matched_action_ids),
             'unmatched_actions': len(unmatched_actions),
             'atlas_verified_realized_pnl': round(sum(_f(x.get('realized_pnl')) for x in verified), 2),
@@ -154,8 +175,8 @@ async def verified_strategy_attribution(
         'unmatched_actions': unmatched_actions,
         'errors': mt5_errors,
         'methodology': {
-            'verified': 'ATLAS origin is verified only by an exact persisted broker position ID or broker order ID match to an EXECUTED automation action.',
+            'verified': 'ATLAS origin is verified only by an exact persisted broker position ID or broker order ID match to an EXECUTED automation action. IBKR EXECUTED actions additionally require persisted broker confirmation of an actual fill.',
             'unverified': 'Symbol/account similarity alone is never treated as verified ATLAS performance.',
-            'safety': 'Unverified broker history is excluded from ATLAS strategy optimization decisions.',
+            'safety': 'Unverified broker history and unconfirmed/cancelled IBKR submissions are excluded from ATLAS strategy optimization decisions.',
         },
     }
