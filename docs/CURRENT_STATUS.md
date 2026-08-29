@@ -1,138 +1,196 @@
-# ATLAS MARKETS — Current Development Status
+# ATLAS MARKETS — Current Status
 
-Last updated: 2026-08-26
+Last updated: **2026-08-29**  
+Release: **1.0.0 Simulation Release**  
+System phase: **40**
 
-## Purpose
+## Completion state
 
-This file is the operational handover/checkpoint for the active ATLAS MARKETS development state. Historical project documentation remains preserved elsewhere; this file tracks the current checkpoint.
+ATLAS MARKETS is complete for the v1.0 **Paper / Demo / Testnet automated trading** scope.
 
-## Repository state
+The product now includes the full core lifecycle:
+
+`market + historical + news data → analysis → BUY/SELL/HOLD → strategy mode → risk/readiness → provider routing → automatic execution on certified routes → broker verification → action audit → P&L/performance → strategy diagnostics → repeat`
+
+Live Money remains explicitly gated and is a separate readiness program, not unfinished v1.0 simulation work.
+
+## Repository/runtime
 
 - Repository: `mohamdhassa/atlas-markets`
-- Current baseline branch: `main`
-- Local Windows path used during development: `C:\Users\USER\Downloads\altas-markets`
-- Verified automated test baseline: **71 passed, 1 warning**
+- Branch: `main`
+- Local Windows path: `C:\Users\USER\Downloads\altas-markets`
+- Runtime: FastAPI + PostgreSQL + Redis + Docker Compose
+- Frontend: `http://localhost:8000`
 
-## Product direction
+## Provider state
 
-ATLAS MARKETS is a multi-market, multi-provider automated trading platform. The intended central flow is:
+### Fusion Markets MT5 — Demo
 
-`market + historical + news/intelligence data → analysis → strategy decision → risk approval → provider routing → execution → monitoring/exits → P&L/performance → historical evaluation`
-
-The platform supports configurable multi-instrument universes. Single symbols used in certification are test instruments only.
-
-## Provider status
-
-### Fusion MT5 — Demo
-
-- Account/login: `448261`
-- Server: `FusionMarkets-Demo`
-- Algo Trading: ON
 - Connectivity: **CERTIFIED**
-- Execution: **CERTIFIED**
-
-A controlled 0.01-lot EURUSD Demo position was opened and closed successfully. The exact certification position returned to flat state.
-
-Known behavior: `/history/deals` can lag execution. Returned deal IDs plus confirmed position lifecycle are treated as authoritative execution proof; delayed history is reported as a warning.
+- Automatic execution: **CERTIFIED**
+- Asset classes: FX, metals, commodities
+- Existing-position and portfolio exposure guards are active.
 
 ### Interactive Brokers — Paper
 
 - Account: `DUR980544`
 - Connectivity: **CERTIFIED**
-- Simulation/Paper: `True`
-- Execution: **CERTIFIED**
-
-Latest successful controlled certification:
-
-- certification symbol: `DIA`
-- quantity: `1` Paper share
-- BUY accepted and filled
-- position confirmed at quantity `1`
-- SELL accepted and filled
-- final position restored to baseline quantity `0`
-- open execution ID: `00012ec5.6ad7d4cb.01.01`
-- close execution ID: `00012ec5.6ad7d4f9.01.01`
-- open price: `534.12`
-- close price: `534.09`
-
-IBKR execution compatibility work included explicit Paper-only gating, order-status/rejection diagnostics, disabling unsupported legacy `eTradeOnly`/`firmQuoteOnly` attributes, and explicit `DAY` time-in-force.
+- Automatic execution: **CERTIFIED**
+- Hard automatic maximum: **1 share per order**
+- Broker order state/fill must be confirmed before ATLAS marks an order EXECUTED.
+- Broker cancellations are persisted as CANCELLED rather than false executions.
 
 ### Bybit — Testnet
 
-- Current connected AI subaccount UID: `107068845`
-- Connectivity/private API/wallet sync: **CERTIFIED**
-- Order submission path: **REACHED**
-- Execution: **PROVIDER-BLOCKED**
-
-A valid BTCUSDT Testnet order reached Bybit's order endpoint, but Bybit rejected execution with error `10024` due to a product/service regulatory restriction. ATLAS must not bypass this restriction.
+- Connectivity/private API/wallet: **CERTIFIED**
+- Automatic execution: **BLOCKED BY PROVIDER**
+- Provider error: `10024`
+- ATLAS does not bypass regulatory/provider restrictions.
 
 ### Twelve Data
 
 - Connectivity: **CERTIFIED**
-- Role: market/historical data only
-- Execution: not applicable
+- Purpose: market/historical data only
+- Execution: never applicable
 
-## Multi-instrument universe
+## Multi-market universe
 
-The current starter universe contains 21 candidate instruments spanning stocks, ETFs, FX, metals, commodities and crypto.
+The configured universe spans:
 
-Latest broker-native validation result:
+- stocks: AAPL, AMZN, META, MSFT, NVDA, TSLA
+- ETFs: IWM, QQQ, SPY
+- FX: AUDUSD, EURUSD, GBPUSD, USDCAD, USDCHF, USDJPY
+- metals: XAGUSD, XAUUSD
+- commodity: XTIUSD
+- crypto: BTCUSDT, ETHUSDT, SOLUSDT
 
-```text
-supported=21
-failed=0
-skipped=0
-total=21
+Strategy modes are per symbol:
+
+- `WATCH`
+- `SIGNALS`
+- `AUTO_TRADE`
+
+Not every symbol should be AUTO_TRADE. The mode is intentionally separate from provider certification and risk readiness.
+
+## Automation
+
+Automation policy: **CERTIFIED_ROUTES_ONLY**.
+
+Certified automatic routes:
+
+- MT5 / DEMO
+- IBKR / PAPER, max 1 share/order
+
+Blocked route:
+
+- BYBIT / TESTNET — `PROVIDER_EXECUTION_NOT_CERTIFIED` / provider restriction `10024`
+
+The scheduler supports:
+
+- enabled/disabled state;
+- kill switch;
+- simulation auto-execution state;
+- configurable scan interval;
+- persistent scan history;
+- persistent action history;
+- broker fill/cancellation verification.
+
+## Risk/safety controls
+
+Implemented controls include:
+
+- certified-route gate;
+- simulation-environment gate;
+- provider connection/readiness gate;
+- duplicate position prevention;
+- duplicate open-order prevention;
+- account/portfolio position limits;
+- per-symbol strategy mode;
+- IBKR certified maximum sizing;
+- invalid/sub-share IBKR sizing block;
+- MT5 stop-loss/take-profit requirement;
+- kill switch;
+- explicit Live Money gate.
+
+## Reporting and attribution
+
+Implemented:
+
+- broker-native positions/orders/executions;
+- persistent automation action ledger;
+- unified broker-derived 30-day P&L/history;
+- daily performance;
+- strategy-level raw symbol attribution;
+- strategy diagnostics including win/loss and profit-factor style metrics;
+- broker-verified ATLAS attribution.
+
+Historical broker activity without persisted broker-confirmed ATLAS evidence remains **unverified**. It is not retroactively fabricated or guessed.
+
+## Frontend
+
+Current frontend includes:
+
+- Dashboard
+- Markets/Charts/Signals
+- Positions/Orders/Performance
+- Accounts
+- Users
+- Strategy
+- Risk
+- Integrations
+- System
+- Automation Operations Center
+
+The Dashboard initial-render issue and Automation navigation/rendering issues were addressed in the final frontend hardening pass.
+
+## Release-readiness API
+
+`GET /release/readiness`
+
+The endpoint reports:
+
+- release/version;
+- automation state;
+- provider connection/certification state;
+- strategy-mode counts;
+- Live Money gate;
+- Bybit provider block;
+- completion status for backend/frontend/automation/reporting.
+
+## Known limitations that are intentionally preserved
+
+1. Live Money is not certified by the v1.0 simulation release.
+2. Bybit execution is provider-blocked by `10024`.
+3. IBKR automatic Paper execution remains capped at one share/order.
+4. Old historical broker trades without confirmed ATLAS action evidence remain unverified.
+5. Local IBKR/MT5 bridges must be running for their broker routes.
+
+These are controlled release boundaries, not hidden failures.
+
+## Final verification command
+
+```powershell
+cd "C:\Users\USER\Downloads\altas-markets"
+
+git pull origin main
+
+docker compose stop app
+docker compose rm -f app
+docker compose build --no-cache app
+docker compose up -d app
+
+docker compose exec app alembic current
+docker compose exec app python -m pytest -q
+docker compose ps
 ```
 
-Validated instruments:
+Then verify:
 
-- IBKR stocks: AAPL, AMZN, META, MSFT, NVDA, TSLA
-- IBKR ETFs: IWM, QQQ, SPY
-- MT5 FX: AUDUSD, EURUSD, GBPUSD, USDCAD, USDCHF, USDJPY
-- MT5 metals: XAGUSD, XAUUSD
-- MT5 commodity: XTIUSD
-- Bybit crypto: BTCUSDT, ETHUSDT, SOLUSDT
+- `http://localhost:8000`
+- `/health`
+- `/api/system`
+- `/release/readiness`
+- Dashboard initial load
+- Automation Operations Center
 
-MT5 broker-native symbol discovery/alias resolution is active, and `XAGUSD` now validates successfully.
-
-## Centralized provider routing
-
-ATLAS has centralized market/provider routing rules and route-health checks:
-
-- stocks / ETFs → IBKR
-- FX / metals / commodities → MT5
-- crypto → Bybit
-- Twelve Data → market data only
-
-Execution candidates must be connected, enabled, active and credentials-configured.
-
-## Immediate next task
-
-The provider setup/certification and starter-universe validation stage is complete. Next development should focus on the central engine:
-
-1. seed the fully validated universe into safe `WATCH` / `SIGNALS` modes;
-2. build/validate multi-instrument scanning across the seeded universe;
-3. preserve per-symbol/provider routing;
-4. integrate existing analysis/news/historical inputs into explainable BUY/SELL/HOLD decisions;
-5. harden account-wide risk using existing positions/exposure before enabling broad `AUTO_TRADE`;
-6. keep Bybit execution disabled while error `10024` remains in force;
-7. do not bulk-enable `AUTO_TRADE` yet.
-
-## Central-engine work remaining
-
-- safe universe seeding
-- multi-instrument scanning
-- technical/fundamental/news intelligence integration
-- defined BUY/SELL/HOLD methodology and confidence model
-- risk-engine hardening, including existing-position exposure
-- automatic execution lifecycle
-- position/exit monitoring
-- performance analytics
-- historical strategy evaluation
-- frontend/mobile redesign and provider setup UX
-- final deployment/operations/security documentation
-
-## Safety position
-
-Live Money automatic trading is intentionally not ready. Provider certification is confined to Paper/Demo/Testnet environments. Live execution remains explicitly gated until routing, strategy, risk, automation and extended simulation have been validated.
+See `docs/FINAL_HANDOVER.md` for the final operations/handover document.
