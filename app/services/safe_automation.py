@@ -17,6 +17,9 @@ from app.services.autotrade_preflight import autotrade_preflight
 
 CERTIFIED_AUTOMATION_ROUTES={('MT5','DEMO'),('IBKR','PAPER')}
 IBKR_CERTIFIED_MAX_SHARES_PER_ORDER=1
+IBKR_FILL_VERIFY_ATTEMPTS=6
+IBKR_FILL_VERIFY_DELAY_SECONDS=1.0
+IBKR_TERMINAL_ORDER_STATUSES={'CANCELLED','CANCELED','INACTIVE','API CANCELLED','APICANCELLED'}
 
 def automation_certification_blocker(provider,environment):
     provider=str(provider or '').upper();environment=str(environment or '').upper()
@@ -63,6 +66,15 @@ async def _execute_mt5(db,*,user_id,item):
     if int((check.get('result') or {}).get('retcode',-1)) not in {0,10009}:return {'market':market,'symbol':symbol,'provider':'MT5','status':'BLOCK','reason':'BROKER_PREFLIGHT_REJECTED','broker_check':check}
     result=await broker.place_demo_order(symbol=symbol,side=side,volume=volume,stop_loss=float(stop_loss),take_profit=float(take_profit),comment='ATLAS AUTO DEMO');return {'market':market,'symbol':symbol,'provider':'MT5','environment':'DEMO','status':'EXECUTED','side':side,'volume':volume,'stop_loss':stop_loss,'take_profit':take_profit,'broker_result':result}
 
+async def _verify_ibkr_fill(broker,order_id,shares):
+    latest=None
+    for attempt in range(IBKR_FILL_VERIFY_ATTEMPTS):
+        if attempt:await asyncio.sleep(IBKR_FILL_VERIFY_DELAY_SECONDS)
+        latest=await broker.order_status(int(order_id));status=latest.get('status') or {};state=str(status.get('status') or '').upper();filled=float(status.get('filled') or 0);remaining=float(status.get('remaining') or 0)
+        if filled>=float(shares) or (state=='FILLED' and remaining<=0):return 'FILLED',latest
+        if state in IBKR_TERMINAL_ORDER_STATUSES:return 'CANCELLED',latest
+    return 'SUBMITTED',latest
+
 async def _execute_ibkr(db,*,user_id,item):
     market=str(item.get('market') or '').upper();symbol=_canonical_symbol(item.get('symbol'));cfg=db.scalar(select(SymbolStrategy).where(SymbolStrategy.user_id==user_id,SymbolStrategy.market==market,SymbolStrategy.symbol==symbol,SymbolStrategy.enabled.is_(True),SymbolStrategy.mode=='AUTO_TRADE'))
     if cfg is None:return {'market':market,'symbol':symbol,'provider':'IBKR','status':'SKIP','reason':'AUTO_TRADE_NOT_ENABLED'}
@@ -83,7 +95,13 @@ async def _execute_ibkr(db,*,user_id,item):
     if not(check.get('ok') and check.get('what_if') and check.get('simulation')):return {'market':market,'symbol':symbol,'provider':'IBKR','status':'BLOCK','reason':'BROKER_WHATIF_REJECTED','broker_check':check}
     result=await broker.place_order(payload)
     if not result.get('accepted'):return {'market':market,'symbol':symbol,'provider':'IBKR','status':'BLOCK','reason':'BROKER_ORDER_REJECTED','broker_result':result}
-    return {'market':market,'symbol':symbol,'provider':'IBKR','environment':'PAPER','status':'EXECUTED','side':side,'shares':shares,'strategy_requested_shares':proposed.get('strategy_requested_shares') or requested,'sizing_policy':'CERTIFIED_MAX_1_SHARE','broker_check':check,'broker_result':result}
+    order_id=result.get('order_id')
+    base={'market':market,'symbol':symbol,'provider':'IBKR','environment':'PAPER','side':side,'shares':shares,'strategy_requested_shares':proposed.get('strategy_requested_shares') or requested,'sizing_policy':'CERTIFIED_MAX_1_SHARE','broker_check':check,'broker_result':result}
+    if order_id is None:return {**base,'status':'SUBMITTED','reason':'BROKER_ORDER_ID_MISSING'}
+    verification,final_status=await _verify_ibkr_fill(broker,order_id,shares);result['final_status']=final_status
+    if verification=='FILLED':return {**base,'status':'EXECUTED'}
+    if verification=='CANCELLED':return {**base,'status':'CANCELLED','reason':'BROKER_ORDER_CANCELLED'}
+    return {**base,'status':'SUBMITTED','reason':'BROKER_FILL_NOT_CONFIRMED'}
 
 async def run_safe_scan():
     now=datetime.now(timezone.utc)
