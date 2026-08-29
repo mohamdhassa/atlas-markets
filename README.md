@@ -1,162 +1,156 @@
-# Atlas Markets
+# ATLAS MARKETS
 
-24/7 FX + Crypto Algorithmic Trading Platform.
+**Version 1.0.0 — Simulation Release**
 
-## Status
-Phase 6 — responsive frontend, broker-profile management, and technical-analysis engine implemented on `feature/phase6-analysis-accounts-responsive` and awaiting local runtime verification.
+ATLAS MARKETS is a multi-market, multi-provider automated trading platform for stocks, ETFs, FX, metals, commodities and crypto.
 
-Atlas Markets is a separate project from Atlas Trader. Atlas Trader is used only as an architectural and UX reference.
+ATLAS MARKETS is a separate project from ATLAS TRADER. ATLAS TRADER was used only as an architectural/UX reference.
+
+## Release status
+
+The core project is **complete for Paper / Demo / Testnet automated trading**.
+
+Live Money remains intentionally gated and is not part of the v1.0 simulation completion boundary.
 
 ## Stack
+
 - Python 3.12
 - FastAPI + Uvicorn
 - PostgreSQL 17 + SQLAlchemy + Alembic
 - Redis
 - Docker / Docker Compose
-- Bybit V5 public market data
-- provider-independent broker abstraction
+- responsive browser frontend
+- local broker bridges for IBKR Paper and Fusion MT5 Demo
+
+## Providers
+
+| Provider | Purpose | Environment | Status |
+| --- | --- | --- | --- |
+| Fusion Markets MT5 | FX, metals, commodities execution | Demo | Connected and execution certified |
+| Interactive Brokers | Stocks and ETFs execution | Paper | Connected and execution certified; max 1 share/order |
+| Bybit | Crypto account/testnet integration | Testnet | Connected; execution blocked by provider error 10024 |
+| Twelve Data | Market/historical data | Data only | Connected; never used for execution |
+
+ATLAS does not bypass provider restrictions. Bybit automatic execution remains disabled while error `10024` is in force.
 
 ## Implemented
-- FastAPI application + dependency-aware health checks
-- PostgreSQL + Redis Docker infrastructure
-- SQLAlchemy + Alembic migrations
+
 - ADMIN / USER authentication and revocable sessions
-- authentication audit log
-- responsive browser frontend for desktop, tablet and phone
-- role-specific ADMIN and USER dashboards/navigation
-- ADMIN Create User workflow
-- broker-profile create/list/enable-disable workflow with per-user ownership
-- live Bybit Markets page and candle Charts page
-- deterministic technical analysis: SMA, EMA, RSI, MACD, ATR, Bollinger Bands
-- market-structure and support/resistance calculations
-- trend/volatility regime labels and normalized signal score/bias
-- multi-timeframe 4H/1H/15M/5M alignment API
-- unit/integration coverage for infrastructure, auth, market data, analysis and broker profiles
+- per-user external provider profiles
+- encrypted provider credentials
+- provider connection testing and account synchronization
+- multi-market instrument universe
+- technical and multi-timeframe analysis
+- historical intelligence loop
+- financial/news intelligence
+- strategy modes: WATCH / SIGNALS / AUTO_TRADE
+- BUY / SELL / HOLD decision flow
+- portfolio/account risk controls
+- duplicate position/order prevention
+- kill switch
+- scheduled automatic simulation scans
+- certified-route-only automatic execution
+- MT5 Demo automatic execution
+- IBKR Paper automatic execution with broker fill verification
+- persistent automation action ledger
+- broker-native positions, orders and execution history
+- unified trade history and realized P&L
+- strategy performance and diagnostics
+- conservative broker-verified strategy attribution
+- Dashboard and Automation Operations Center
+- provider/integration frontend
+- mobile-responsive frontend
+- release readiness endpoint
 
-## Role model
-- **ADMIN**: system-wide control, user creation, all broker profiles, strategy/risk/integration administration.
-- **USER**: personal workspace; only their own broker profiles and account-scoped trading records.
+## Automatic execution policy
 
-Public self-registration is intentionally disabled. Administrators create application users from the **Users** page.
-
-## Local Docker verification
-
-```powershell
-Copy-Item .env.example .env
-docker compose up -d --build
-docker compose ps
-docker compose exec app alembic current
-docker compose exec app python -m pytest
-```
-
-Create the first administrator when needed:
-
-```powershell
-docker compose exec app python -m app.scripts.create_admin --username admin
-```
-
-## Key APIs
-- `POST /auth/login`
-- `GET /auth/me`
-- `GET|POST /admin/users` — ADMIN only
-- `GET|POST /accounts`
-- `PATCH /accounts/{profile_id}/toggle`
-- `GET /markets/tickers`
-- `GET /markets/candles/{symbol}`
-- `GET /analysis/{symbol}`
-- `GET /analysis/{symbol}/multi`
-
-## Engineering workflow
-DESIGN → BUILD → TEST → COMMIT → DEPLOY → LIVE SMOKE TEST → DOCUMENT → RELEASE
-
-See `docs/ARCHITECTURE.md`, `docs/ERD.md`, and `docs/AUTHORIZATION.md`.
-
----
-
-# Current Development Update — 2026-08-25
-
-The original project above remains the foundation. Development has since expanded ATLAS MARKETS into a **multi-market, multi-provider automated trading platform**. The newer work is additive and does not replace the original Phase 0–19 design/history.
-
-## Expanded provider architecture
-
-- **Interactive Brokers (IBKR)** — stocks and ETFs; current environment: Paper.
-- **Fusion MT5** — FX, metals and commodities; current environment: Demo.
-- **Bybit** — crypto; current environment: Testnet.
-- **Twelve Data** — market/historical data only; not an execution broker.
-
-The final system is intended to support many instruments per provider. Symbols used in certification are only controlled test instruments.
-
-## Current verification baseline
-
-- automated tests: **55 passed, 1 warning**
-- Fusion MT5 connectivity: **CERTIFIED**
-- Fusion MT5 Demo execution: **CERTIFIED**
-- IBKR Paper connectivity: **CERTIFIED**
-- IBKR Paper execution: **NEXT CERTIFICATION TASK**
-- Bybit Testnet connectivity/private API: **CERTIFIED**
-- Bybit Testnet execution: request path reached, but provider-blocked by Bybit error `10024`
-- Twelve Data: **CONNECTED / market-data-only**
-
-### Fusion MT5 certification evidence
-
-A controlled `EURUSD` 0.01-lot Demo order was opened and closed successfully. MT5 returned success retcodes for both operations and the exact certification position was verified flat afterward. `/history/deals` may lag, so delayed history is treated as a warning when order/deal/position state already proves execution.
-
-### Bybit current state
-
-The connected Testnet AI subaccount is `107068845`. Wallet/private API access is working and funded. A valid BTCUSDT Testnet market-order request reached Bybit, which rejected execution with `10024` because the product/service is unavailable to the account due to regulatory restrictions. ATLAS must not bypass this provider restriction.
-
-## Expanded product objective
-
-The intended automatic lifecycle is:
+The automatic lifecycle is:
 
 ```text
-market + historical + financial/news data
+market + historical + news data
 → analysis
-→ BUY / SELL / HOLD decision
-→ risk approval
-→ provider routing
-→ execution
-→ position monitoring
-→ exit management
-→ P&L/performance recording
-→ historical evaluation
+→ strategy decision
+→ risk/readiness
+→ certified provider route
+→ broker submission
+→ fill verification
+→ action audit
+→ P&L/performance
 → repeat
 ```
 
-Live Money remains explicitly gated and is not considered ready merely because Paper/Demo integrations work.
+Certified automatic routes in v1.0:
 
-## Current next steps
+- **Fusion MT5 Demo**
+- **IBKR Paper**, maximum 1 share per automatic order
 
-1. Certify IBKR Paper execution end-to-end.
-2. Validate multi-instrument universe and provider capabilities.
-3. Validate automatic provider routing.
-4. Expand/validate strategy and financial/news intelligence.
-5. Harden the risk engine.
-6. Certify the full automatic trading loop.
-7. Expand performance analytics and historical evaluation.
-8. Complete frontend/mobile UX and provider setup.
-9. Run extended simulation before any Live Money decision.
+Blocked/non-execution routes:
 
-## Current operational commands
+- **Bybit Testnet** — provider error `10024`
+- **Twelve Data** — data only
+- **Live Money** — separately gated
+
+## Local runtime
 
 ```powershell
 cd "C:\Users\USER\Downloads\altas-markets"
+
 git pull origin main
-docker compose up -d --build
-docker compose exec app python -m pytest
-docker compose exec app python -m app.scripts.verify_integrations
+
+docker compose stop app
+docker compose rm -f app
+docker compose build --no-cache app
+docker compose up -d app
+
+docker compose exec app python -m pytest -q
+docker compose ps
 ```
 
-Certification utilities currently include:
+Frontend:
 
-```powershell
-docker compose exec app python -m app.scripts.certify_mt5_execution
-docker compose exec app python -m app.scripts.certify_bybit_execution
+```text
+http://localhost:8000
 ```
 
-See also the additive current-state documents:
+After frontend changes use `Ctrl+F5`.
 
-- `docs/CURRENT_STATUS.md`
-- `docs/PROVIDERS.md`
-- `docs/TESTING_AND_CERTIFICATION.md`
-- `docs/ROADMAP.md`
+## Important APIs
+
+- `GET /health`
+- `GET /api/system`
+- `GET /release/readiness`
+- `GET /accounts`
+- `GET /portfolio`
+- `GET /strategies/symbols`
+- `GET /automation/state`
+- `GET /automation/scans`
+- `GET /automation/actions`
+- `POST /automation/kill`
+- `POST /automation/restart`
+- `GET /performance/unified?days=30`
+- `GET /strategies/performance?days=30`
+- `GET /strategies/performance/diagnostics?days=30`
+- `GET /strategies/performance/verified?days=30`
+
+## Safety position
+
+A Paper/Demo certification does not automatically certify Live Money. Broker account state is authoritative for actual positions/fills. Historical broker trades are only attributed to an ATLAS strategy when persisted broker-confirmed evidence exists; unverifiable history is intentionally left unverified.
+
+## Documentation
+
+Start with:
+
+- `docs/FINAL_HANDOVER.md` — final release handover and operations runbook
+- `docs/CURRENT_STATUS.md` — current operational state
+- `docs/PROVIDERS.md` — provider architecture
+- `docs/TESTING_AND_CERTIFICATION.md` — testing/certification
+- `docs/ARCHITECTURE.md` — architecture
+- `docs/ERD.md` — database design
+- `docs/AUTHORIZATION.md` — roles and authorization
+- `docs/ROADMAP.md` — post-v1 enhancements and Live Money readiness program
+
+## Engineering rule
+
+`DESIGN → BUILD → TEST → COMMIT → DEPLOY → BROKER/APP SMOKE TEST → DOCUMENT`
+
+For a new broker, account environment, or Live Money route, controlled certification must be performed again from scratch.
