@@ -1,120 +1,108 @@
-# ATLAS MARKETS — Roadmap
+# ATLAS MARKETS — Post-v1 Roadmap
 
 ## Current checkpoint
 
-Provider connectivity is established across Fusion MT5 Demo, IBKR Paper, Bybit Testnet and Twelve Data. MT5 Demo execution is certified. IBKR Paper execution certification is next. Bybit execution is currently blocked by provider error `10024`.
+ATLAS MARKETS **v1.0.0 Simulation Release is complete** for Paper / Demo / Testnet automated trading.
 
-## Priority 1 — Finish Paper/Demo execution certification
+Certified automatic routes:
 
-- [x] Fusion MT5 Demo connectivity
-- [x] Fusion MT5 Demo execution
-- [x] IBKR Paper connectivity
-- [ ] IBKR Paper execution
-- [x] Bybit Testnet connectivity/private API
-- [!] Bybit Testnet execution — provider/regulatory restriction `10024`
-- [x] Twelve Data connectivity
+- Fusion MT5 Demo
+- Interactive Brokers Paper, maximum 1 share/order
 
-After IBKR certification, stop treating provider setup as the main project focus.
+Provider-limited route:
 
-## Priority 2 — Multi-instrument universe
+- Bybit Testnet execution remains blocked by provider error `10024`
 
-- define configurable universes per asset class/account;
-- discover/validate provider-supported instruments;
-- normalize symbol metadata;
-- avoid one-symbol-per-broker assumptions;
-- support enable/disable controls and scanning scope.
+Data-only provider:
 
-## Priority 3 — Provider routing
+- Twelve Data
 
-Build/validate automatic routing using asset class, instrument availability, account state, environment, connection health, market session, risk authorization and buying power/margin.
+Live Money remains explicitly gated.
 
-Representative routing: stocks/ETFs → IBKR; FX/metals/commodities → Fusion MT5; crypto → Bybit when execution is permitted.
+## Completed in v1.0
 
-## Priority 4 — Analysis and strategy
+- [x] FastAPI/PostgreSQL/Redis/Docker platform
+- [x] ADMIN / USER authentication and account isolation
+- [x] external provider profiles and encrypted credentials
+- [x] Fusion MT5 Demo connectivity and execution certification
+- [x] IBKR Paper connectivity and execution certification
+- [x] Bybit Testnet connectivity/private API integration
+- [x] Twelve Data integration
+- [x] validated multi-market universe
+- [x] centralized provider routing
+- [x] technical/multi-timeframe analysis
+- [x] historical intelligence
+- [x] news intelligence
+- [x] per-symbol WATCH / SIGNALS / AUTO_TRADE modes
+- [x] account/portfolio risk controls
+- [x] duplicate position/order guards
+- [x] certified-route-only automatic execution
+- [x] broker fill/cancellation verification
+- [x] persistent automation scan/action history
+- [x] unified broker-derived P&L/history
+- [x] strategy performance diagnostics
+- [x] conservative broker-verified strategy attribution
+- [x] responsive frontend
+- [x] Automation Operations Center
+- [x] release readiness endpoint
+- [x] final handover/runbook
 
-- technical indicators and multi-timeframe analysis;
-- momentum/trend/regime inputs;
-- historical market context;
-- financial/news intelligence;
-- explicit BUY/SELL/HOLD methodology;
-- meaningful confidence/reason codes;
-- deterministic/testable components where possible.
+## Post-v1 enhancement track
 
-Avoid arbitrary unexplained AI scoring.
+These items are enhancements, not requirements to call v1.0 simulation complete.
 
-## Priority 5 — Risk engine
+### Strategy research and intelligence
 
-Harden:
+- expand financial/fundamental data inputs;
+- improve explainable confidence calibration;
+- add formal backtest/replay workflows;
+- compare strategy variants without automatically rewriting production logic;
+- expand regime and correlation analysis.
 
-- maximum position size;
-- maximum account/asset-class exposure;
-- maximum open positions;
-- daily-loss limit;
-- drawdown controls;
-- stop loss/take profit;
-- leverage/margin controls;
-- spread/slippage limits;
-- duplicate-order prevention;
-- stale-signal prevention;
-- correlated exposure;
-- market-hours validation;
-- provider health checks;
-- kill switch;
-- explicit Live Money gate.
+### Performance analytics
 
-## Priority 6 — Automatic trading lifecycle
+- richer equity-curve and drawdown charts;
+- monthly/yearly performance views;
+- more detailed per-strategy/per-provider/per-symbol comparisons;
+- exact future execution-to-signal attribution using persisted correlation IDs on every new order lifecycle.
 
-Certify the complete loop:
+### Frontend product polish
 
-`scan → analyze → signal → risk → route → execute → monitor → exit → record → performance → repeat`
+- additional mobile refinements;
+- simplified provider onboarding;
+- charting enhancements;
+- notification preferences;
+- optional user-customizable dashboards.
 
-Normal automated operation should not require manual Buy/Sell clicks.
+### Additional providers/instruments
 
-## Priority 7 — Performance and historical evaluation
+Any new provider must pass:
 
-Provide:
+`CONNECT → READ → PREFLIGHT → CONTROLLED ORDER → FILL VERIFY → CLOSE → AUDIT → CERTIFY`
 
-- daily/monthly P&L;
-- cumulative return;
-- win/loss rate;
-- profit factor;
-- drawdown;
-- provider performance;
-- instrument performance;
-- strategy performance;
-- time-series charts;
-- trade/execution history;
-- AI/strategy decision history.
+Certification never transfers automatically between providers, accounts or environments.
 
-Historical results should inform evaluation/backtesting. Do not allow a few recent trades to automatically rewrite production strategy logic.
+## Live Money readiness program
 
-## Priority 8 — Frontend/mobile UX
+Live Money is a separate controlled program and must not be enabled merely because v1.0 simulation is complete.
 
-Complete/polish:
+Before any Live Money certification:
 
-- Dashboard
-- Markets
-- Analysis
-- Signals
-- Positions
-- Orders
-- Performance
-- History
-- Integrations
-- Strategy
-- Risk Management
-- Users
-- Settings
-- System Status
+1. run an extended Paper/Demo validation period;
+2. review automatic scan stability and broker availability;
+3. review drawdown, losses, exposure and failure cases;
+4. confirm all expected broker order states are handled;
+5. confirm backups/recovery and operational monitoring;
+6. define live capital and per-order limits substantially below account capacity;
+7. certify one provider/account/environment at a time;
+8. retain an immediate kill switch and manual broker access;
+9. never bypass provider/regulatory restrictions;
+10. document explicit approval before enabling a Live Money route.
 
-The frontend must be responsive on desktop and phone, and provider/account setup should become significantly simpler than the engineering setup used during development.
+## Bybit
 
-## Priority 9 — Extended simulation and Live Money readiness
+Bybit execution may be reconsidered only if provider error `10024` is legitimately resolved by Bybit/account eligibility. Do not use VPNs, identity/location changes or other workarounds to evade provider restrictions.
 
-Run an extended Paper/Demo/Testnet validation period. Review stability, risk behavior and performance before considering Live Money.
+## Definition of future success
 
-Live Money is not a completion shortcut and remains explicitly gated.
-
-## Priority 10 — Release/operations documentation
-
-Before release, ensure documentation accurately covers architecture, ERD, authorization, providers, environment/configuration, Docker, migrations, deployment, backups/recovery, security, risk, automated trading, certification, troubleshooting, maintenance and disaster recovery.
+Post-v1 work should improve measurable reliability, explainability, safety or performance without weakening the completed simulation release safety boundaries.
