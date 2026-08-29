@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -38,11 +39,12 @@ async def scan_now(_:User=Depends(require_admin)):return await run_safe_scan()
 def scans(limit:int=50,_:User=Depends(get_current_user),db:Session=Depends(get_db)):
     rows=list(db.scalars(select(AutomationScan).order_by(AutomationScan.started_at.desc()).limit(min(max(limit,1),200))).all());return [{"id":r.id,"status":r.status,"symbols_count":r.symbols_count,"accounts_count":r.accounts_count,"signals_count":r.signals_count,"approved_count":r.approved_count,"executed_count":r.executed_count,"error_message":r.error_message,"started_at":r.started_at,"finished_at":r.finished_at} for r in rows]
 @router.get('/actions')
-def actions(limit:int=100,provider:str|None=None,status:str|None=None,symbol:str|None=None,current:User=Depends(get_current_user),db:Session=Depends(get_db)):
+def actions(limit:int=100,provider:str|None=None,status:str|None=None,symbol:str|None=None,scan_id:uuid.UUID|None=None,current:User=Depends(get_current_user),db:Session=Depends(get_db)):
     q=select(AutomationAction)
     if current.role!=UserRole.ADMIN:q=q.where(AutomationAction.user_id==current.id)
     if provider:q=q.where(AutomationAction.provider==provider.upper())
     if status:q=q.where(AutomationAction.status==status.upper())
     if symbol:q=q.where(AutomationAction.symbol==symbol.upper())
+    if scan_id:q=q.where(AutomationAction.scan_id==scan_id)
     rows=list(db.scalars(q.order_by(AutomationAction.created_at.desc()).limit(min(max(limit,1),500))).all())
     return [{"id":r.id,"scan_id":r.scan_id,"user_id":r.user_id,"broker_profile_id":r.broker_profile_id,"provider":r.provider,"environment":r.environment,"market":r.market,"symbol":r.symbol,"side":r.side,"status":r.status,"reason":r.reason,"quantity":r.quantity,"sizing_policy":r.sizing_policy,"broker_order_id":r.broker_order_id,"broker_position_id":r.broker_position_id,"created_at":r.created_at} for r in rows]
