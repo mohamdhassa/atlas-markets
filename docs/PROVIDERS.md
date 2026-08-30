@@ -1,78 +1,92 @@
-# ATLAS MARKETS — Provider Architecture
+# ATLAS MARKETS — Providers
 
-## Provider responsibilities
+Last updated: 2026-08-30
 
-ATLAS MARKETS uses external providers. ATLAS is the analysis, strategy, risk, routing, execution-orchestration and performance layer; it is not itself a broker.
+## Provider matrix
 
-| Provider | Primary market responsibility | Development environment | Live environment |
-| --- | --- | --- | --- |
-| Interactive Brokers | Stocks and ETFs | Paper | Gated/not certified |
-| Fusion MT5 | FX, metals, commodities | Demo | Gated/not certified |
-| Bybit | Crypto | Testnet | Gated/not certified |
-| Twelve Data | Market/historical data | API | Data only |
+| Provider | Purpose | Current environment | Automatic execution |
+|---|---|---|---|
+| Fusion Markets MT5 | FX, metals, commodities | Demo | CERTIFIED |
+| Interactive Brokers | Stocks, ETFs | Paper | CERTIFIED with max 1 share/order |
+| Bybit | Crypto | Testnet | BLOCKED by provider `10024` |
+| Twelve Data | Market/historical data | API data service | NEVER execution |
 
-## Multi-instrument requirement
+## Fusion Markets MT5
 
-Provider certification may use one safe representative instrument, but production architecture must not assume one instrument per provider.
+The MT5 route is the primary certified automatic execution route for FX, metals and commodities.
 
-Representative intended routing:
+Operational requirements:
 
-- AAPL/MSFT/NVDA/AMZN/META/TSLA/SPY/QQQ and other supported stocks/ETFs → IBKR
-- EURUSD/GBPUSD/USDJPY and other supported FX → Fusion MT5
-- XAUUSD/XAGUSD and supported metals → Fusion MT5
-- XTIUSD and supported commodities → Fusion MT5
-- BTCUSDT/ETHUSDT/SOLUSDT and supported crypto → Bybit when account/provider execution is permitted
+- Fusion MT5 Demo terminal logged in.
+- Algo Trading enabled.
+- ATLAS MT5 bridge running.
+- broker profile enabled, active, connected and credentials configured.
+- stop-loss and take-profit protection required for automatic orders.
+- existing-symbol position/open-order guards remain active.
 
-ATLAS should validate provider/account capabilities and preferably discover supported instruments rather than trusting hard-coded examples.
-
-## Fusion MT5
-
-MT5 integration uses a Windows-side bridge because MetaTrader connectivity is local to the terminal environment.
-
-Current Demo certification:
-
-- login `448261`
-- server `FusionMarkets-Demo`
-- Algo Trading ON
-- account/positions/orders/deals/symbol/quote/candle retrieval operational
-- Demo execution certified
-
-Execution certification uses `app/scripts/certify_mt5_execution.py` and must never intentionally touch unrelated positions.
+For Oracle hosting, MT5 runs on a Windows execution node reachable through a private VPN. Do not publish the bridge port to the Internet.
 
 ## Interactive Brokers
 
-IBKR integration uses `tools/ibkr_bridge.py` with TWS/IB Gateway and an ATLAS bridge client.
+Current environment: Paper.
 
-Current Paper account: `DUR980544`.
+Certified safeguards:
 
-The bridge supports health/account/positions/orders/executions/market-data and Paper-order operations. Simulation checks are required before any certification execution.
+- Paper/simulation bridge only.
+- WhatIf preflight required.
+- maximum 1 share per automatic order.
+- duplicate position/open-order prevention.
+- broker status verification after submission.
+- cancelled broker orders are persisted as `CANCELLED` rather than `EXECUTED`.
 
-Operational note: IBKR client IDs must be unique. If the bridge health endpoint is already healthy, do not start another bridge process using the same client ID.
+The bridge currently requests delayed data when live entitlements are not present. For broad automated U.S. stock/ETF simulation, enable the appropriate IBKR real-time market-data subscriptions for API use. IBKR documents delayed data as delayed and separately identifies missing real-time subscriptions; delayed data should not be considered equivalent to live execution-quality pricing.
+
+The v1.1 bulk AUTO_TRADE operation may promote configured IBKR Paper stock/ETF strategies because the route itself is certified. The 1-share cap and all preflight/risk gates remain enforced.
 
 ## Bybit
 
-Current Testnet AI subaccount UID: `107068845`.
+Current environment: Testnet.
 
-The integration supports signed private API access and retrieval of wallet, positions, open orders, order history and closed P&L. The Testnet execution-certification script dynamically reads instrument constraints before constructing an order.
+Confirmed working:
 
-Current execution restriction: Bybit returned error `10024` when a valid BTCUSDT Testnet order reached `/v5/order/create`. The response describes a regulatory product/service restriction. ATLAS must surface this clearly and must not attempt to bypass it.
+- authentication;
+- wallet/private API;
+- read/write permissions;
+- ContractTrade Order/Position permissions;
+- unified account status;
+- account balance;
+- order request reaches Bybit.
+
+Current blocker:
+
+- Bybit rejects the controlled order with error `10024` and a regulatory/product availability message.
+
+ATLAS classification: `PROVIDER_EXECUTION_NOT_CERTIFIED`.
+
+This is not a bad-secret or signature problem. Do not rotate keys simply to try to evade `10024`, do not use a VPN to misrepresent jurisdiction, and do not create false residency/account information.
+
+Resolution path:
+
+1. Log into the same Bybit Testnet account in the browser.
+2. Attempt the same perpetual product manually in Testnet.
+3. If the UI also blocks it, open a Bybit support ticket and provide the account UID, exact `10024` message and that this is Testnet/API product access.
+4. If support changes/approves account product access, rerun ATLAS diagnostics.
+5. Run a controlled test order.
+6. Add/verify controlled reduce-only close lifecycle.
+7. Only then change Bybit automation certification.
+
+Until step 7, crypto strategies may remain WATCH/SIGNALS/AUTO_TRADE-configured for analysis if desired, but the automatic execution layer will still block Bybit.
 
 ## Twelve Data
 
-Twelve Data is market-data-only in the ATLAS provider model. It can contribute market/historical inputs to analysis but must never be routed an execution request.
+Twelve Data supplies market/historical data. It is intentionally not an execution provider. Its presence does not create a third trading broker.
 
-## Routing principles
+## Oracle topology
 
-The eventual router should consider at least:
+Oracle hosts the core app/database/Redis. Broker bridges are private execution nodes. Recommended topology:
 
-- asset class
-- symbol/instrument availability
-- provider/account enabled state
-- environment (Demo/Paper/Testnet/Live)
-- connection health
-- market hours/session
-- risk authorization
-- account buying power/margin
-- live-money gate
+- Oracle -> private VPN -> MT5 bridge node
+- Oracle -> private VPN -> IBKR bridge node
+- Oracle -> HTTPS -> Bybit/Twelve Data
 
-No AI/strategy decision may directly bypass the routing and risk layers.
+See `ORACLE_DEPLOYMENT.md`.
