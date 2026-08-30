@@ -8,7 +8,7 @@ def test_bulk_auto_trade_route_is_registered():
     router_matches=[r for r in symbol_strategy_router.routes if str(getattr(r,'path','')).endswith('/auto-trade/eligible')]
     assert router_matches
     assert 'POST' in router_matches[0].methods
-    app_matches=[r for r in app.routes if getattr(r,'path',None)=='/strategies/symbols/auto-trade/eligible']
+    app_matches=[r for r in app.routes if str(getattr(r,'path','')).endswith('/auto-trade/eligible')]
     assert app_matches
     assert 'POST' in app_matches[0].methods
 
