@@ -8,6 +8,11 @@ venv/
 .env
 .env.*
 !.env.example
+!.env.oracle.example
+backups/
+*.dump
+*.backup
+*.sql.gz
 *.log
 .DS_Store
 .idea/
