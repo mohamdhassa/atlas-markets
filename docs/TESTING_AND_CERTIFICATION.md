@@ -1,101 +1,115 @@
 # ATLAS MARKETS — Testing and Certification
 
-## Baseline
+Last updated: 2026-08-30
 
-Current known automated-test baseline:
+## Release rule
 
-```text
-55 passed, 1 warning
+A code change is not considered deployed until the local/Oracle runtime has passed:
+
+```bash
+alembic current
+python -m pytest -q
+health check
+/api/system check
 ```
 
-Run from the local project directory:
+For broker changes, automated tests are necessary but not sufficient; broker-native controlled certification is also required.
 
-```powershell
-docker compose exec app python -m pytest
-```
+## Current provider certification
 
-## Provider connectivity verification
+### Fusion MT5 Demo
 
-```powershell
-docker compose exec app python -m app.scripts.verify_integrations
-```
+Status: CERTIFIED.
 
-A recent fully connected result included:
+Evidence requirements already satisfied:
 
-```text
-PASS | MT5 DEMO: CONNECTED | login=448261 ... algo=ON
-PASS | BYBIT TESTNET: CONNECTED | equity=1213.97 ...
-PASS | IBKR PAPER: CONNECTED | account=DUR980544 equity=1000000.00 ... simulation=True
-PASS | TWELVE_DATA: CONNECTED (market data only)
-```
+- bridge/terminal connectivity;
+- Demo server verification;
+- broker order check;
+- protected order submission;
+- open position confirmation;
+- SL/TP lifecycle support;
+- controlled close verification;
+- automatic execution through the ATLAS engine.
 
-Connectivity PASS does not by itself mean execution is certified.
+### IBKR Paper
 
-## Fusion MT5 execution certification
+Status: CERTIFIED with restrictions.
 
-Command:
+Required safeguards:
 
-```powershell
-docker compose exec app python -m app.scripts.certify_mt5_execution
-```
+- Paper/simulation bridge only;
+- WhatIf preflight;
+- max 1 share/order;
+- existing position/open-order guard;
+- post-submit status polling;
+- fills marked `EXECUTED` only after broker confirmation;
+- cancellation persisted as `CANCELLED`.
 
-Latest successful certification:
+Known operational dependency: real-time market-data entitlement. The bridge can receive delayed data, but broad unattended stock/ETF automation should use the appropriate IBKR real-time API market-data subscriptions. If broker market orders are cancelled due to unavailable major-exchange market data, that is a broker/data entitlement condition, not permission to falsify execution state.
 
-```text
-CERTIFY | MT5 DEMO | login=448261 server=FusionMarkets-Demo equity=9987.63
-PREFLIGHT| retcode=0 comment=Done
-ORDER   | EURUSD BUY Market volume=0.01
-OPEN    | retcode=10009 order=520344397 deal=363392725
-POSITION| ticket=520344397 symbol=EURUSD volume=0.01 price_open=1.16746
-CLOSE   | retcode=10009 order=520344398 deal=363392726
-WARN    | execution confirmed but /history/deals has not exposed deals 363392725,363392726 yet; rows=34
-PASS    | MT5 DEMO EXECUTION CERTIFIED | ticket=520344397 open_deal=363392725 close_deal=363392726 flat=True
-```
+### Bybit Testnet
 
-Interpretation: MT5 Demo execution is certified. Delayed history visibility is a known synchronization behavior and is not considered execution failure when the order/deal and position lifecycle provide authoritative confirmation.
+Connectivity/private API diagnostics: PASS.
+Execution certification: BLOCKED.
 
-## Bybit Testnet execution certification
+Controlled order result: Bybit `10024` compliance/product restriction.
 
-Command:
+Re-certification checklist after Bybit support resolves account/product access:
 
-```powershell
-docker compose exec app python -m app.scripts.certify_bybit_execution
-```
+1. private diagnostics PASS;
+2. manual Testnet product access works;
+3. controlled small order accepted;
+4. position appears;
+5. controlled reduce-only close succeeds;
+6. final position returns flat;
+7. order/history evidence captured;
+8. only then add Bybit to certified automatic routes.
 
-The script:
+## Bulk AUTO_TRADE v1.1
 
-- refuses non-Testnet/Simulation profiles;
-- reads actual Bybit instrument metadata;
-- calculates a valid minimum quantity/notional;
-- refuses unsafe sizing;
-- submits a Testnet order only when safeguards pass;
-- attempts to verify/close the certification position.
+The ADMIN endpoint `/strategies/symbols/auto-trade/eligible` is designed to promote all configured/seedable symbols that are on certified, ready simulation routes.
 
-Current result: the request reached Bybit order creation but Bybit returned `10024` due to a regulatory product/service restriction. Therefore connectivity/private auth/order-path reachability are certified, but execution is provider-blocked.
+Expected behavior:
 
-## IBKR Paper execution certification
+- Fusion MT5 Demo symbols -> promoted/created as AUTO_TRADE when route ready.
+- IBKR Paper stocks/ETFs -> promoted/created as AUTO_TRADE when route ready.
+- Bybit crypto -> returned in `blocked` with provider certification reason.
+- Live Money -> never bulk-promoted.
 
-Status: **next task**.
+After deployment, verify the response counts and then inspect `/strategies/symbols` before allowing the observation period to proceed.
 
-Required certification behavior:
+## Automation verification
 
-- Paper/simulation only;
-- validate intended account;
-- preflight a small liquid stock/ETF order;
-- submit the certification order;
-- identify only the new certification position/execution;
-- close only that position;
-- verify flat state;
-- inspect execution history;
-- clear PASS/FAIL output;
-- refuse Live Money.
+For each scan confirm:
 
-## Certification rules
+- scan ends `COMPLETED` unless a true runtime failure occurred;
+- `BLOCK` reasons correspond to safety/provider decisions;
+- `SKIP` corresponds to non-execution strategy state;
+- `CANCELLED` corresponds to broker cancellation;
+- `EXECUTED` has broker evidence;
+- no duplicate symbol positions are opened by repeated scans;
+- the kill switch stops new automatic execution.
 
-1. Never interpret connectivity alone as execution proof.
-2. Never bypass provider or regulatory restrictions.
-3. Never disable Live Money gates merely to make a test pass.
-4. Certification scripts must avoid touching unrelated existing positions/orders.
-5. Use actual provider instrument constraints instead of guessed quantities where possible.
-6. Preserve reproducible PASS/FAIL output.
-7. After meaningful changes, run the full automated test suite again.
+## Performance verification
+
+Do not infer strategy quality from raw broker-symbol P&L alone. Use verified attribution only when ATLAS action/order/fill lineage is present. Historical broker trades that predate lineage remain unverified.
+
+## Oracle deployment acceptance
+
+Before leaving the Oracle stack unattended:
+
+- app/PostgreSQL/Redis all healthy;
+- Alembic at head;
+- pytest 100% pass;
+- `/api/system` expected release/version;
+- HTTPS working;
+- 5432/6379/8000/8765/8766 not public;
+- Oracle can reach MT5 and IBKR bridges over private VPN;
+- broker profiles updated to private bridge URLs;
+- one monitored automatic scan completes successfully;
+- database backup completed and restore procedure documented.
+
+## Live Money certification
+
+Live Money is a separate future program. Simulation profitability alone is not certification. Live certification requires provider-by-provider controls, smaller initial limits, operational rollback, monitoring, explicit approval and a new release checkpoint.
