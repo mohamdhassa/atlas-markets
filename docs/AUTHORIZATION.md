@@ -1,167 +1,74 @@
-# ATLAS MARKETS — Authentication and Authorization
+# ATLAS MARKETS — Authorization
 
-## Roles
+Last updated: 2026-08-30
 
-ATLAS MARKETS has exactly two application roles:
+ATLAS MARKETS has exactly two application roles: `ADMIN` and `USER`.
 
-- `ADMIN`
-- `USER`
+## ADMIN
 
-There is no intermediate role hierarchy.
+ADMIN has system-wide access to:
 
-## Authentication model
+- user creation and administration;
+- all external broker profiles;
+- provider credentials/configuration workflows;
+- strategy/risk administration;
+- automation state, kill/restart and monitored scans;
+- bulk AUTO_TRADE promotion for eligible certified simulation routes;
+- system-wide broker/performance/action reporting;
+- integration and release-readiness views.
 
-Authentication uses opaque bearer session tokens backed by PostgreSQL.
+ADMIN access does **not** bypass provider certification, Live Money gates, broker restrictions, risk limits or the kill switch.
 
-Flow:
+### Bulk AUTO_TRADE authorization
 
-1. User submits username/password to `POST /auth/login`.
-2. Password is verified against a salted PBKDF2-SHA256 hash.
-3. A cryptographically random session token is generated.
-4. Only an HMAC-SHA256 hash of the session token is stored in `user_sessions`.
-5. The raw token is returned once to the client.
-6. Protected requests send `Authorization: Bearer <token>`.
-7. Logout revokes the server-side session immediately.
+`POST /strategies/symbols/auto-trade/eligible` is ADMIN-only.
 
-Sessions expire according to `SESSION_TTL_HOURS`.
+The endpoint may seed/promote symbols only when the assigned BrokerProfile is:
 
-## Password storage
+- on a certified simulation route;
+- enabled;
+- active;
+- connected;
+- credentials-configured.
 
-Readable passwords are never stored. Password hashes use PBKDF2-HMAC-SHA256 with a per-password random salt.
+Current certified routes are Fusion MT5 Demo and IBKR Paper. Bybit is returned as blocked until provider-side execution certification succeeds. Live Money routes are never bulk-promoted.
 
-## Tables
+## USER
 
-### users
+USER is restricted to user-owned/account-scoped data and operations. A USER may view and manage permitted own strategy/account data but cannot use ADMIN bulk automation controls, create other users, or operate system-wide automation controls.
 
-Stores application identities, password hashes, role and active/disabled state.
+## Authentication
 
-### user_sessions
+- login: `POST /auth/login`
+- current user: `GET /auth/me`
+- logout/revocation: `POST /auth/logout`
+- bearer access token is required for authenticated API routes.
+- user sessions are persisted/revocable.
+- public self-registration is disabled.
 
-Stores hashed session tokens, expiration, revocation state and basic connection metadata.
+## BrokerProfile ownership
 
-### auth_audit_log
+A BrokerProfile belongs to one user. Normal USER queries are filtered by ownership. ADMIN can inspect/manage system-wide profiles.
 
-Records login attempts, successful logins, logout and user creation events.
+Provider credentials are encrypted at rest in BrokerProfile encrypted fields. API/UI responses must never expose decrypted secrets.
 
-## API
+## Execution authorization layers
 
-### Public
+A strategy being `AUTO_TRADE` is necessary but not sufficient for order submission. Automatic execution additionally requires:
 
-- `POST /auth/login`
+1. automation engine enabled;
+2. kill switch not active;
+3. simulation execution enabled;
+4. provider/environment certified;
+5. BrokerProfile ready;
+6. valid strategy signal/order proposal;
+7. risk/preflight approval;
+8. duplicate/position/open-order checks;
+9. broker-native preflight where supported;
+10. broker acceptance and fill confirmation.
 
-### Authenticated
+This layered model is intentional. ADMIN is not a permission to skip these controls.
 
-- `GET /auth/me`
-- `POST /auth/logout`
+## Live Money
 
-### ADMIN only
-
-- `GET /admin/users`
-- `POST /admin/users`
-- `GET /admin/ping`
-
-## Bootstrap the first administrator
-
-After migrations are current, run inside the application container:
-
-```powershell
-docker compose exec app python -m app.scripts.create_admin --username admin
-```
-
-The command prompts for a password. Use at least 12 characters.
-
-For non-interactive local automation only, `--password` is also supported. Avoid placing real production passwords in shell history.
-
-## Authorization rules
-
-`ADMIN` can access platform-wide administration endpoints.
-
-`USER` can authenticate but receives HTTP 403 for ADMIN endpoints.
-
-Future account-scoped APIs must resolve allowed `profile_id` values from the authenticated user. Client-supplied profile IDs must never be trusted without ownership/authorization validation.
-
-## Security notes
-
-- `SESSION_SECRET` must be replaced with a strong secret before production.
-- Session tokens are revocable because sessions are server-side.
-- Failed and successful authentication attempts are audited.
-- Disabled users cannot create or use sessions.
-- Live trading remains independently controlled by server-side trading policy; authentication does not enable live trading.
-
----
-
-# Current Security / Authorization Addendum — 2026-08-25
-
-The original authentication and role model above remains in force. Later development adds external-provider ownership and execution-safety requirements without replacing the original model.
-
-## Broker/account ownership
-
-External broker/exchange accounts are represented by `BrokerProfile` records with a `user_id` owner.
-
-Account-scoped operations must follow:
-
-```text
-authenticated identity
-→ resolve/validate permitted BrokerProfile IDs
-→ perform account-scoped operation
-```
-
-A client-provided profile ID is never sufficient authorization by itself.
-
-`ADMIN` has explicit platform-wide administrative access where routes/services authorize it. `USER` remains restricted to owned/permitted resources.
-
-## Expanded ADMIN / USER scope
-
-ADMIN/Owner may manage users, provider profiles, strategy/risk configuration, integrations, automation/system controls and aggregate results. USER access remains scoped to the user's own permitted accounts, analysis, orders/positions, history and performance.
-
-There are still only two application roles; later provider work does not introduce another role tier.
-
-## Provider credential handling
-
-The current BrokerProfile implementation stores encrypted credential material in fields such as:
-
-- `api_key_encrypted`
-- `api_secret_encrypted`
-- `credential_blob_encrypted`
-- `credentials_configured` (safe status flag)
-
-Secrets/tokens must not be logged, returned by normal profile reads, or committed to Git/.env examples with real values.
-
-## Live Money authorization remains separate
-
-Authentication, ownership and ADMIN status do **not** by themselves authorize Live Money execution.
-
-The current broker profile includes explicit safety state such as:
-
-- `live_execution_enabled`
-- `live_execution_armed_at`
-
-Execution paths must also validate provider environment, account status, risk policy and global/server-side Live Money gates.
-
-Current certification environments remain:
-
-- Fusion MT5: Demo
-- IBKR: Paper
-- Bybit: Testnet
-
-Unrestricted Live Money automatic execution is not certified.
-
-## Bridge security
-
-MT5 and IBKR use local Windows-side bridges. These should remain private/local rather than exposed as unauthenticated internet-facing execution APIs. IBKR Paper/simulation mode must be verified before certification orders, and duplicate TWS/IB Gateway client IDs should be avoided.
-
-## Provider/regulatory restrictions
-
-Provider errors indicating product/regulatory restrictions must be surfaced and respected. In particular, Bybit Testnet execution currently returns provider error `10024`; ATLAS must not attempt to bypass that restriction.
-
-## Additional authorization testing expectations
-
-New account/provider features should test:
-
-- unauthenticated rejection;
-- USER rejection from ADMIN-only routes;
-- USER inability to read/mutate another user's broker profile/data;
-- ADMIN authorized access;
-- revoked/disabled session behavior;
-- Live Money gate independence from login/role;
-- secret/encrypted fields absent from normal API responses.
+`ALLOW_LIVE_TRADING=false` remains the deployment default for the simulation period. Live Money requires a separate certification and explicit configuration; it is not enabled through role elevation alone.
