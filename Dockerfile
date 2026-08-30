@@ -13,6 +13,8 @@ COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 COPY app /app/app
 COPY tests /app/tests
+COPY docker-compose.oracle.yml /app/docker-compose.oracle.yml
+COPY .env.oracle.example /app/.env.oracle.example
 
 EXPOSE 8000
 
