@@ -12,6 +12,7 @@ from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 from app.services.instrument_universe import STARTER_UNIVERSE,build_universe,starter_symbols
 from app.services.provider_routing import MARKETS,PROVIDER_MARKETS,normalize_market,normalize_symbol,provider_supports_market,providers_for_market,route_candidates,select_execution_route
+from app.services.safe_automation import CERTIFIED_AUTOMATION_ROUTES
 router=APIRouter(prefix='/strategies/symbols',tags=['strategies'])
 MODES={'WATCH','SIGNALS','AUTO_TRADE'}
 class SymbolStrategyIn(BaseModel):
@@ -24,6 +25,10 @@ class RouteRequest(BaseModel):
 class UniverseSeedRequest(BaseModel):
     markets:list[str]|None=None
     mode:str='WATCH'
+class BulkAutoTradeRequest(BaseModel):
+    seed_missing:bool=True
+    markets:list[str]|None=None
+
 def _admin(u):return u.role=='ADMIN'
 def _profile(db,u,pid):
  p=db.get(BrokerProfile,pid)
@@ -48,6 +53,11 @@ def _validate(db,p,payload):
  risk=db.scalar(select(RiskProfile).where(RiskProfile.name=='Default'))
  if risk and payload.risk_per_trade_pct is not None and payload.risk_per_trade_pct>risk.risk_per_trade_pct:raise HTTPException(409,f'risk per trade exceeds Admin safety limit of {risk.risk_per_trade_pct}%')
  return market,mode,symbol
+def _route_ready(p):
+ return bool(p and p.is_enabled and p.is_active and p.credentials_configured and p.last_connection_status=='CONNECTED')
+def _route_certified(p):
+ return bool(p and (str(p.provider).upper(),str(p.environment).upper()) in CERTIFIED_AUTOMATION_ROUTES)
+
 @router.get('/capabilities')
 def symbol_capabilities(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  q=select(BrokerProfile).where(BrokerProfile.provider!='ATLAS_PAPER');q=q if _admin(user) else q.where(BrokerProfile.user_id==user.id)
@@ -75,6 +85,38 @@ def seed_instrument_universe(payload:UniverseSeedRequest,user:User=Depends(get_c
   if p is None:skipped.append({'market':market,'symbol':symbol,'reason':'ROUTE_PROFILE_MISSING'});continue
   row=SymbolStrategy(user_id=user.id,profile_id=p.id,market=market,symbol=symbol,mode=mode,enabled=True);db.add(row);created.append({'market':market,'symbol':symbol,'profile_id':str(p.id),'provider':p.provider,'mode':mode});existing.add((market,symbol))
  db.commit();return {'mode':mode,'created_count':len(created),'skipped_count':len(skipped),'created':created,'skipped':skipped}
+@router.post('/auto-trade/eligible')
+def promote_all_eligible_auto_trade(payload:BulkAutoTradeRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ if not _admin(user):raise HTTPException(403,'ADMIN access required for bulk AUTO_TRADE promotion')
+ try:markets=[normalize_market(x) for x in payload.markets] if payload.markets else list(STARTER_UNIVERSE)
+ except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+ profiles=list(db.scalars(select(BrokerProfile).where(BrokerProfile.user_id==user.id,BrokerProfile.provider!='ATLAS_PAPER')).all())
+ rows=list(db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id==user.id)).all())
+ existing={(x.market,x.symbol):x for x in rows}
+ created=[];promoted=[];blocked=[]
+ if payload.seed_missing:
+  for market,symbol in starter_symbols(markets):
+   if (market,symbol) in existing:continue
+   selected=select_execution_route(market,profiles)
+   p=next((x for x in profiles if selected and str(x.id)==selected.profile_id),None)
+   if p is None:
+    blocked.append({'market':market,'symbol':symbol,'reason':'NO_EXECUTABLE_ROUTE'});continue
+   if not _route_certified(p):
+    blocked.append({'market':market,'symbol':symbol,'provider':p.provider,'environment':p.environment,'reason':'PROVIDER_EXECUTION_NOT_CERTIFIED'});continue
+   if not _route_ready(p):
+    blocked.append({'market':market,'symbol':symbol,'provider':p.provider,'environment':p.environment,'reason':'ROUTE_NOT_READY'});continue
+   row=SymbolStrategy(user_id=user.id,profile_id=p.id,market=market,symbol=symbol,mode='AUTO_TRADE',enabled=True);db.add(row);existing[(market,symbol)]=row;created.append({'market':market,'symbol':symbol,'provider':p.provider,'environment':p.environment})
+ for row in list(existing.values()):
+  if row.market not in markets:continue
+  p=db.get(BrokerProfile,row.profile_id)
+  if not _route_certified(p):
+   blocked.append({'market':row.market,'symbol':row.symbol,'provider':p.provider if p else None,'environment':p.environment if p else None,'reason':'PROVIDER_EXECUTION_NOT_CERTIFIED'});continue
+  if not _route_ready(p):
+   blocked.append({'market':row.market,'symbol':row.symbol,'provider':p.provider if p else None,'environment':p.environment if p else None,'reason':'ROUTE_NOT_READY'});continue
+  changed=row.mode!='AUTO_TRADE' or not row.enabled;row.mode='AUTO_TRADE';row.enabled=True
+  if changed:promoted.append({'id':str(row.id),'market':row.market,'symbol':row.symbol,'provider':p.provider,'environment':p.environment})
+ db.commit()
+ return {'policy':'CERTIFIED_SIMULATION_ROUTES_ONLY','created_count':len(created),'promoted_count':len(promoted),'blocked_count':len(blocked),'created':created,'promoted':promoted,'blocked':blocked,'note':'Bybit remains blocked until provider-side execution certification succeeds; Live Money routes are never bulk-promoted.'}
 @router.post('/route')
 def resolve_symbol_route(payload:RouteRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  try:
