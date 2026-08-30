@@ -1,108 +1,86 @@
-# ATLAS MARKETS — Post-v1 Roadmap
+# ATLAS MARKETS — Roadmap
 
-## Current checkpoint
+Last updated: 2026-08-30
 
-ATLAS MARKETS **v1.0.0 Simulation Release is complete** for Paper / Demo / Testnet automated trading.
+## Completed foundation
 
-Certified automatic routes:
+v1.0.0 Simulation Release is complete and tagged. Core architecture, external provider profiles, auth, strategies, risk, automation, MT5 Demo execution, IBKR Paper execution, persistent action history, unified performance, historical/news intelligence and frontend operations are implemented.
 
-- Fusion MT5 Demo
-- Interactive Brokers Paper, maximum 1 share/order
+## Active v1.1 rollout
 
-Provider-limited route:
+### 1. Broad certified simulation AUTO_TRADE
 
-- Bybit Testnet execution remains blocked by provider error `10024`
+- [x] Add ADMIN bulk eligible AUTO_TRADE endpoint.
+- [ ] Deploy locally and pass full tests.
+- [ ] Promote all ready MT5 Demo and IBKR Paper starter symbols.
+- [ ] Review blocked list and confirm Bybit remains provider-blocked.
+- [ ] Run monitored scan and verify broker truth.
 
-Data-only provider:
+### 2. IBKR broad Paper operation
 
-- Twelve Data
+- [x] Paper execution certification.
+- [x] WhatIf preflight.
+- [x] 1-share cap.
+- [x] broker fill/cancel state verification.
+- [ ] Enable appropriate real-time U.S. market-data subscriptions for API use.
+- [ ] Validate all configured stock/ETF AUTO_TRADE symbols across market hours.
 
-Live Money remains explicitly gated.
+### 3. Bybit resolution
 
-## Completed in v1.0
+- [x] private diagnostics PASS.
+- [x] order request reaches provider.
+- [x] identify provider `10024` compliance/product restriction.
+- [ ] reproduce product access in Testnet UI.
+- [ ] open/complete Bybit support review.
+- [ ] controlled order accepted after provider resolution.
+- [ ] controlled reduce-only close certification.
+- [ ] only then add Bybit to certified automation routes.
 
-- [x] FastAPI/PostgreSQL/Redis/Docker platform
-- [x] ADMIN / USER authentication and account isolation
-- [x] external provider profiles and encrypted credentials
-- [x] Fusion MT5 Demo connectivity and execution certification
-- [x] IBKR Paper connectivity and execution certification
-- [x] Bybit Testnet connectivity/private API integration
-- [x] Twelve Data integration
-- [x] validated multi-market universe
-- [x] centralized provider routing
-- [x] technical/multi-timeframe analysis
-- [x] historical intelligence
-- [x] news intelligence
-- [x] per-symbol WATCH / SIGNALS / AUTO_TRADE modes
-- [x] account/portfolio risk controls
-- [x] duplicate position/order guards
-- [x] certified-route-only automatic execution
-- [x] broker fill/cancellation verification
-- [x] persistent automation scan/action history
-- [x] unified broker-derived P&L/history
-- [x] strategy performance diagnostics
-- [x] conservative broker-verified strategy attribution
-- [x] responsive frontend
-- [x] Automation Operations Center
-- [x] release readiness endpoint
-- [x] final handover/runbook
+### 4. Oracle Cloud deployment
 
-## Post-v1 enhancement track
+- [x] Oracle compose profile.
+- [x] Oracle env template.
+- [x] deployment/network/backup runbook.
+- [ ] provision/update OCI Ubuntu host.
+- [ ] copy production secrets privately.
+- [ ] restore application database.
+- [ ] configure HTTPS reverse proxy.
+- [ ] establish private VPN to broker execution nodes.
+- [ ] run Oracle acceptance suite.
+- [ ] start continuous observation.
 
-These items are enhancements, not requirements to call v1.0 simulation complete.
+### 5. Multi-week observation
 
-### Strategy research and intelligence
+Target: several weeks of stable simulation without constant strategy changes.
 
-- expand financial/fundamental data inputs;
-- improve explainable confidence calibration;
-- add formal backtest/replay workflows;
-- compare strategy variants without automatically rewriting production logic;
-- expand regime and correlation analysis.
+Measure:
 
-### Performance analytics
+- total/realized/unrealized P&L;
+- maximum drawdown;
+- win rate and profit factor;
+- average winner/loser;
+- provider and symbol performance;
+- broker cancellations/rejections;
+- risk blocks and duplicate prevention;
+- automation uptime;
+- broker/ATLAS position consistency;
+- verified strategy attribution coverage.
 
-- richer equity-curve and drawdown charts;
-- monthly/yearly performance views;
-- more detailed per-strategy/per-provider/per-symbol comparisons;
-- exact future execution-to-signal attribution using persisted correlation IDs on every new order lifecycle.
+## After observation
 
-### Frontend product polish
+Possible v1.2 work is driven by evidence, not by a fixed feature list. Candidate improvements include strategy tuning, richer verified attribution, performance charts, alerting, additional providers and execution-node service hardening.
 
-- additional mobile refinements;
-- simplified provider onboarding;
-- charting enhancements;
-- notification preferences;
-- optional user-customizable dashboards.
+## Live Money program
 
-### Additional providers/instruments
+Live Money is not part of v1.1. It gets its own certification/release after the observation data is reviewed.
 
-Any new provider must pass:
+Requirements include:
 
-`CONNECT → READ → PREFLIGHT → CONTROLLED ORDER → FILL VERIFY → CLOSE → AUDIT → CERTIFY`
-
-Certification never transfers automatically between providers, accounts or environments.
-
-## Live Money readiness program
-
-Live Money is a separate controlled program and must not be enabled merely because v1.0 simulation is complete.
-
-Before any Live Money certification:
-
-1. run an extended Paper/Demo validation period;
-2. review automatic scan stability and broker availability;
-3. review drawdown, losses, exposure and failure cases;
-4. confirm all expected broker order states are handled;
-5. confirm backups/recovery and operational monitoring;
-6. define live capital and per-order limits substantially below account capacity;
-7. certify one provider/account/environment at a time;
-8. retain an immediate kill switch and manual broker access;
-9. never bypass provider/regulatory restrictions;
-10. document explicit approval before enabling a Live Money route.
-
-## Bybit
-
-Bybit execution may be reconsidered only if provider error `10024` is legitimately resolved by Bybit/account eligibility. Do not use VPNs, identity/location changes or other workarounds to evade provider restrictions.
-
-## Definition of future success
-
-Post-v1 work should improve measurable reliability, explainability, safety or performance without weakening the completed simulation release safety boundaries.
+- provider-specific Live account certification;
+- smaller initial risk limits than simulation;
+- real-time market data where required;
+- operational monitoring/alerts;
+- backup/recovery validation;
+- explicit rollback/kill procedures;
+- legal/provider eligibility checks;
+- controlled tiny-size deployment before any scaling.
