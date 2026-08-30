@@ -1,196 +1,115 @@
 # ATLAS MARKETS — Current Status
 
-Last updated: **2026-08-29**  
-Release: **1.0.0 Simulation Release**  
-System phase: **40**
+Last updated: 2026-08-30
 
-## Completion state
+## Baseline
 
-ATLAS MARKETS is complete for the v1.0 **Paper / Demo / Testnet automated trading** scope.
+- v1.0.0 Simulation Release: COMPLETE and tagged.
+- v1.1: active deployment/expansion candidate.
+- Database baseline verified at Alembic head before v1.1 work.
+- Live Money remains gated.
 
-The product now includes the full core lifecycle:
+## v1.1 objectives
 
-`market + historical + news data → analysis → BUY/SELL/HOLD → strategy mode → risk/readiness → provider routing → automatic execution on certified routes → broker verification → action audit → P&L/performance → strategy diagnostics → repeat`
-
-Live Money remains explicitly gated and is a separate readiness program, not unfinished v1.0 simulation work.
-
-## Repository/runtime
-
-- Repository: `mohamdhassa/atlas-markets`
-- Branch: `main`
-- Local Windows path: `C:\Users\USER\Downloads\altas-markets`
-- Runtime: FastAPI + PostgreSQL + Redis + Docker Compose
-- Frontend: `http://localhost:8000`
+1. Promote all eligible certified simulation symbols to AUTO_TRADE.
+2. Use both certified execution brokers during the observation period: Fusion MT5 Demo and IBKR Paper.
+3. Resolve Bybit `10024` through provider support/account-product approval and re-certify before enabling crypto execution.
+4. Run the application, PostgreSQL and Redis continuously on Oracle Cloud.
+5. Keep broker bridges reachable privately from Oracle.
+6. Keep documentation synchronized with the deployed architecture.
 
 ## Provider state
 
-### Fusion Markets MT5 — Demo
+### Fusion MT5 Demo
 
-- Connectivity: **CERTIFIED**
-- Automatic execution: **CERTIFIED**
-- Asset classes: FX, metals, commodities
-- Existing-position and portfolio exposure guards are active.
+- Connectivity: CERTIFIED
+- Execution: CERTIFIED
+- Automatic route: ENABLED when account/strategy/risk gates pass
+- Markets: FX, metals, commodities
 
-### Interactive Brokers — Paper
+### IBKR Paper
 
-- Account: `DUR980544`
-- Connectivity: **CERTIFIED**
-- Automatic execution: **CERTIFIED**
-- Hard automatic maximum: **1 share per order**
-- Broker order state/fill must be confirmed before ATLAS marks an order EXECUTED.
-- Broker cancellations are persisted as CANCELLED rather than false executions.
+- Connectivity: CERTIFIED
+- Execution: CERTIFIED
+- Automatic route: ELIGIBLE
+- Markets: stocks, ETFs
+- Hard cap: 1 share/order
+- WhatIf + broker fill verification required
+- Real-time API market-data subscriptions strongly recommended for broad unattended U.S. equity automation
 
-### Bybit — Testnet
+### Bybit Testnet
 
-- Connectivity/private API/wallet: **CERTIFIED**
-- Automatic execution: **BLOCKED BY PROVIDER**
-- Provider error: `10024`
-- ATLAS does not bypass regulatory/provider restrictions.
+- Private/API diagnostics: PASS
+- Wallet/account/permissions: PASS
+- Controlled order reaches provider
+- Provider response: `10024` compliance/product restriction
+- Execution certification: BLOCKED
+- Automation: provider gate remains active
 
 ### Twelve Data
 
-- Connectivity: **CERTIFIED**
-- Purpose: market/historical data only
-- Execution: never applicable
+- Market/historical data only
+- Never execution
 
-## Multi-market universe
+## Bulk AUTO_TRADE
 
-The configured universe spans:
+v1.1 adds ADMIN endpoint:
 
-- stocks: AAPL, AMZN, META, MSFT, NVDA, TSLA
-- ETFs: IWM, QQQ, SPY
-- FX: AUDUSD, EURUSD, GBPUSD, USDCAD, USDCHF, USDJPY
-- metals: XAGUSD, XAUUSD
-- commodity: XTIUSD
-- crypto: BTCUSDT, ETHUSDT, SOLUSDT
+`POST /strategies/symbols/auto-trade/eligible`
 
-Strategy modes are per symbol:
+It seeds/promotes starter-universe symbols only on ready certified simulation routes. MT5 Demo and IBKR Paper can be promoted. Bybit is reported as blocked. Live Money is never included.
 
-- `WATCH`
-- `SIGNALS`
-- `AUTO_TRADE`
+## Oracle deployment
 
-Not every symbol should be AUTO_TRADE. The mode is intentionally separate from provider certification and risk readiness.
+New assets:
 
-## Automation
+- `docker-compose.oracle.yml`
+- `.env.oracle.example`
+- `docs/ORACLE_DEPLOYMENT.md`
 
-Automation policy: **CERTIFIED_ROUTES_ONLY**.
+Oracle target:
 
-Certified automatic routes:
+- FastAPI bound internally to `127.0.0.1:8000`
+- PostgreSQL/Redis private Docker network
+- persistent volumes
+- `restart: unless-stopped`
+- HTTPS reverse proxy/load balancer
+- private VPN to execution nodes
 
-- MT5 / DEMO
-- IBKR / PAPER, max 1 share/order
+## Execution-node requirement
 
-Blocked route:
+A fully online website does not guarantee broker execution. Fusion MT5 requires an always-on Windows execution node. IBKR requires TWS/IB Gateway plus the ATLAS IBKR bridge. For a true multi-week unattended run, these execution nodes must also remain online and reachable from Oracle.
 
-- BYBIT / TESTNET — `PROVIDER_EXECUTION_NOT_CERTIFIED` / provider restriction `10024`
+## Documentation state
 
-The scheduler supports:
+Updated for v1.1:
 
-- enabled/disabled state;
-- kill switch;
-- simulation auto-execution state;
-- configurable scan interval;
-- persistent scan history;
-- persistent action history;
-- broker fill/cancellation verification.
+- README
+- Architecture
+- ERD
+- Authorization
+- Providers
+- Testing & Certification
+- Oracle Deployment
+- Current Status
 
-## Risk/safety controls
+Final handover/roadmap are updated as part of the same rollout before the Oracle cutover is considered complete.
 
-Implemented controls include:
+## Immediate acceptance sequence
 
-- certified-route gate;
-- simulation-environment gate;
-- provider connection/readiness gate;
-- duplicate position prevention;
-- duplicate open-order prevention;
-- account/portfolio position limits;
-- per-symbol strategy mode;
-- IBKR certified maximum sizing;
-- invalid/sub-share IBKR sizing block;
-- MT5 stop-loss/take-profit requirement;
-- kill switch;
-- explicit Live Money gate.
+1. Pull v1.1 changes locally.
+2. Rebuild app.
+3. Run full pytest.
+4. Call bulk eligible AUTO_TRADE endpoint as ADMIN.
+5. Review promoted vs blocked symbols.
+6. Run one monitored automatic scan.
+7. Confirm MT5 + IBKR broker truth.
+8. Prepare Oracle VM secrets/network.
+9. Restore/copy PostgreSQL state to Oracle.
+10. Establish private broker-bridge connectivity.
+11. Run Oracle acceptance suite.
+12. Begin multi-week observation.
 
-## Reporting and attribution
+## Safety boundary
 
-Implemented:
-
-- broker-native positions/orders/executions;
-- persistent automation action ledger;
-- unified broker-derived 30-day P&L/history;
-- daily performance;
-- strategy-level raw symbol attribution;
-- strategy diagnostics including win/loss and profit-factor style metrics;
-- broker-verified ATLAS attribution.
-
-Historical broker activity without persisted broker-confirmed ATLAS evidence remains **unverified**. It is not retroactively fabricated or guessed.
-
-## Frontend
-
-Current frontend includes:
-
-- Dashboard
-- Markets/Charts/Signals
-- Positions/Orders/Performance
-- Accounts
-- Users
-- Strategy
-- Risk
-- Integrations
-- System
-- Automation Operations Center
-
-The Dashboard initial-render issue and Automation navigation/rendering issues were addressed in the final frontend hardening pass.
-
-## Release-readiness API
-
-`GET /release/readiness`
-
-The endpoint reports:
-
-- release/version;
-- automation state;
-- provider connection/certification state;
-- strategy-mode counts;
-- Live Money gate;
-- Bybit provider block;
-- completion status for backend/frontend/automation/reporting.
-
-## Known limitations that are intentionally preserved
-
-1. Live Money is not certified by the v1.0 simulation release.
-2. Bybit execution is provider-blocked by `10024`.
-3. IBKR automatic Paper execution remains capped at one share/order.
-4. Old historical broker trades without confirmed ATLAS action evidence remain unverified.
-5. Local IBKR/MT5 bridges must be running for their broker routes.
-
-These are controlled release boundaries, not hidden failures.
-
-## Final verification command
-
-```powershell
-cd "C:\Users\USER\Downloads\altas-markets"
-
-git pull origin main
-
-docker compose stop app
-docker compose rm -f app
-docker compose build --no-cache app
-docker compose up -d app
-
-docker compose exec app alembic current
-docker compose exec app python -m pytest -q
-docker compose ps
-```
-
-Then verify:
-
-- `http://localhost:8000`
-- `/health`
-- `/api/system`
-- `/release/readiness`
-- Dashboard initial load
-- Automation Operations Center
-
-See `docs/FINAL_HANDOVER.md` for the final operations/handover document.
+Do not remove the Bybit provider gate to make the UI look complete. Do not expose bridge/database ports publicly. Do not enable Live Money as part of the Oracle migration.
