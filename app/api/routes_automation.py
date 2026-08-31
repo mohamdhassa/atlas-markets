@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from app.db.models.auth import User, UserRole
 from app.db.models.automation import AutomationAction, AutomationScan
 from app.db.session import get_db
 from app.services.automation import get_or_create_state
+from app.services.autotrade_preflight import autotrade_preflight
 from app.services.safe_automation import IBKR_CERTIFIED_MAX_SHARES_PER_ORDER, run_safe_scan
 
 router=APIRouter(prefix="/automation",tags=["automation"])
@@ -35,6 +36,17 @@ def restart(_:User=Depends(require_admin),db:Session=Depends(get_db)):
     s=get_or_create_state(db);s.killed=False;s.enabled=True;s.next_scan_at=None;db.commit();db.refresh(s);return _state_payload(s)
 @router.post('/scan-now')
 async def scan_now(_:User=Depends(require_admin)):return await run_safe_scan()
+@router.post('/monitor-scan')
+async def monitor_scan(
+    provider:str|None=Query(default=None,max_length=32),
+    markets:list[str]|None=Query(default=None),
+    user:User=Depends(require_admin),
+    db:Session=Depends(get_db),
+):
+    providers={provider.upper()} if provider else None
+    market_set={str(x).upper() for x in (markets or [])} or None
+    result=await autotrade_preflight(db,user_id=user.id,providers=providers,markets=market_set)
+    return {**result,'status':'COMPLETED','monitored_only':True}
 @router.get('/scans')
 def scans(limit:int=50,_:User=Depends(get_current_user),db:Session=Depends(get_db)):
     rows=list(db.scalars(select(AutomationScan).order_by(AutomationScan.started_at.desc()).limit(min(max(limit,1),200))).all());return [{"id":r.id,"status":r.status,"symbols_count":r.symbols_count,"accounts_count":r.accounts_count,"signals_count":r.signals_count,"approved_count":r.approved_count,"executed_count":r.executed_count,"error_message":r.error_message,"started_at":r.started_at,"finished_at":r.finished_at} for r in rows]
