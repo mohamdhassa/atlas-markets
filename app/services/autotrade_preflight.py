@@ -37,9 +37,14 @@ def _readiness_reason(row: dict) -> str:
         return str(reason)
     return 'READINESS_BLOCKED'
 
-async def autotrade_preflight(db,*,user_id)->dict:
+async def autotrade_preflight(db,*,user_id,providers:set[str]|None=None,markets:set[str]|None=None)->dict:
+    provider_filter={str(x).upper() for x in (providers or set())}
+    market_filter={str(x).upper() for x in (markets or set())}
     readiness=await autotrade_readiness(db,user_id=user_id);settings=get_settings();configs={(x.market,x.symbol):x for x in db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id==user_id)).all()};profiles={p.id:p for p in db.scalars(select(BrokerProfile).where(BrokerProfile.user_id==user_id)).all()};items=[]
     for row in readiness['items']:
+        row_provider=str(row.get('provider') or '').upper();row_market=str(row.get('market') or '').upper()
+        if provider_filter and row_provider not in provider_filter:continue
+        if market_filter and row_market not in market_filter:continue
         base={'market':row.get('market'),'symbol':row.get('symbol'),'provider':row.get('provider'),'readiness':row.get('readiness'),'execution':'NONE'}
         if row.get('readiness')!='PASS':items.append({**base,'preflight':'SKIP','reason':_readiness_reason(row),'readiness_blockers':row.get('blockers') or [],'readiness_reason':row.get('reason')});continue
         cfg=configs.get((row.get('market'),row.get('symbol')))
@@ -65,4 +70,4 @@ async def autotrade_preflight(db,*,user_id)->dict:
             else:items.append({**base,'preflight':'BLOCK','reason':'PROVIDER_PREFLIGHT_NOT_SUPPORTED'});continue
             items.append({**base,'preflight':'PASS' if ok else 'BLOCK','reason':None if ok else 'BROKER_PREFLIGHT_REJECTED','request':{'side':proposed.get('side'),'notional':proposed.get('notional'),'shares':shares if profile.provider=='IBKR' else proposed.get('shares'),'strategy_requested_shares':proposed.get('strategy_requested_shares'),'sizing_policy':proposed.get('sizing_policy'),'volume':proposed.get('volume'),'stop_loss':proposed.get('stop_loss'),'take_profit':proposed.get('take_profit')},'broker_check':result})
         except Exception as exc:items.append({**base,'preflight':'BLOCK','reason':f'{type(exc).__name__}: {str(exc) or repr(exc)}'})
-    return {'execution_enabled':False,'purpose':'BROKER_PREFLIGHT_NO_EXECUTION','checked_count':sum(x.get('preflight') in {'PASS','BLOCK'} for x in items),'pass_count':sum(x.get('preflight')=='PASS' for x in items),'block_count':sum(x.get('preflight')=='BLOCK' for x in items),'items':items}
+    return {'execution_enabled':False,'purpose':'BROKER_PREFLIGHT_NO_EXECUTION','scope':{'providers':sorted(provider_filter),'markets':sorted(market_filter)},'checked_count':sum(x.get('preflight') in {'PASS','BLOCK'} for x in items),'pass_count':sum(x.get('preflight')=='PASS' for x in items),'block_count':sum(x.get('preflight')=='BLOCK' for x in items),'skip_count':sum(x.get('preflight')=='SKIP' for x in items),'items':items}
