@@ -56,6 +56,8 @@ def _register_missing_router_routes(router):
 
 _register_missing_router_routes(admin_router)
 _register_missing_router_routes(symbol_strategies_router)
+_register_missing_router_routes(automation_router)
+_register_missing_router_routes(workspace_quotes_router)
 app.mount('/static',StaticFiles(directory=static_dir),name='static')
 @app.get('/',include_in_schema=False)
 async def root()->FileResponse:return FileResponse(static_dir/'index.html')
