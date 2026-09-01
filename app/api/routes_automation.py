@@ -39,38 +39,23 @@ def restart(_:User=Depends(require_admin),db:Session=Depends(get_db)):
 async def scan_now(_:User=Depends(require_admin)):return await run_safe_scan()
 
 @router.post('/monitor-scan')
-def monitor_scan(
-    provider:str|None=Query(default=None,max_length=32),
-    markets:list[str]|None=Query(default=None),
-    user:User=Depends(require_admin),
-    db:Session=Depends(get_db),
-):
-    provider_filter=str(provider or '').upper() or None
-    market_filter={str(x).upper() for x in (markets or []) if str(x).strip()}
+def monitor_scan(provider:str|None=Query(default=None,max_length=32),markets:str|None=Query(default=None,max_length=128),user:User=Depends(require_admin),db:Session=Depends(get_db)):
+    provider_filter=str(provider or '').strip().upper() or None
+    market_filter={x.strip().upper() for x in str(markets or '').split(',') if x.strip()}
     q=select(SymbolStrategy,BrokerProfile).join(BrokerProfile,BrokerProfile.id==SymbolStrategy.profile_id).where(SymbolStrategy.user_id==user.id,SymbolStrategy.enabled.is_(True))
     if provider_filter:q=q.where(BrokerProfile.provider==provider_filter)
     if market_filter:q=q.where(SymbolStrategy.market.in_(sorted(market_filter)))
-    rows=list(db.execute(q.order_by(SymbolStrategy.market,SymbolStrategy.symbol)).all())
-    items=[]
+    rows=list(db.execute(q.order_by(SymbolStrategy.market,SymbolStrategy.symbol)).all());items=[]
     for cfg,profile in rows:
         reason=None;status='PASS'
         if not profile.is_enabled:status,reason='BLOCK','ACCOUNT_DISABLED'
         elif not profile.is_active:status,reason='BLOCK','ACCOUNT_NOT_ACTIVE'
         elif not profile.credentials_configured:status,reason='BLOCK','CREDENTIALS_NOT_CONFIGURED'
         elif profile.last_connection_status!='CONNECTED':status,reason='BLOCK',f'ACCOUNT_{profile.last_connection_status or "NOT_CONNECTED"}'
-        elif (str(profile.provider).upper(),str(profile.environment).upper()) not in CERTIFIED_AUTOMATION_ROUTES:
-            status='BLOCK';reason='PROVIDER_EXECUTION_NOT_CERTIFIED' if str(profile.provider).upper()=='BYBIT' else 'AUTOMATION_ROUTE_NOT_CERTIFIED'
+        elif (str(profile.provider).upper(),str(profile.environment).upper()) not in CERTIFIED_AUTOMATION_ROUTES:status='BLOCK';reason='PROVIDER_EXECUTION_NOT_CERTIFIED' if str(profile.provider).upper()=='BYBIT' else 'AUTOMATION_ROUTE_NOT_CERTIFIED'
         elif cfg.mode!='AUTO_TRADE':status,reason='SKIP',f'MODE_{cfg.mode}'
-        items.append({'market':cfg.market,'symbol':cfg.symbol,'provider':profile.provider,'environment':profile.environment,'mode':cfg.mode,'preflight':status,'reason':reason,'execution':'NONE'})
-    return {
-        'status':'COMPLETED','monitored_only':True,'execution_enabled':False,'purpose':'WORKSPACE_ROUTE_MONITOR_NO_EXECUTION',
-        'scope':{'provider':provider_filter,'markets':sorted(market_filter)},
-        'checked_count':sum(x['preflight'] in {'PASS','BLOCK'} for x in items),
-        'pass_count':sum(x['preflight']=='PASS' for x in items),
-        'block_count':sum(x['preflight']=='BLOCK' for x in items),
-        'skip_count':sum(x['preflight']=='SKIP' for x in items),
-        'items':items,
-    }
+        items.append({'market':cfg.market,'symbol':cfg.symbol,'provider':profile.provider,'environment':profile.environment,'mode':cfg.mode,'preflight':status,'reason':reason or 'READY','execution':'NONE'})
+    return {'status':'COMPLETED','monitored_only':True,'execution_enabled':False,'purpose':'WORKSPACE_ROUTE_MONITOR_NO_EXECUTION','scope':{'provider':provider_filter,'markets':sorted(market_filter)},'checked_count':sum(x['preflight'] in {'PASS','BLOCK'} for x in items),'pass_count':sum(x['preflight']=='PASS' for x in items),'block_count':sum(x['preflight']=='BLOCK' for x in items),'skip_count':sum(x['preflight']=='SKIP' for x in items),'items':items}
 @router.get('/scans')
 def scans(limit:int=50,_:User=Depends(get_current_user),db:Session=Depends(get_db)):
     rows=list(db.scalars(select(AutomationScan).order_by(AutomationScan.started_at.desc()).limit(min(max(limit,1),200))).all());return [{"id":r.id,"status":r.status,"symbols_count":r.symbols_count,"accounts_count":r.accounts_count,"signals_count":r.signals_count,"approved_count":r.approved_count,"executed_count":r.executed_count,"error_message":r.error_message,"started_at":r.started_at,"finished_at":r.finished_at} for r in rows]
