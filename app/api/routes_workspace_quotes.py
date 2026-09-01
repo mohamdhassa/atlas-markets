@@ -38,17 +38,11 @@ def _strategies(db:Session,user:User,provider:str,markets:set[str])->list[Symbol
 def _payload(provider,markets,rows,errors):return {'provider':provider,'markets':sorted(markets),'symbols':rows,'count':len(rows),'errors':errors}
 
 @router.get('/workspace-quotes')
-async def workspace_quotes(
-    provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),
-    markets:list[str]|None=Query(default=None),
-    user:User=Depends(get_current_user),
-    db:Session=Depends(get_db),
-):
-    provider=provider.upper();allowed={'STOCK','ETF','CRYPTO','METAL','COMMODITY'};market_set={str(x).strip().upper() for x in (markets or []) if str(x).strip()} & allowed
+async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),markets:str=Query(min_length=2,max_length=128),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    provider=provider.upper();allowed={'STOCK','ETF','CRYPTO','METAL','COMMODITY'};market_set={x.strip().upper() for x in markets.split(',') if x.strip()} & allowed
     if not market_set:return _payload(provider,market_set,[],[{'error':'NO_SUPPORTED_MARKETS_REQUESTED'}])
     strategies=_strategies(db,user,provider,market_set);symbols=list(dict.fromkeys(_canon(x.symbol) for x in strategies));rows=[];errors=[];settings=get_settings()
     if not strategies:return _payload(provider,market_set,[],[{'error':'NO_CONFIGURED_SYMBOLS'}])
-
     if provider=='BYBIT':
         try:
             snap=await BybitPublicMarketData(settings.bybit_public_base_url,settings.market_data_timeout_seconds).get_tickers(category='linear',symbols=tuple(symbols));by_symbol={x.symbol:x for x in snap.tickers}
@@ -59,12 +53,10 @@ async def workspace_quotes(
                 rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':t.bid_price,'ask':t.ask_price,'change':price-prev,'change_percent':change_pct,'provider':'BYBIT','mode':cfg.mode,'timeframe':cfg.timeframe})
         except Exception as exc:errors.append({'error':f'BYBIT_DATA_ERROR: {str(exc)[:180]}'})
         return _payload(provider,market_set,rows,errors)
-
     p=_profile(db,user,provider)
     if not p or not p.credential_blob_encrypted:return _payload(provider,market_set,[],[{'error':f'{provider}_CONNECTED_PROFILE_UNAVAILABLE'}])
     try:creds=json.loads(decrypt_secret(p.credential_blob_encrypted))
     except Exception as exc:return _payload(provider,market_set,[],[{'error':f'{provider}_CREDENTIAL_READ_ERROR: {str(exc)[:160]}'}])
-
     if provider=='IBKR':
         broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),settings.market_data_timeout_seconds)
         for cfg in strategies:
@@ -76,7 +68,6 @@ async def workspace_quotes(
                 rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':bid,'ask':ask,'change':change,'change_percent':pct,'provider':'IBKR','mode':cfg.mode,'timeframe':cfg.timeframe})
             except Exception as exc:errors.append({'symbol':cfg.symbol,'error':str(exc)[:180]})
         return _payload(provider,market_set,rows,errors)
-
     broker=Mt5BridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8765',creds.get('bridge_token'),settings.market_data_timeout_seconds)
     for cfg in strategies:
         symbol=_canon(cfg.symbol)
