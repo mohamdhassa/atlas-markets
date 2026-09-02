@@ -3,20 +3,19 @@ from pathlib import Path
 from app.main import app
 
 
-def test_production_live_market_cards_are_loaded_and_routes_registered():
+def test_phase47_live_market_cards_are_loaded_and_routes_registered():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
-    js = Path('app/static/atlas-production.js').read_text(encoding='utf-8')
-    workspace = Path('app/api/routes_workspace_quotes.py').read_text(encoding='utf-8')
-    assert 'atlas-production.js?v=2.0' in html
-    assert 'phase46-market-workspaces.js' not in html
-    assert 'phase47-live-market-cards.js' not in html
-    assert 'Live quotes & decisions' in js
-    assert "provider:'IBKR'" in js
-    assert "provider:'BYBIT'" in js
-    assert "provider:'MT5'" in js
-    assert "markets:c.markets.join(',')" in js
-    assert "api('/signals?limit=200')" in js
-    assert "allowed={'FX','STOCK','ETF','CRYPTO','METAL','COMMODITY'}" in workspace
+    live_js = Path('app/static/phase47-live-market-cards.js').read_text(encoding='utf-8')
+    workspace_js = Path('app/static/phase46-market-workspaces.js').read_text(encoding='utf-8')
+    assert 'phase46-market-workspaces.js?v=46.1' in html
+    assert 'phase47-live-market-cards.js?v=47.3' in html
+    assert 'Live stocks & ETF quotes & decisions' in live_js
+    assert 'Live crypto quotes & decisions' in live_js
+    assert 'Live metals & commodities quotes & decisions' in live_js
+    assert "markets:c.markets.join(',')" in live_js
+    assert "markets:c.markets.join(',')" in workspace_js
+    assert "api('/signals?limit=200')" in live_js
+    assert "api('/signals?limit=300')" not in live_js
     paths = [getattr(r, 'path', '') for r in app.routes]
     assert '/markets/workspace-quotes' in paths
     assert '/automation/monitor-scan' in paths
