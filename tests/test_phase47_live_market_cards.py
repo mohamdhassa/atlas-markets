@@ -7,7 +7,7 @@ def test_production_live_market_cards_are_loaded_and_routes_registered():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
     js = Path('app/static/atlas-production.js').read_text(encoding='utf-8')
     workspace = Path('app/api/routes_workspace_quotes.py').read_text(encoding='utf-8')
-    assert 'atlas-production.js?v=1.0' in html
+    assert 'atlas-production.js?v=2.0' in html
     assert 'phase46-market-workspaces.js' not in html
     assert 'phase47-live-market-cards.js' not in html
     assert 'Live quotes & decisions' in js
