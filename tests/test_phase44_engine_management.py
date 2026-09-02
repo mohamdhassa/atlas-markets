@@ -7,9 +7,11 @@ def test_production_engine_and_management_are_loaded():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
     production = Path('app/static/atlas-production.js').read_text(encoding='utf-8')
     fixes = Path('app/static/atlas-production-fixes.js').read_text(encoding='utf-8')
-    assert 'atlas-production.js?v=1.0' in html
-    assert 'atlas-production-fixes.js?v=1.0' in html
-    assert 'atlas-production.css?v=1.0' in html
+    assert 'atlas-production.js?v=2.0' in html
+    assert 'atlas-production-fixes.js?v=2.0' in html
+    assert 'atlas-production.css?v=2.0' in html
+    assert 'atlas-router.js?v=2.0' in html
+    assert 'data-atlas-ui-build="2.0"' in html
     assert 'phase44-engine-center.js' not in html
     assert 'phase45-management-center.js' not in html
     assert 'phase42-global-scope.js' not in html
