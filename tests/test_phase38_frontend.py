@@ -1,12 +1,11 @@
 from pathlib import Path
 
 
-def test_legacy_phase38_operations_center_is_retired_from_runtime():
+def test_phase38_operations_center_is_loaded():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
-    legacy = Path('app/static/phase38-operations.js').read_text(encoding='utf-8')
-    production = Path('app/static/atlas-production.js').read_text(encoding='utf-8')
-    assert 'phase38-operations.js' not in html
-    assert 'atlas-production.js?v=2.0' in html
-    assert 'AUTOMATION OPERATIONS CENTER' in legacy
-    assert '/automation/state' in production
-    assert '/automation/actions?limit=200' in production
+    js = Path('app/static/phase38-operations.js').read_text(encoding='utf-8')
+    assert 'phase38-operations.js' in html
+    assert 'AUTOMATION OPERATIONS CENTER' in js
+    assert '/automation/state' in js
+    assert '/automation/actions?limit=200' in js
+    assert '/performance/unified?days=30' in js
