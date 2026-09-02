@@ -13,8 +13,8 @@ def test_root_endpoint_serves_frontend():
     assert "/static/phase48-api-hardening.js?v=48.0" in r.text
     assert "/static/phase21.js?v=21.2" in r.text
     assert "/static/phase24-integrations.js?v=24.2" in r.text
-    assert "/static/atlas-production.js?v=1.0" in r.text
-    assert "/static/atlas-production.css?v=1.0" in r.text
+    assert "/static/atlas-production.js?v=2.0" in r.text
+    assert "/static/atlas-production.css?v=2.0" in r.text
     for retired in [
         "/static/phase17.js",
         "/static/phase18.js",
