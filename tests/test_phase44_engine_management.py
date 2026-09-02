@@ -3,18 +3,19 @@ from pathlib import Path
 from app.main import app
 
 
-def test_engine_center_and_management_are_loaded():
+def test_production_engine_and_management_are_loaded():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
-    engine = Path('app/static/phase44-engine-center.js').read_text(encoding='utf-8')
-    management = Path('app/static/phase45-management-center.js').read_text(encoding='utf-8')
-    assert 'phase44-engine-center.js?v=44.0' in html
-    assert 'phase45-management-center.js?v=45.0' in html
+    production = Path('app/static/atlas-production.js').read_text(encoding='utf-8')
+    assert 'atlas-production.js?v=1.0' in html
+    assert 'atlas-production.css?v=1.0' in html
+    assert 'phase44-engine-center.js' not in html
+    assert 'phase45-management-center.js' not in html
     assert 'phase42-global-scope.js' not in html
     assert 'phase43-scoped-operations.js' not in html
-    assert 'ATLAS-verified P&L' in engine
-    assert 'Strategy audit' in engine
-    assert 'Provider integrations' in management
-    assert 'User management' in management
+    assert 'ATLAS-verified P&L' in production
+    assert 'PROVIDER ENGINES' in production
+    assert 'Accounts, integrations & users' in production
+    assert 'ADMIN and USER only.' in production
 
 
 def test_admin_user_lifecycle_routes_are_registered():
