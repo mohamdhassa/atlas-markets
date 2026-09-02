@@ -39,7 +39,7 @@ def _payload(provider,markets,rows,errors):return {'provider':provider,'markets'
 
 @router.get('/workspace-quotes')
 async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),markets:str=Query(min_length=2,max_length=128),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    provider=provider.upper();allowed={'STOCK','ETF','CRYPTO','METAL','COMMODITY'};market_set={x.strip().upper() for x in markets.split(',') if x.strip()} & allowed
+    provider=provider.upper();allowed={'FX','STOCK','ETF','CRYPTO','METAL','COMMODITY'};market_set={x.strip().upper() for x in markets.split(',') if x.strip()} & allowed
     if not market_set:return _payload(provider,market_set,[],[{'error':'NO_SUPPORTED_MARKETS_REQUESTED'}])
     strategies=_strategies(db,user,provider,market_set);symbols=list(dict.fromkeys(_canon(x.symbol) for x in strategies));rows=[];errors=[];settings=get_settings()
     if not strategies:return _payload(provider,market_set,[],[{'error':'NO_CONFIGURED_SYMBOLS'}])
