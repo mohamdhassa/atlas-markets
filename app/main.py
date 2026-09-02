@@ -33,12 +33,13 @@ from app.api.routes_phase36 import router as phase36_router
 from app.api.routes_phase36_verified import router as phase36_verified_router
 from app.core.config import get_settings
 from app.services.safe_automation import safe_automation_loop
+from app.services.mt5_position_manager import mt5_position_manager_loop
 from app.services.historical_intelligence import historical_loop
 from app.services.reporting import reporting_loop
 settings=get_settings();static_dir=Path(__file__).resolve().parent/'static'
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    stop=asyncio.Event();tasks=[asyncio.create_task(safe_automation_loop(stop)),asyncio.create_task(reporting_loop(stop)),asyncio.create_task(historical_loop(stop))];app.state.automation_stop=stop;app.state.background_tasks=tasks
+    stop=asyncio.Event();tasks=[asyncio.create_task(safe_automation_loop(stop)),asyncio.create_task(mt5_position_manager_loop(stop)),asyncio.create_task(reporting_loop(stop)),asyncio.create_task(historical_loop(stop))];app.state.automation_stop=stop;app.state.background_tasks=tasks
     try:yield
     finally:
         stop.set()
