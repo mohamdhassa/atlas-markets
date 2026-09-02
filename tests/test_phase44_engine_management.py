@@ -3,32 +3,18 @@ from pathlib import Path
 from app.main import app
 
 
-def test_production_engine_and_management_are_loaded():
+def test_engine_center_and_management_are_loaded():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
-    production = Path('app/static/atlas-production.js').read_text(encoding='utf-8')
-    fixes = Path('app/static/atlas-production-fixes.js').read_text(encoding='utf-8')
-    assert 'atlas-production.js?v=2.0' in html
-    assert 'atlas-production-fixes.js?v=2.0' in html
-    assert 'atlas-production.css?v=2.0' in html
-    assert 'atlas-router.js?v=2.0' in html
-    assert 'data-atlas-ui-build="2.0"' in html
-    assert 'phase44-engine-center.js' not in html
-    assert 'phase45-management-center.js' not in html
+    engine = Path('app/static/phase44-engine-center.js').read_text(encoding='utf-8')
+    management = Path('app/static/phase45-management-center.js').read_text(encoding='utf-8')
+    assert 'phase44-engine-center.js?v=44.0' in html
+    assert 'phase45-management-center.js?v=45.0' in html
     assert 'phase42-global-scope.js' not in html
     assert 'phase43-scoped-operations.js' not in html
-    assert 'ATLAS-verified P&L' in production
-    assert 'PROVIDER ENGINES' in production
-    assert "group('TRADING & ANALYSIS',['Charts','Strategies','Positions','Orders & History','Performance','Automation'])" in production
-    assert "group('ADMINISTRATION',['Accounts & Integrations','Users','Management'])" in production
-    assert "window.AtlasIntegrations?.render" in production
-    assert "window.usersPage" in production
-    assert "window.chartsPage" in production
-    assert 'Provider performance comparison' in fixes
-    assert 'One graph · one time axis · separate cumulative profit line for every provider' in fixes
-    assert 'Provider cumulative realized profit over time' in fixes
-    assert "api('/broker-orders?limit=200')" in fixes
-    assert "api('/automation/actions?limit=200')" in fixes
-    assert 'limit=300' not in fixes
+    assert 'ATLAS-verified P&L' in engine
+    assert 'Strategy audit' in engine
+    assert 'Provider integrations' in management
+    assert 'User management' in management
 
 
 def test_admin_user_lifecycle_routes_are_registered():
