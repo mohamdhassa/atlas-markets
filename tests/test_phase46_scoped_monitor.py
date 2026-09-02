@@ -13,5 +13,6 @@ def test_scoped_monitor_route_and_market_workspace():
     assert "new URLSearchParams({provider:c.provider,markets:c.markets.join(',')})" in js
     assert "qs.set('provider',c.provider)" not in js
     assert "c.markets.forEach(m=>qs.append('markets',m))" not in js
-    assert 'Monitor scan only. No broker order is placed by this action.' in js
+    assert 'Monitor only. No broker order is placed.' in js
+    assert 'Checking this workspace only. No order will be placed.' in js
     assert 'Running monitored scan…' not in js
