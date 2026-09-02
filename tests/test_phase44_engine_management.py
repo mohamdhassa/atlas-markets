@@ -22,8 +22,8 @@ def test_production_engine_and_management_are_loaded():
     assert "window.usersPage" in production
     assert "window.chartsPage" in production
     assert 'Provider performance comparison' in fixes
-    assert 'Cumulative realized P&L by provider on one shared time axis' in fixes
-    assert 'combinedSvg' in fixes
+    assert 'One graph · one time axis · separate cumulative profit line for every provider' in fixes
+    assert 'Provider cumulative realized profit over time' in fixes
     assert "api('/broker-orders?limit=200')" in fixes
     assert "api('/automation/actions?limit=200')" in fixes
     assert 'limit=300' not in fixes
