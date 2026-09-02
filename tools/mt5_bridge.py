@@ -13,7 +13,7 @@ app=FastAPI(title='ATLAS MT5 Bridge')
 TOKEN=os.getenv('ATLAS_MT5_BRIDGE_TOKEN','')
 LOGIN=os.getenv('ATLAS_MT5_LOGIN','').strip()
 PASSWORD=os.getenv('ATLAS_MT5_PASSWORD','')
-SERVER=os.getenv('ATLAS_MT5_SERVER','FusionMarkets-Demo').strip()
+SERVER=os.getenv('ATLAS_MT5_SERVER','').strip()
 TERMINAL_PATH=os.getenv('ATLAS_MT5_TERMINAL_PATH','').strip()
 
 class OrderRequest(BaseModel):
