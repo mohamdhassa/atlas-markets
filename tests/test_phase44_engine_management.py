@@ -14,8 +14,11 @@ def test_production_engine_and_management_are_loaded():
     assert 'phase43-scoped-operations.js' not in html
     assert 'ATLAS-verified P&L' in production
     assert 'PROVIDER ENGINES' in production
-    assert 'Accounts, integrations & users' in production
-    assert 'ADMIN and USER only.' in production
+    assert "group('TRADING & ANALYSIS',['Charts','Strategies','Positions','Orders & History','Performance','Automation'])" in production
+    assert "group('ADMINISTRATION',['Accounts & Integrations','Users','Management'])" in production
+    assert "window.AtlasIntegrations?.render" in production
+    assert "window.usersPage" in production
+    assert "window.chartsPage" in production
 
 
 def test_admin_user_lifecycle_routes_are_registered():
