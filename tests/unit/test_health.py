@@ -4,8 +4,43 @@ from fastapi.testclient import TestClient
 import app.api.health as health_module
 from app.main import app
 client=TestClient(app)
+
 def test_root_endpoint_serves_frontend():
-    r=client.get("/");assert r.status_code==200;assert "ATLAS MARKETS" in r.text;assert "/static/app.js" in r.text;assert "/static/phase17.js" in r.text;assert "/static/phase18.js" in r.text;assert "/static/phase19.js" in r.text;assert "/static/phase20.js" in r.text;assert "/static/phase21.js" in r.text;assert "/static/phase21-credentials.js" in r.text;assert "/static/phase21.css" in r.text;assert "/static/phase22.js" in r.text;assert "/static/phase23.js" in r.text;assert "/static/phase23.css" in r.text;assert "/static/phase24-integrations.js" in r.text;assert "/static/phase24.css" in r.text;assert "/static/phase25.js" in r.text;assert "/static/phase25.css" in r.text;assert "/static/phase26.js" in r.text;assert "/static/phase26.css" in r.text;assert "/static/phase27-fixes.js" in r.text;assert "/static/phase28-bybit.js" in r.text;assert "/static/phase29-ibkr.js" in r.text;assert "/static/phase30-multimarket.js" in r.text;assert "/static/phase31-bybit-oauth.js" in r.text;assert "/static/phase35.js" in r.text;assert "/static/phase36.js" in r.text;assert "/static/phase37-operations.js" in r.text;assert "/static/phase38-operations.js" in r.text;assert "/static/phase39-core-nav.js" in r.text
+    r=client.get("/")
+    assert r.status_code==200
+    assert "ATLAS MARKETS" in r.text
+    assert "/static/app.js" in r.text
+    assert "/static/phase48-api-hardening.js?v=48.0" in r.text
+    assert "/static/phase21.js?v=21.2" in r.text
+    assert "/static/phase24-integrations.js?v=24.2" in r.text
+    assert "/static/atlas-production.js?v=1.0" in r.text
+    assert "/static/atlas-production.css?v=1.0" in r.text
+    for retired in [
+        "/static/phase17.js",
+        "/static/phase18.js",
+        "/static/phase19.js",
+        "/static/phase20.js",
+        "/static/phase21-credentials.js",
+        "/static/phase22.js",
+        "/static/phase25.js",
+        "/static/phase26.js",
+        "/static/phase27-fixes.js",
+        "/static/phase28-bybit.js",
+        "/static/phase29-ibkr.js",
+        "/static/phase30-multimarket.js",
+        "/static/phase31-bybit-oauth.js",
+        "/static/phase35.js",
+        "/static/phase36.js",
+        "/static/phase37-operations.js",
+        "/static/phase38-operations.js",
+        "/static/phase39-core-nav.js",
+        "/static/phase44-engine-center.js",
+        "/static/phase45-management-center.js",
+        "/static/phase46-market-workspaces.js",
+        "/static/phase47-live-market-cards.js",
+    ]:
+        assert retired not in r.text
+
 def test_system_info_endpoint():
     r=client.get("/api/system");assert r.status_code==200;p=r.json();assert p["name"]=="ATLAS MARKETS";assert p["phase"]=="40";assert p["version"]=="1.0.0";assert p["release"]=="SIMULATION_RELEASE";assert p["account_model"]=="EXTERNAL_PROVIDERS_ONLY";assert p["account_modes"]=="SIMULATION+LIVE_MONEY";assert p["broker_accounts"]=="BYBIT+MT5_FUSION+IBKR";assert p["live_money_execution"]=="GATED";assert p["provider_switching"]=="FRONTEND";assert p["automation"]=="CERTIFIED_ROUTES_ONLY";assert p["certified_automation"]=="MT5_DEMO+IBKR_PAPER";assert p["provider_certification"]=="IBKR_PAPER_CERTIFIED+BYBIT_PROVIDER_BLOCKED";assert p["historical_learning"]=="ACTIVE";assert p["ibkr"]=="PAPER_CERTIFIED_MAX_1_SHARE";assert p["bybit_agent_connect"]=="TESTNET_CONNECTED_EXECUTION_NOT_CERTIFIED";assert "VERIFIED_ATTRIBUTION" in p["analytics"];assert "METALS" in p["market_scope"]
 def test_health_ok(monkeypatch):
