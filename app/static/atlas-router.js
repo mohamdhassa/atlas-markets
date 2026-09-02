@@ -1,8 +1,9 @@
 (()=>{
-const productionPages=new Set(['Dashboard','Engines','FX','Stocks & ETFs','Crypto','Metals & Commodities','Charts','Strategies','Positions','Orders & History','Performance','Automation','Accounts & Integrations','Users','Management']);
+const productionPages=new Set(['Dashboard','Engines','FX','Stocks & ETFs','Crypto','Metals & Commodities','Charts','Strategies','Positions','Orders & History','Performance','Automation','Accounts & Integrations','Integrations','Users','Management']);
 function route(name){
   if(name==='Performance'&&window.AtlasProductionFixes?.performance)return window.AtlasProductionFixes.performance();
   if(name==='Orders & History'&&window.AtlasProductionFixes?.orders)return window.AtlasProductionFixes.orders();
+  if(name==='Integrations')name='Accounts & Integrations';
   if(window.AtlasProduction?.render)return window.AtlasProduction.render(name);
 }
 document.addEventListener('click',e=>{
