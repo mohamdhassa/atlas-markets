@@ -24,6 +24,54 @@ def _connected(profile: BrokerProfile) -> bool:
     )
 
 
+def _live_certification_status() -> dict:
+    providers = {
+        "MT5": {
+            "simulation_certification": "CERTIFIED_DEMO",
+            "live_certification": "NOT_CERTIFIED",
+            "live_execution_allowed": False,
+            "blockers": [
+                "LIVE_MT5_EXECUTION_PATH_NOT_CERTIFIED",
+                "LIVE_MT5_POSITION_LIFECYCLE_NOT_CERTIFIED",
+            ],
+        },
+        "IBKR": {
+            "simulation_certification": "CERTIFIED_PAPER",
+            "live_certification": "NOT_CERTIFIED",
+            "live_execution_allowed": False,
+            "blockers": [
+                "LIVE_IBKR_EXECUTION_PATH_NOT_CERTIFIED",
+                "LIVE_IBKR_MARKET_DATA_NOT_VERIFIED",
+            ],
+        },
+        "BYBIT": {
+            "simulation_certification": "PROVIDER_BLOCKED_10024",
+            "live_certification": "NOT_CERTIFIED",
+            "live_execution_allowed": False,
+            "blockers": [
+                "BYBIT_PROVIDER_RESTRICTION_10024",
+                "LIVE_BYBIT_EXECUTION_PATH_NOT_CERTIFIED",
+            ],
+        },
+        "TWELVE_DATA": {
+            "simulation_certification": "DATA_ONLY",
+            "live_certification": "NOT_APPLICABLE",
+            "live_execution_allowed": False,
+            "blockers": ["MARKET_DATA_ONLY_PROVIDER"],
+        },
+    }
+    execution_providers = ["MT5", "IBKR", "BYBIT"]
+    certified = [p for p in execution_providers if providers[p]["live_certification"] == "CERTIFIED"]
+    return {
+        "status": "LOCKED" if len(certified) != len(execution_providers) else "CERTIFIED",
+        "execution_providers_required": len(execution_providers),
+        "execution_providers_certified": len(certified),
+        "all_execution_providers_certified": len(certified) == len(execution_providers),
+        "providers": providers,
+        "rule": "Simulation, Demo, Paper or Testnet certification never implies Live Money certification.",
+    }
+
+
 @router.get("/readiness")
 def release_readiness(current: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     state = get_or_create_state(db)
@@ -71,6 +119,7 @@ def release_readiness(current: User = Depends(get_current_user), db: Session = D
         for p in profiles
         if p.environment.upper() == "LIVE" and p.live_execution_enabled
     ]
+    live_certification = _live_certification_status()
 
     return {
         "release": "1.0.0-simulation",
@@ -83,6 +132,7 @@ def release_readiness(current: User = Depends(get_current_user), db: Session = D
             "policy": "CERTIFIED_ROUTES_ONLY",
         },
         "providers": provider_status,
+        "live_certification": live_certification,
         "strategies": {
             "configured": len(strategies),
             "auto_trade": auto_count,
@@ -93,6 +143,9 @@ def release_readiness(current: User = Depends(get_current_user), db: Session = D
             "live_money_ready": False,
             "live_money_execution": "GATED",
             "live_profiles_armed": len(live_profiles_armed),
+            "live_execution_providers_certified": live_certification["execution_providers_certified"],
+            "live_execution_providers_required": live_certification["execution_providers_required"],
+            "all_live_execution_providers_certified": live_certification["all_execution_providers_certified"],
             "bybit_execution": "BLOCKED_BY_PROVIDER_10024",
             "historical_strategy_attribution": "ONLY_BROKER_VERIFIED_ACTIONS",
         },
