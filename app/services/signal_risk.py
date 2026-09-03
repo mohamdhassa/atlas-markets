@@ -12,8 +12,8 @@ class GeneratedSignal:
     strength:float
     reasons:list[str]
 
-def generate_signal(candles:list[dict])->GeneratedSignal:
-    scenario=scenario_from_candles(candles,timeframe="5m",market="CRYPTO")
+def generate_signal(candles:list[dict],*,timeframe:str="5m",market:str="CRYPTO")->GeneratedSignal:
+    scenario=scenario_from_candles(candles,timeframe=str(timeframe or "5m"),market=str(market or "CRYPTO").upper())
     action=str(scenario.get("action","WAIT")).upper();decision="BUY" if action=="BUY" else "SELL" if action=="SELL" else "HOLD"
     bull=float(scenario.get("bullish_probability",50.0));bear=float(scenario.get("bearish_probability",50.0));score=bull
     strength=bull if decision=="BUY" else bear if decision=="SELL" else max(bull,bear)
