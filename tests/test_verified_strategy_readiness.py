@@ -1,4 +1,7 @@
-from app.api.routes_phase36_verified import _strategy_metrics
+import json
+from types import SimpleNamespace
+
+from app.api.routes_phase36_verified import _action_broker_ids, _strategy_metrics
 
 
 def _trade(pnl, closed_at):
@@ -51,3 +54,22 @@ def test_time_field_is_used_when_closed_at_is_missing():
     assert result['verified_realized_pnl'] == 15
     assert result['max_drawdown'] == 5
     assert result['max_drawdown_pct'] == 25
+
+
+def test_historical_mt5_nested_order_id_is_recovered():
+    action = SimpleNamespace(
+        broker_order_id=None,
+        broker_position_id=None,
+        raw_json=json.dumps({
+            'result': {
+                'broker_result': {
+                    'request': {'symbol': 'EURUSD'},
+                    'result': {'order': 524095240, 'deal': 524095241},
+                }
+            }
+        }),
+    )
+    order_ids, position_ids = _action_broker_ids(action)
+    assert '524095240' in order_ids
+    assert '524095241' in order_ids
+    assert position_ids == set()
