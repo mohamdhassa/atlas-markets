@@ -39,3 +39,15 @@ def test_sufficient_losing_sample_is_not_eligible():
     assert result['verified_realized_pnl'] < 0
     assert result['live_readiness'] == 'NOT_ELIGIBLE'
     assert 'NON_POSITIVE_VERIFIED_PNL' in result['readiness_blockers']
+
+
+def test_time_field_is_used_when_closed_at_is_missing():
+    trades = [
+        {'realized_pnl': -5, 'time': '2026-09-03T12:00:00'},
+        {'realized_pnl': 10, 'time': '2026-09-03T10:00:00'},
+        {'realized_pnl': 10, 'time': '2026-09-03T11:00:00'},
+    ]
+    result = _strategy_metrics(trades)
+    assert result['verified_realized_pnl'] == 15
+    assert result['max_drawdown'] == 5
+    assert result['max_drawdown_pct'] == 25
