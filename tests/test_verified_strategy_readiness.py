@@ -17,13 +17,14 @@ def test_small_sample_remains_validating_even_when_profitable():
 def test_sufficient_profitable_sample_can_be_eligible():
     trades = []
     for i in range(1, 31):
-        pnl = 10 if i <= 18 else -5
+        pnl = -5 if i % 5 == 0 else 10
         trades.append(_trade(pnl, f'2026-08-{i:02d}T00:00:00'))
     result = _strategy_metrics(trades)
     assert result['verified_trades'] == 30
     assert result['verified_realized_pnl'] > 0
     assert result['profit_factor'] >= 1.2
     assert result['verified_win_rate'] >= 40
+    assert result['max_drawdown_pct'] <= 15
     assert result['live_readiness'] == 'ELIGIBLE'
     assert result['readiness_blockers'] == []
 
