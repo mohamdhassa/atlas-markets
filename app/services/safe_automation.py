@@ -38,11 +38,16 @@ def _short(value,limit):
     if value is None:return None
     text=str(value)
     return text if len(text)<=limit else text[:max(0,limit-3)]+'...'
+def _broker_ids(broker_result):
+    broker_result=broker_result or {};nested=broker_result.get('result') or {}
+    order_id=broker_result.get('order_id') or broker_result.get('order') or broker_result.get('ticket') or nested.get('order') or nested.get('ticket')
+    position_id=broker_result.get('position_id') or nested.get('position_id') or nested.get('position')
+    return order_id,position_id
 def _persist_action(db,scan,user_id,item,result):
     cfg,profile=_profile_for_item(db,user_id,item);broker_result=result.get('broker_result') or {};qty=result.get('shares') if result.get('shares') is not None else result.get('volume')
     if qty is None:qty=(item.get('request') or {}).get('shares') if (item.get('request') or {}).get('shares') is not None else (item.get('request') or {}).get('volume')
-    order_id=broker_result.get('order_id') or broker_result.get('order') or broker_result.get('ticket')
-    db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id if profile else None,provider=_short(result.get('provider') or item.get('provider') or '',32),environment=_short(result.get('environment') or (profile.environment if profile else None),24),market=_short(result.get('market') or item.get('market') or '',24),symbol=_short(_canonical_symbol(result.get('symbol') or item.get('symbol')),32),side=_short(result.get('side') or (item.get('request') or {}).get('side'),8),status=_short(result.get('status') or 'UNKNOWN',24),reason=_short(result.get('reason'),128),quantity=float(qty) if qty is not None else None,sizing_policy=_short(result.get('sizing_policy') or (item.get('request') or {}).get('sizing_policy'),64),broker_order_id=_short(order_id,128),broker_position_id=_short(broker_result.get('position_id'),128),raw_json=json.dumps({'preflight':item,'result':result},default=str)))
+    order_id,position_id=_broker_ids(broker_result)
+    db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id if profile else None,provider=_short(result.get('provider') or item.get('provider') or '',32),environment=_short(result.get('environment') or (profile.environment if profile else None),24),market=_short(result.get('market') or item.get('market') or '',24),symbol=_short(_canonical_symbol(result.get('symbol') or item.get('symbol')),32),side=_short(result.get('side') or (item.get('request') or {}).get('side'),8),status=_short(result.get('status') or 'UNKNOWN',24),reason=_short(result.get('reason'),128),quantity=float(qty) if qty is not None else None,sizing_policy=_short(result.get('sizing_policy') or (item.get('request') or {}).get('sizing_policy'),64),broker_order_id=_short(order_id,128),broker_position_id=_short(position_id,128),raw_json=json.dumps({'preflight':item,'result':result},default=str)))
 
 async def _execute_mt5(db,*,user_id,item):
     market=str(item.get('market') or '').upper();symbol=_canonical_symbol(item.get('symbol'));cfg=db.scalar(select(SymbolStrategy).where(SymbolStrategy.user_id==user_id,SymbolStrategy.market==market,SymbolStrategy.symbol==symbol,SymbolStrategy.enabled.is_(True),SymbolStrategy.mode=='AUTO_TRADE'))
