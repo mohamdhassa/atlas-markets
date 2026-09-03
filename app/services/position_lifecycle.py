@@ -175,7 +175,7 @@ async def evaluate_mt5_exit_signals(db, *, user_id):
                 timeframe = _timeframe(cfg, default)
                 minimum = _minimum_strength(cfg, default)
                 candles = (await broker.candles(symbol, timeframe, 200)).get('list', [])
-                signal = generate_signal(candles)
+                signal = generate_signal(candles, timeframe=timeframe, market=market or 'FX')
                 should_exit = _opposite_signal(position_side, signal.decision) and signal.strength >= minimum
                 items.append({'provider':'MT5','environment':'DEMO','profile_id':str(profile.id),'market':market,'symbol':symbol,'position_id':str(ticket),'position_side':position_side,'signal_decision':signal.decision,'signal_strength':signal.strength,'minimum_signal_strength':minimum,'classification':signal.classification,'status':'PASS','action':'EXIT_SIGNAL' if should_exit else 'HOLD','reason':'STRONG_OPPOSITE_SIGNAL' if should_exit else 'NO_EXIT_SIGNAL','execution_enabled':False})
         except Exception as exc:
