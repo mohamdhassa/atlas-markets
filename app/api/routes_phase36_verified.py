@@ -14,12 +14,85 @@ from app.db.session import get_db
 
 router = APIRouter(tags=['strategies', 'performance', 'attribution'])
 
+MIN_VERIFIED_TRADES_FOR_ELIGIBILITY = 30
+MIN_PROFIT_FACTOR_FOR_ELIGIBILITY = 1.20
+MIN_WIN_RATE_FOR_ELIGIBILITY = 40.0
+MAX_DRAWDOWN_PCT_FOR_ELIGIBILITY = 15.0
+
 
 def _f(v):
     try:
         return float(v or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _max_drawdown(pnls: list[float]) -> tuple[float, float]:
+    equity = 0.0
+    peak = 0.0
+    max_drawdown = 0.0
+    max_drawdown_pct = 0.0
+    for pnl in pnls:
+        equity += pnl
+        peak = max(peak, equity)
+        drawdown = peak - equity
+        max_drawdown = max(max_drawdown, drawdown)
+        if peak > 0:
+            max_drawdown_pct = max(max_drawdown_pct, drawdown / peak * 100)
+    return round(max_drawdown, 2), round(max_drawdown_pct, 2)
+
+
+def _strategy_metrics(trades: list[dict]) -> dict:
+    ordered = sorted(trades, key=lambda x: str(x.get('closed_at') or ''))
+    pnls = [_f(x.get('realized_pnl')) for x in ordered]
+    wins = [x for x in pnls if x > 0]
+    losses = [x for x in pnls if x < 0]
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
+    max_drawdown, max_drawdown_pct = _max_drawdown(pnls)
+    count = len(pnls)
+    win_rate = len(wins) / count * 100 if count else 0.0
+    avg_win = gross_profit / len(wins) if wins else 0.0
+    avg_loss = sum(losses) / len(losses) if losses else 0.0
+    expectancy = sum(pnls) / count if count else 0.0
+
+    blockers = []
+    if count < MIN_VERIFIED_TRADES_FOR_ELIGIBILITY:
+        blockers.append('INSUFFICIENT_VERIFIED_SAMPLE')
+    if sum(pnls) <= 0:
+        blockers.append('NON_POSITIVE_VERIFIED_PNL')
+    if profit_factor < MIN_PROFIT_FACTOR_FOR_ELIGIBILITY:
+        blockers.append('PROFIT_FACTOR_BELOW_THRESHOLD')
+    if win_rate < MIN_WIN_RATE_FOR_ELIGIBILITY:
+        blockers.append('WIN_RATE_BELOW_THRESHOLD')
+    if max_drawdown_pct > MAX_DRAWDOWN_PCT_FOR_ELIGIBILITY:
+        blockers.append('DRAWDOWN_ABOVE_THRESHOLD')
+
+    if count < MIN_VERIFIED_TRADES_FOR_ELIGIBILITY:
+        readiness = 'VALIDATING'
+    elif blockers:
+        readiness = 'NOT_ELIGIBLE'
+    else:
+        readiness = 'ELIGIBLE'
+
+    return {
+        'verified_trades': count,
+        'verified_wins': len(wins),
+        'verified_losses': len(losses),
+        'verified_win_rate': round(win_rate, 2),
+        'verified_realized_pnl': round(sum(pnls), 2),
+        'gross_profit': round(gross_profit, 2),
+        'gross_loss': round(gross_loss, 2),
+        'profit_factor': round(profit_factor, 2),
+        'average_win': round(avg_win, 2),
+        'average_loss': round(avg_loss, 2),
+        'expectancy_per_trade': round(expectancy, 2),
+        'max_drawdown': max_drawdown,
+        'max_drawdown_pct': max_drawdown_pct,
+        'live_readiness': readiness,
+        'readiness_blockers': blockers,
+    }
 
 
 def _ibkr_fill_confirmed(action: AutomationAction) -> bool:
@@ -123,22 +196,16 @@ async def verified_strategy_attribution(
 
     strategies = []
     for (profile_id, market, symbol), trades in strategy_groups.items():
-        pnls = [_f(x.get('realized_pnl')) for x in trades]
-        wins = sum(1 for x in pnls if x > 0)
-        losses = sum(1 for x in pnls if x < 0)
+        metrics = _strategy_metrics(trades)
         strategies.append({
             'profile_id': profile_id,
             'market': market,
             'symbol': symbol,
-            'verified_trades': len(trades),
-            'verified_wins': wins,
-            'verified_losses': losses,
-            'verified_win_rate': round(wins / len(trades) * 100, 2) if trades else 0,
-            'verified_realized_pnl': round(sum(pnls), 2),
+            **metrics,
             'attribution_confidence': 'ATLAS_BROKER_ID_VERIFIED',
             'automation_action_ids': sorted({x['automation_action_id'] for x in trades}),
         })
-    strategies.sort(key=lambda x: x['verified_realized_pnl'])
+    strategies.sort(key=lambda x: (x['live_readiness'] != 'ELIGIBLE', -x['verified_realized_pnl']))
 
     unmatched_actions = []
     for action in actions:
@@ -157,6 +224,12 @@ async def verified_strategy_attribution(
             'created_at': action.created_at.isoformat() if action.created_at else None,
         })
 
+    readiness_counts = {
+        'ELIGIBLE': sum(x['live_readiness'] == 'ELIGIBLE' for x in strategies),
+        'VALIDATING': sum(x['live_readiness'] == 'VALIDATING' for x in strategies),
+        'NOT_ELIGIBLE': sum(x['live_readiness'] == 'NOT_ELIGIBLE' for x in strategies),
+    }
+
     return {
         'days': days,
         'summary': {
@@ -168,6 +241,15 @@ async def verified_strategy_attribution(
             'matched_actions': len(matched_action_ids),
             'unmatched_actions': len(unmatched_actions),
             'atlas_verified_realized_pnl': round(sum(_f(x.get('realized_pnl')) for x in verified), 2),
+            'strategy_readiness': readiness_counts,
+        },
+        'eligibility_policy': {
+            'minimum_verified_trades': MIN_VERIFIED_TRADES_FOR_ELIGIBILITY,
+            'minimum_profit_factor': MIN_PROFIT_FACTOR_FOR_ELIGIBILITY,
+            'minimum_win_rate_pct': MIN_WIN_RATE_FOR_ELIGIBILITY,
+            'maximum_drawdown_pct': MAX_DRAWDOWN_PCT_FOR_ELIGIBILITY,
+            'positive_verified_pnl_required': True,
+            'note': 'Eligibility is a validation gate only. It never enables Live Money execution automatically.',
         },
         'strategies': strategies,
         'verified_trades': verified,
@@ -178,5 +260,6 @@ async def verified_strategy_attribution(
             'verified': 'ATLAS origin is verified only by an exact persisted broker position ID or broker order ID match to an EXECUTED automation action. IBKR EXECUTED actions additionally require persisted broker confirmation of an actual fill.',
             'unverified': 'Symbol/account similarity alone is never treated as verified ATLAS performance.',
             'safety': 'Unverified broker history and unconfirmed/cancelled IBKR submissions are excluded from ATLAS strategy optimization decisions.',
+            'readiness': 'A strategy remains VALIDATING until it has at least 30 verified closed trades. After that, positive verified P&L, profit factor, win rate and drawdown thresholds determine ELIGIBLE versus NOT_ELIGIBLE. No readiness result can unlock Live Money by itself.',
         },
     }
