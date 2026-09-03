@@ -43,9 +43,6 @@ def _max_drawdown(pnls: list[float]) -> tuple[float, float]:
 
 
 def _strategy_metrics(trades: list[dict]) -> dict:
-    # Broker payloads are not uniform: unified MT5/Bybit rows use closed_at,
-    # while some performance sources expose time. Keep realized-P&L drawdown
-    # chronological without inventing timestamps.
     ordered = sorted(trades, key=lambda x: str(x.get('closed_at') or x.get('time') or ''))
     pnls = [_f(x.get('realized_pnl')) for x in ordered]
     wins = [x for x in pnls if x > 0]
@@ -98,14 +95,37 @@ def _strategy_metrics(trades: list[dict]) -> dict:
     }
 
 
+def _raw(action: AutomationAction) -> dict:
+    try:
+        return json.loads(action.raw_json or '{}')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _action_broker_ids(action: AutomationAction) -> tuple[set[str], set[str]]:
+    order_ids = {str(action.broker_order_id)} if action.broker_order_id else set()
+    position_ids = {str(action.broker_position_id)} if action.broker_position_id else set()
+    result = (_raw(action).get('result') or {})
+    broker_result = result.get('broker_result') or {}
+    nested = broker_result.get('result') or {}
+    for value in (
+        broker_result.get('order_id'), broker_result.get('order'), broker_result.get('ticket'),
+        nested.get('order'), nested.get('ticket'), nested.get('deal'),
+    ):
+        if value not in (None, '', 0, '0'):
+            order_ids.add(str(value))
+    for value in (
+        broker_result.get('position_id'), nested.get('position_id'), nested.get('position'),
+    ):
+        if value not in (None, '', 0, '0'):
+            position_ids.add(str(value))
+    return order_ids, position_ids
+
+
 def _ibkr_fill_confirmed(action: AutomationAction) -> bool:
     if str(action.provider or '').upper() != 'IBKR':
         return True
-    try:
-        raw = json.loads(action.raw_json or '{}')
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return False
-    result = raw.get('result') or {}
+    result = _raw(action).get('result') or {}
     broker_result = result.get('broker_result') or {}
     final = broker_result.get('final_status') or {}
     status = final.get('status') or {}
@@ -125,9 +145,10 @@ def _match_action(trade, order_ids, actions):
             continue
         if str(action.market or '').upper() != market or str(action.symbol or '').upper() != symbol:
             continue
-        if action.broker_position_id and str(action.broker_position_id) == position_id:
+        action_orders, action_positions = _action_broker_ids(action)
+        if position_id and position_id in action_positions:
             return action, 'BROKER_POSITION_ID'
-        if action.broker_order_id and str(action.broker_order_id) in order_ids:
+        if order_ids and action_orders.intersection({str(x) for x in order_ids}):
             return action, 'BROKER_ORDER_ID'
     return None, None
 
@@ -214,6 +235,7 @@ async def verified_strategy_attribution(
     for action in actions:
         if str(action.id) in matched_action_ids:
             continue
+        recovered_orders, recovered_positions = _action_broker_ids(action)
         unmatched_actions.append({
             'action_id': str(action.id),
             'scan_id': str(action.scan_id),
@@ -224,6 +246,8 @@ async def verified_strategy_attribution(
             'side': action.side,
             'broker_order_id': action.broker_order_id,
             'broker_position_id': action.broker_position_id,
+            'recovered_broker_order_ids': sorted(recovered_orders),
+            'recovered_broker_position_ids': sorted(recovered_positions),
             'created_at': action.created_at.isoformat() if action.created_at else None,
         })
 
@@ -260,7 +284,7 @@ async def verified_strategy_attribution(
         'unmatched_actions': unmatched_actions,
         'errors': mt5_errors,
         'methodology': {
-            'verified': 'ATLAS origin is verified only by an exact persisted broker position ID or broker order ID match to an EXECUTED automation action. IBKR EXECUTED actions additionally require persisted broker confirmation of an actual fill.',
+            'verified': 'ATLAS origin is verified only by an exact broker position ID or broker order ID match to an EXECUTED automation action. Historical actions may recover those exact IDs from their persisted raw broker payload. IBKR EXECUTED actions additionally require persisted broker confirmation of an actual fill.',
             'unverified': 'Symbol/account similarity alone is never treated as verified ATLAS performance.',
             'safety': 'Unverified broker history and unconfirmed/cancelled IBKR submissions are excluded from ATLAS strategy optimization decisions.',
             'readiness': 'A strategy remains VALIDATING until it has at least 30 verified closed trades. After that, positive verified P&L, profit factor, win rate and drawdown thresholds determine ELIGIBLE versus NOT_ELIGIBLE. No readiness result can unlock Live Money by itself.',
