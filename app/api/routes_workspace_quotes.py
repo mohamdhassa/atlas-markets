@@ -36,21 +36,33 @@ def _strategies(db:Session,user:User,provider:str,markets:set[str])->list[Symbol
     if not _is_admin(user):q=q.where(SymbolStrategy.user_id==user.id)
     return list(db.scalars(q.order_by(SymbolStrategy.market,SymbolStrategy.symbol)).all())
 def _payload(provider,markets,rows,errors):return {'provider':provider,'markets':sorted(markets),'symbols':rows,'count':len(rows),'errors':errors}
+def _history(rows):
+    out=[]
+    for x in rows or []:
+        close=_num(x.get('close'))
+        if close is None:continue
+        out.append({'time':x.get('time') or x.get('timestamp') or x.get('datetime'),'open':_num(x.get('open')),'high':_num(x.get('high')),'low':_num(x.get('low')),'close':close})
+    return out
 
 @router.get('/workspace-quotes')
-async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),markets:str=Query(min_length=2,max_length=128),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),markets:str=Query(min_length=2,max_length=128),include_history:bool=Query(False),history_limit:int=Query(30,ge=10,le=80),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     provider=provider.upper();allowed={'FX','STOCK','ETF','CRYPTO','METAL','COMMODITY'};market_set={x.strip().upper() for x in markets.split(',') if x.strip()} & allowed
     if not market_set:return _payload(provider,market_set,[],[{'error':'NO_SUPPORTED_MARKETS_REQUESTED'}])
     strategies=_strategies(db,user,provider,market_set);symbols=list(dict.fromkeys(_canon(x.symbol) for x in strategies));rows=[];errors=[];settings=get_settings()
     if not strategies:return _payload(provider,market_set,[],[{'error':'NO_CONFIGURED_SYMBOLS'}])
     if provider=='BYBIT':
+        market=BybitPublicMarketData(settings.bybit_public_base_url,settings.market_data_timeout_seconds)
         try:
-            snap=await BybitPublicMarketData(settings.bybit_public_base_url,settings.market_data_timeout_seconds).get_tickers(category='linear',symbols=tuple(symbols));by_symbol={x.symbol:x for x in snap.tickers}
+            snap=await market.get_tickers(category='linear',symbols=tuple(symbols));by_symbol={x.symbol:x for x in snap.tickers}
             for cfg in strategies:
                 t=by_symbol.get(_canon(cfg.symbol))
                 if not t:errors.append({'symbol':cfg.symbol,'error':'QUOTE_UNAVAILABLE'});continue
                 price=float(t.last_price);change_pct=_num(t.change_24h_pct) or 0.0;prev=price/(1+change_pct/100) if change_pct!=-100 else price
-                rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':t.bid_price,'ask':t.ask_price,'change':price-prev,'change_percent':change_pct,'provider':'BYBIT','mode':cfg.mode,'timeframe':cfg.timeframe})
+                history=[]
+                if include_history:
+                    try:history=_history([x.model_dump() for x in await market.get_candles(symbol=_canon(cfg.symbol),interval=cfg.timeframe or '5m',category='linear',limit=history_limit)])
+                    except Exception as exc:errors.append({'symbol':cfg.symbol,'error':f'HISTORY_UNAVAILABLE: {str(exc)[:140]}'})
+                rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':t.bid_price,'ask':t.ask_price,'change':price-prev,'change_percent':change_pct,'provider':'BYBIT','mode':cfg.mode,'timeframe':cfg.timeframe,'history':history})
         except Exception as exc:errors.append({'error':f'BYBIT_DATA_ERROR: {str(exc)[:180]}'})
         return _payload(provider,market_set,rows,errors)
     p=_profile(db,user,provider)
@@ -63,9 +75,13 @@ async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),mark
             symbol=_canon(cfg.symbol)
             try:
                 q=await broker.quote(symbol);price=_num(q.get('last'),q.get('last_price'),q.get('market_price'),q.get('price'),q.get('close'),q.get('bid'),q.get('ask'));bid=_num(q.get('bid'),q.get('bid_price'));ask=_num(q.get('ask'),q.get('ask_price'))
-                candles=(await broker.candles(symbol,'1d',2)).get('list',[]);prev=_num(candles[-2].get('close')) if len(candles)>1 else price;change=(price-prev) if price is not None and prev is not None else 0.0;pct=(change/prev*100) if prev else 0.0
+                daily=(await broker.candles(symbol,'1d',2)).get('list',[]);prev=_num(daily[-2].get('close')) if len(daily)>1 else price;change=(price-prev) if price is not None and prev is not None else 0.0;pct=(change/prev*100) if prev else 0.0
+                history=[]
+                if include_history:
+                    try:history=_history((await broker.candles(symbol,cfg.timeframe or '5m',history_limit)).get('list',[]))
+                    except Exception as exc:errors.append({'symbol':cfg.symbol,'error':f'HISTORY_UNAVAILABLE: {str(exc)[:140]}'})
                 if price is None:raise RuntimeError('NO_USABLE_IBKR_QUOTE_PRICE')
-                rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':bid,'ask':ask,'change':change,'change_percent':pct,'provider':'IBKR','mode':cfg.mode,'timeframe':cfg.timeframe})
+                rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':bid,'ask':ask,'change':change,'change_percent':pct,'provider':'IBKR','mode':cfg.mode,'timeframe':cfg.timeframe,'history':history})
             except Exception as exc:errors.append({'symbol':cfg.symbol,'error':str(exc)[:180]})
         return _payload(provider,market_set,rows,errors)
     broker=Mt5BridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8765',creds.get('bridge_token'),settings.market_data_timeout_seconds)
@@ -73,8 +89,12 @@ async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),mark
         symbol=_canon(cfg.symbol)
         try:
             info=await broker.symbol(symbol);bid=_num(info.get('bid'));ask=_num(info.get('ask'));price=((bid+ask)/2) if bid is not None and ask is not None else (bid if bid is not None else ask)
-            candles=(await broker.candles(symbol,'1d',2)).get('list',[]);prev=_num(candles[-2].get('close')) if len(candles)>1 else price;change=(price-prev) if price is not None and prev is not None else 0.0;pct=(change/prev*100) if prev else 0.0
+            daily=(await broker.candles(symbol,'1d',2)).get('list',[]);prev=_num(daily[-2].get('close')) if len(daily)>1 else price;change=(price-prev) if price is not None and prev is not None else 0.0;pct=(change/prev*100) if prev else 0.0
+            history=[]
+            if include_history:
+                try:history=_history((await broker.candles(symbol,cfg.timeframe or '5m',history_limit)).get('list',[]))
+                except Exception as exc:errors.append({'symbol':cfg.symbol,'error':f'HISTORY_UNAVAILABLE: {str(exc)[:140]}'})
             if price is None:raise RuntimeError('NO_USABLE_MT5_QUOTE_PRICE')
-            rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':bid,'ask':ask,'change':change,'change_percent':pct,'provider':'MT5_FUSION','mode':cfg.mode,'timeframe':cfg.timeframe})
+            rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':bid,'ask':ask,'change':change,'change_percent':pct,'provider':'MT5_FUSION','mode':cfg.mode,'timeframe':cfg.timeframe,'history':history})
         except Exception as exc:errors.append({'symbol':cfg.symbol,'error':str(exc)[:180]})
     return _payload(provider,market_set,rows,errors)
