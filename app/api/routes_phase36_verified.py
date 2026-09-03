@@ -43,7 +43,10 @@ def _max_drawdown(pnls: list[float]) -> tuple[float, float]:
 
 
 def _strategy_metrics(trades: list[dict]) -> dict:
-    ordered = sorted(trades, key=lambda x: str(x.get('closed_at') or ''))
+    # Broker payloads are not uniform: unified MT5/Bybit rows use closed_at,
+    # while some performance sources expose time. Keep realized-P&L drawdown
+    # chronological without inventing timestamps.
+    ordered = sorted(trades, key=lambda x: str(x.get('closed_at') or x.get('time') or ''))
     pnls = [_f(x.get('realized_pnl')) for x in ordered]
     wins = [x for x in pnls if x > 0]
     losses = [x for x in pnls if x < 0]
