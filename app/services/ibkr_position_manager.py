@@ -42,6 +42,23 @@ def _latest_entry(db,user_id,profile_id,symbol):
     if latest.status!='EXECUTED' or not latest.broker_order_id:return None
     return latest
 
+def _entry_fill_verified(entry, broker_entry, position_side, quantity):
+    """Verify an entry from current broker state, with a restart-safe persisted fallback.
+
+    IB Gateway can forget completed order status after a session restart. In that case,
+    accept ATLAS's persisted EXECUTED record only when the live position still exactly
+    matches the persisted entry direction and quantity. A broker-reported non-filled
+    state never falls back to persistence.
+    """
+    state=str((broker_entry or {}).get('status') or '').upper()
+    if state=='FILLED':return True,'BROKER_FILLED'
+    if state:return False,'BROKER_NOT_FILLED'
+    expected_side='LONG' if entry.side=='BUY' else 'SHORT' if entry.side=='SELL' else None
+    persisted_qty=float(entry.quantity or 0)
+    if entry.status=='EXECUTED' and expected_side==position_side and persisted_qty>0 and abs(persisted_qty-float(quantity))<1e-9:
+        return True,'PERSISTED_EXECUTED_LIVE_POSITION_MATCH'
+    return False,'ENTRY_FILL_NOT_VERIFIED'
+
 def _persist(db,scan,user_id,profile,item,result):
     broker_result=result.get('broker_result') or {};order_id=broker_result.get('order_id')
     db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id,provider='IBKR',environment='PAPER',market=_short(item.get('market'),24),symbol=_short(item.get('symbol'),32),side=_short(result.get('close_side'),8),status=_short(result.get('status') or 'UNKNOWN',24),reason=_short(result.get('reason'),128),quantity=float(item.get('quantity') or 0),sizing_policy='POSITION_LIFECYCLE_EXIT',broker_order_id=_short(order_id,128),broker_position_id=None,raw_json=json.dumps({'position':item,'result':result},default=str)))
@@ -85,7 +102,9 @@ async def run_ibkr_position_manager():
                         result={'status':'EXIT_BLOCKED','reason':'|'.join(blockers)};results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result);continue
                     entry_status=await broker.order_status(int(entry.broker_order_id))
                     broker_entry=entry_status.get('status') or {}
-                    if str(broker_entry.get('status') or '').upper()!='FILLED':
+                    fill_verified,fill_source=_entry_fill_verified(entry,broker_entry,position_side,abs(qty))
+                    item['entry_fill_source']=fill_source
+                    if not fill_verified:
                         result={'status':'EXIT_BLOCKED','reason':'ENTRY_FILL_NOT_VERIFIED'};results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result);continue
                     timeframe=_timeframe(cfg,default);minimum=_minimum_strength(cfg,default);candles=(await broker.candles(symbol,timeframe,200,sec_type='STK')).get('list',[]);signal=generate_signal(candles,timeframe=timeframe,market=market or 'STOCK');should_exit=_opposite(position_side,str(signal.decision).upper()) and float(signal.strength)>=minimum
                     item.update({'signal_decision':signal.decision,'signal_strength':signal.strength,'minimum_signal_strength':minimum})
