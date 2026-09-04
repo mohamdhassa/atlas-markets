@@ -39,7 +39,7 @@ def test_ibkr_exit_manager_is_paper_owned_and_lifecycle_guarded():
     assert 'OWNERSHIP_NOT_VERIFIED' in text
     assert 'ENTRY_FILL_NOT_VERIFIED' in text
     assert 'PERSISTED_EXECUTED_LIVE_POSITION_MATCH' in text
-    assert "cfg.mode=='AUTO_TRADE'" in text
+    assert "SymbolStrategy.mode=='AUTO_TRADE'" in text
     assert 'close_position(' in text
     assert "result['status']='EXIT_EXECUTED'" in text
 
