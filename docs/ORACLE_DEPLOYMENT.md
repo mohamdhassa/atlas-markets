@@ -1,10 +1,10 @@
 # ATLAS MARKETS — Oracle Cloud Deployment
 
-Last updated: 2026-08-30
+Last updated: 2026-09-05
 
 ## Target architecture
 
-ATLAS MARKETS v1.1 uses Oracle Cloud Infrastructure (OCI) as the always-on application and data tier.
+ATLAS MARKETS v1.1 uses Oracle Cloud Infrastructure (OCI) as the always-on application and data tier. IBKR Paper is now also hosted directly on the Oracle ARM64 production host.
 
 ```text
 Internet
@@ -13,23 +13,29 @@ Internet
   v
 Reverse proxy / TLS on OCI Ubuntu
   |
-  | localhost:8000
   v
 ATLAS FastAPI container
   |-- PostgreSQL 17 container (private Docker network, persistent volume)
   |-- Redis 7 container (private Docker network, persistent volume)
   |-- Twelve Data / Bybit HTTPS APIs
-  |-- private VPN -> MT5 execution node
-  `-- private VPN -> IBKR execution node
+  |-- IBKR HTTP bridge :8766 (private)
+  |     `-- IB Gateway Paper API 127.0.0.1:4002
+  `-- private relay/VPN -> Windows MT5 execution node
 ```
 
-The PostgreSQL and Redis ports are not published to the Internet. The FastAPI container is bound to `127.0.0.1:8000`; a reverse proxy should expose only HTTPS.
+The PostgreSQL and Redis ports are not published to the Internet. Public application access is terminated through the reverse proxy/TLS layer; broker bridges remain private.
 
-## Why broker bridges are separate
+## Broker execution architecture
 
-Fusion MT5 depends on the MetaTrader 5 terminal and should run on a Windows execution node. The current IBKR adapter connects to TWS/IB Gateway and can also be operated as a separate execution node. The Oracle server must reach those bridges over a private VPN address. Do not expose ports 8765 or 8766 to the public Internet.
+Fusion MT5 depends on the native MetaTrader 5 Windows terminal and remains a Windows execution-node dependency. A personal Windows PC is not an acceptable final 24/7 execution node because MT5 stops being reachable when that PC sleeps, shuts down, loses Internet access, closes MT5, stops the bridge, or stops its relay/tunnel.
 
-For an unattended multi-week simulation, use an always-on Windows execution node or Windows VPS. Using a personal laptop means broker execution stops whenever that machine sleeps, reboots, loses Internet access, or closes MT5/TWS/IB Gateway.
+IBKR Paper has been migrated to the Oracle ARM64 host using the official ARM64 IB Gateway. The production path is:
+
+```text
+ATLAS app -> IBKR HTTP bridge :8766 -> IB Gateway 127.0.0.1:4002 -> IBKR Paper
+```
+
+IB Gateway is displayed through Xvfb/Fluxbox and its runtime is managed by systemd. See `docs/IBKR_ORACLE_RUNBOOK.md` for recovery and authentication procedures.
 
 ## OCI network rules
 
@@ -39,11 +45,11 @@ Recommended public ingress:
 - TCP 80: HTTP only for ACME redirect/certificate issuance if needed.
 - TCP 443: HTTPS public application access.
 
-Do not expose PostgreSQL 5432, Redis 6379, FastAPI 8000, MT5 bridge 8765, or IBKR bridge 8766 publicly.
+Do not expose PostgreSQL 5432, Redis 6379, FastAPI internal ports, MT5 bridge/relay ports, IBKR API 4002, VNC 5901, or IBKR bridge 8766 publicly.
 
 ## Server preparation
 
-Recommended OS: supported Ubuntu LTS image.
+Recommended OS for future deployments: a supported Ubuntu LTS image. The current production host is ARM64 and has been verified with the ARM64 IB Gateway build.
 
 Install Git, Docker Engine and Docker Compose plugin, then clone the repository.
 
@@ -80,7 +86,7 @@ curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/api/system
 ```
 
-All three containers must be healthy before the reverse proxy is enabled.
+All required containers must be healthy before the reverse proxy is enabled.
 
 ## Database migration from local v1.0
 
@@ -105,28 +111,57 @@ Required on the Windows execution node:
 
 - Fusion Markets MT5 Demo logged in.
 - Algo Trading enabled.
-- `tools/mt5_bridge.py` running.
-- Bridge bound only to a private/VPN interface or protected by host firewall and bridge token.
+- Secured Windows MT5 bridge running.
+- Bridge bound only to localhost/private reachability and protected by its bridge token.
+- Persistent private relay/VPN/tunnel from Oracle.
 
-The Oracle BrokerProfile credential blob must use the private VPN URL, for example `http://10.x.x.x:8765`.
+The final 24/7 target is an always-on Windows VPS/VM rather than the administrator's personal PC.
 
-### Interactive Brokers
+### Interactive Brokers Paper on Oracle
 
-Required on the IBKR execution node:
+Verified production components:
 
-- TWS or IB Gateway logged into Paper.
-- API socket access enabled.
-- `tools/ibkr_bridge.py` running.
-- Bridge bound only to private/VPN reachability.
-- Account remains Paper during simulation.
+- IB Gateway 10.45 Stable ARM64 installed at `/home/ubuntu/Jts/ibgateway/1045`.
+- Xvfb virtual display `:99`.
+- Fluxbox desktop.
+- IB Gateway Paper API socket on `127.0.0.1:4002`.
+- Docker IBKR HTTP bridge on port `8766`, connecting to localhost port 4002 with client ID 27.
+- Paper account `DUR980544`.
 
-The Oracle BrokerProfile credential blob must use the private VPN URL for port 8766.
+The following systemd services are enabled at boot:
+
+```text
+atlas-ibkr-xvfb.service
+atlas-ibkr-fluxbox.service
+atlas-ibkr-gateway.service
+```
+
+IBKR may still require manual authentication/2FA after a restart, logout, maintenance window or security reset. Service auto-start must not be confused with authenticated-session auto-login. Use the localhost-only VNC + SSH-tunnel procedure in `docs/IBKR_ORACLE_RUNBOOK.md` when authentication is required.
 
 IBKR real-time market data subscriptions are strongly recommended for broad automated U.S. stock/ETF Paper testing. The bridge can request delayed data, but delayed data is not a substitute for execution-quality market data.
 
+## Production integration verification
+
+Use the production application container to verify all configured providers:
+
+```bash
+docker exec atlas-markets-prod-app python -m app.scripts.verify_integrations
+```
+
+On 2026-09-05 the production environment returned PASS for:
+
+```text
+TWELVE_DATA
+MT5 DEMO
+BYBIT TESTNET
+IBKR PAPER
+```
+
+This confirms provider connectivity at that verification point; it does not remove the MT5 personal-PC dependency or IBKR's periodic authentication requirements.
+
 ## HTTPS
 
-Use Nginx, Caddy, or an OCI load balancer to terminate TLS and proxy to `http://127.0.0.1:8000`.
+Use Nginx, Caddy, or an OCI load balancer to terminate TLS and proxy to the private FastAPI endpoint.
 
 The public application should be HTTPS-only. Keep `/docs` exposure under review because FastAPI interactive API documentation can reveal operational endpoints even when authentication is required.
 
@@ -166,8 +201,8 @@ Do not automatically enable Live Money as part of an upgrade.
 
 Oracle deployment changes hosting, not certification. During the observation period:
 
-- MT5 Demo may auto-trade.
+- MT5 Demo may auto-trade only under its separately certified safeguards and remains dependent on its Windows execution node.
 - IBKR Paper may auto-trade under certified safeguards.
-- Bybit remains blocked until Bybit permits the product/account and ATLAS re-certifies the route.
+- Bybit Testnet remains a simulation route and must remain independently certified for execution behavior.
 - Twelve Data remains data-only.
 - Live Money remains gated.
