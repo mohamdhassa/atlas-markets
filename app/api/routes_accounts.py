@@ -38,8 +38,12 @@ def _creds(p):
     if not p.credential_blob_encrypted: raise ValueError('credentials are not configured')
     return json.loads(decrypt_secret(p.credential_blob_encrypted))
 
+def _mt5_bridge_client(values=None):
+    c=values or {};s=get_settings();url=(s.mt5_bridge_url or '').strip() or c.get('bridge_url') or 'http://host.docker.internal:8765';token=(s.mt5_bridge_token or '').strip() or c.get('bridge_token')
+    return Mt5BridgeClient(url,token,s.market_data_timeout_seconds)
+
 def _mt5_client(p):
-    c=_creds(p);return Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),get_settings().market_data_timeout_seconds)
+    return _mt5_bridge_client(_creds(p))
 
 def _generic(provider,values):
     c={str(k):str(v).strip() for k,v in (values or {}).items() if str(v).strip()};required={'MT5':{'login','password','server'},'IBKR':{'account_id','host','port','client_id'}}.get(provider,set());missing=sorted(required-set(c))
@@ -77,15 +81,15 @@ async def _validate_raw(payload:BrokerValidateRequest)->BrokerValidationResult:
         s=get_settings();quote=await TwelveDataFxMarketData(s.fx_market_data_base_url,payload.api_key.strip(),s.market_data_timeout_seconds).get_quote('EURUSD');details={'probe_symbol':'EURUSD','price':quote.get('price') if isinstance(quote,dict) else getattr(quote,'price',None)}
         return BrokerValidationResult(valid=True,provider='TWELVE_DATA',environment='LIVE',connection_status='CONNECTED',message='Twelve Data API key validated successfully.',warnings=['Twelve Data supplies market data only; positions and orders remain with the selected broker.'],details=details)
     if payload.provider=='MT5':
-        c=_generic('MT5',payload.credentials or {});bridge=Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),get_settings().market_data_timeout_seconds);health=await bridge.health();account=await bridge.account()
-        if not health.get('connected'):raise HTTPException(400,'MT5 bridge is reachable but the terminal is not connected')
+        c=_generic('MT5',payload.credentials or {});bridge=_mt5_bridge_client(c);health=await bridge.health();account=await bridge.account()
+        if not health.get('connected'):raise HTTPException(400,'MT5 execution node is reachable but the terminal is not connected')
         expected_login=str(c['login']).strip();actual_login=str(account.get('login') or '').strip();expected_server=str(c['server']).strip();actual_server=str(account.get('server') or health.get('server') or '').strip()
-        if actual_login!=expected_login:raise HTTPException(409,f'MT5 account mismatch: entered {expected_login}, bridge is connected to {actual_login or "unknown"}')
-        if actual_server and actual_server.lower()!=expected_server.lower():raise HTTPException(409,f'MT5 server mismatch: entered {expected_server}, bridge reports {actual_server}')
+        if actual_login!=expected_login:raise HTTPException(409,f'MT5 account mismatch: entered {expected_login}, execution node is connected to {actual_login or "unknown"}')
+        if actual_server and actual_server.lower()!=expected_server.lower():raise HTTPException(409,f'MT5 server mismatch: entered {expected_server}, execution node reports {actual_server}')
         terminal=health.get('terminal') or {}
         if terminal.get('trade_allowed') is False:warnings.append('MT5 automated trading is currently disabled in the terminal; analysis remains available but broker orders are blocked.')
         detected_ref=actual_login;detected_name=account.get('name') or None;details={'login':actual_login,'server':actual_server,'balance':account.get('balance'),'equity':account.get('equity'),'margin_free':account.get('margin_free'),'trade_allowed':account.get('trade_allowed'),'trade_expert':account.get('trade_expert'),'terminal_trade_allowed':terminal.get('trade_allowed')}
-        return BrokerValidationResult(valid=True,provider='MT5',environment=payload.environment,connection_status='CONNECTED',message=f'MT5 account {actual_login} validated through the ATLAS bridge.',detected_account_ref=detected_ref,detected_account_name=detected_name,warnings=warnings,details=details)
+        return BrokerValidationResult(valid=True,provider='MT5',environment=payload.environment,connection_status='CONNECTED',message=f'MT5 account {actual_login} validated through the ATLAS execution node.',detected_account_ref=detected_ref,detected_account_name=detected_name,warnings=warnings,details=details)
     if payload.provider=='IBKR':
         _generic('IBKR',payload.credentials or {});return BrokerValidationResult(valid=False,provider='IBKR',environment=payload.environment,connection_status='NOT_READY',message='IBKR validation is not enabled yet. ATLAS will not save or activate this connection until the TWS/IB Gateway adapter is complete.',warnings=['No IBKR connection is created until broker validation succeeds.'])
     raise HTTPException(400,'unsupported provider')
@@ -99,7 +103,9 @@ def _save_creds(p,api_key=None,api_secret=None,credentials=None):
     if p.provider=='BYBIT':p.api_key_encrypted=encrypt_secret((api_key or '').strip());p.api_secret_encrypted=encrypt_secret((api_secret or '').strip());p.credential_blob_encrypted=None
     elif p.provider=='TWELVE_DATA':p.api_key_encrypted=encrypt_secret((api_key or '').strip());p.api_secret_encrypted=None;p.credential_blob_encrypted=None
     else:
-        vals=_generic(p.provider,credentials or {});p.credential_blob_encrypted=encrypt_secret(json.dumps(vals,separators=(',',':')));p.api_key_encrypted=p.api_secret_encrypted=None
+        vals=_generic(p.provider,credentials or {})
+        if p.provider=='MT5':vals={k:v for k,v in vals.items() if k in {'login','password','server'}}
+        p.credential_blob_encrypted=encrypt_secret(json.dumps(vals,separators=(',',':')));p.api_key_encrypted=p.api_secret_encrypted=None
     p.credentials_configured=True;p.last_connection_status='NOT_TESTED'
 
 async def _probe(p):
@@ -107,7 +113,7 @@ async def _probe(p):
     if p.provider=='TWELVE_DATA':
         s=get_settings();await TwelveDataFxMarketData(s.fx_market_data_base_url,decrypt_secret(p.api_key_encrypted or ''),s.market_data_timeout_seconds).get_quote('EURUSD');return 'CONNECTED','Twelve Data authenticated successfully.'
     if p.provider=='MT5':
-        data=await _mt5_client(p).account();p.equity_usd=float(data.get('equity') or 0);p.wallet_balance_usd=float(data.get('balance') or 0);p.available_balance_usd=float(data.get('margin_free') or 0);return 'CONNECTED','MT5 terminal and broker account connected.'
+        data=await _mt5_client(p).account();p.equity_usd=float(data.get('equity') or 0);p.wallet_balance_usd=float(data.get('balance') or 0);p.available_balance_usd=float(data.get('margin_free') or 0);return 'CONNECTED','MT5 execution node and broker account connected.'
     if p.provider=='IBKR':return 'NOT_READY','IBKR adapter is not connected yet.'
     raise ValueError('unsupported provider')
 
@@ -117,7 +123,7 @@ def list_accounts(user:User=Depends(get_current_user),db:Session=Depends(get_db)
 
 @router.get('/capabilities')
 def capabilities(user:User=Depends(get_current_user)):
-    s=get_settings();return {'providers':{k:sorted(v) for k,v in PROVIDER_ENVIRONMENTS.items()},'trading_providers':sorted(TRADING_PROVIDERS),'market_data_only':['TWELVE_DATA'],'credential_fields':{'BYBIT':['api_key','api_secret'],'TWELVE_DATA':['api_key'],'MT5':['login','password','server','bridge_url','bridge_token'],'IBKR':['account_id','host','port','client_id']},'allow_live_trading':bool(s.allow_live_trading),'can_manage_live':_is_admin(user),'account_modes':{'simulation':sorted(SIMULATION_ENVIRONMENTS),'live_money':['LIVE']},'external_accounts_only':True,'preflight_validation':True}
+    s=get_settings();return {'providers':{k:sorted(v) for k,v in PROVIDER_ENVIRONMENTS.items()},'trading_providers':sorted(TRADING_PROVIDERS),'market_data_only':['TWELVE_DATA'],'credential_fields':{'BYBIT':['api_key','api_secret'],'TWELVE_DATA':['api_key'],'MT5':['login','password','server'],'IBKR':['account_id','host','port','client_id']},'allow_live_trading':bool(s.allow_live_trading),'can_manage_live':_is_admin(user),'account_modes':{'simulation':sorted(SIMULATION_ENVIRONMENTS),'live_money':['LIVE']},'external_accounts_only':True,'preflight_validation':True}
 
 @router.post('/validate',response_model=BrokerValidationResult)
 async def validate_account(payload:BrokerValidateRequest,user:User=Depends(get_current_user)):
