@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     bybit_testnet_base_url: str = "https://api-testnet.bybit.com"
     fx_market_data_base_url: str = "https://api.twelvedata.com"
     fx_market_data_api_key: str = ""
+    mt5_bridge_url: str = ""
+    mt5_bridge_token: str = ""
     market_data_timeout_seconds: float = 8.0
     model_config = SettingsConfigDict(env_file=".env",env_file_encoding="utf-8",case_sensitive=False,extra="ignore")
 
