@@ -38,12 +38,14 @@ def _creds(p):
     if not p.credential_blob_encrypted: raise ValueError('credentials are not configured')
     return json.loads(decrypt_secret(p.credential_blob_encrypted))
 
-def _mt5_bridge_client(values=None):
-    c=values or {};s=get_settings();url=(s.mt5_bridge_url or '').strip() or c.get('bridge_url') or 'http://host.docker.internal:8765';token=(s.mt5_bridge_token or '').strip() or c.get('bridge_token')
-    return Mt5BridgeClient(url,token,s.market_data_timeout_seconds)
+def _mt5_bridge_client():
+    s=get_settings();url=(s.mt5_bridge_url or '').strip()
+    if not url: raise RuntimeError('MT5 execution node is pending and has not been configured on the ATLAS server')
+    return Mt5BridgeClient(url,(s.mt5_bridge_token or '').strip() or None,s.market_data_timeout_seconds)
 
 def _mt5_client(p):
-    return _mt5_bridge_client(_creds(p))
+    _creds(p)
+    return _mt5_bridge_client()
 
 def _generic(provider,values):
     c={str(k):str(v).strip() for k,v in (values or {}).items() if str(v).strip()};required={'MT5':{'login','password','server'},'IBKR':{'account_id','host','port','client_id'}}.get(provider,set());missing=sorted(required-set(c))
@@ -81,7 +83,7 @@ async def _validate_raw(payload:BrokerValidateRequest)->BrokerValidationResult:
         s=get_settings();quote=await TwelveDataFxMarketData(s.fx_market_data_base_url,payload.api_key.strip(),s.market_data_timeout_seconds).get_quote('EURUSD');details={'probe_symbol':'EURUSD','price':quote.get('price') if isinstance(quote,dict) else getattr(quote,'price',None)}
         return BrokerValidationResult(valid=True,provider='TWELVE_DATA',environment='LIVE',connection_status='CONNECTED',message='Twelve Data API key validated successfully.',warnings=['Twelve Data supplies market data only; positions and orders remain with the selected broker.'],details=details)
     if payload.provider=='MT5':
-        c=_generic('MT5',payload.credentials or {});bridge=_mt5_bridge_client(c);health=await bridge.health();account=await bridge.account()
+        c=_generic('MT5',payload.credentials or {});bridge=_mt5_bridge_client();health=await bridge.health();account=await bridge.account()
         if not health.get('connected'):raise HTTPException(400,'MT5 execution node is reachable but the terminal is not connected')
         expected_login=str(c['login']).strip();actual_login=str(account.get('login') or '').strip();expected_server=str(c['server']).strip();actual_server=str(account.get('server') or health.get('server') or '').strip()
         if actual_login!=expected_login:raise HTTPException(409,f'MT5 account mismatch: entered {expected_login}, execution node is connected to {actual_login or "unknown"}')
@@ -123,13 +125,15 @@ def list_accounts(user:User=Depends(get_current_user),db:Session=Depends(get_db)
 
 @router.get('/capabilities')
 def capabilities(user:User=Depends(get_current_user)):
-    s=get_settings();return {'providers':{k:sorted(v) for k,v in PROVIDER_ENVIRONMENTS.items()},'trading_providers':sorted(TRADING_PROVIDERS),'market_data_only':['TWELVE_DATA'],'credential_fields':{'BYBIT':['api_key','api_secret'],'TWELVE_DATA':['api_key'],'MT5':['login','password','server'],'IBKR':['account_id','host','port','client_id']},'allow_live_trading':bool(s.allow_live_trading),'can_manage_live':_is_admin(user),'account_modes':{'simulation':sorted(SIMULATION_ENVIRONMENTS),'live_money':['LIVE']},'external_accounts_only':True,'preflight_validation':True}
+    s=get_settings();mt5_configured=bool((s.mt5_bridge_url or '').strip());return {'providers':{k:sorted(v) for k,v in PROVIDER_ENVIRONMENTS.items()},'trading_providers':sorted(TRADING_PROVIDERS),'market_data_only':['TWELVE_DATA'],'credential_fields':{'BYBIT':['api_key','api_secret'],'TWELVE_DATA':['api_key'],'MT5':['login','password','server'],'IBKR':['account_id','host','port','client_id']},'allow_live_trading':bool(s.allow_live_trading),'can_manage_live':_is_admin(user),'account_modes':{'simulation':sorted(SIMULATION_ENVIRONMENTS),'live_money':['LIVE']},'external_accounts_only':True,'preflight_validation':True,'execution_nodes':{'MT5':{'configured':mt5_configured,'status':'READY' if mt5_configured else 'PENDING'}}}
 
 @router.post('/validate',response_model=BrokerValidationResult)
 async def validate_account(payload:BrokerValidateRequest,user:User=Depends(get_current_user)):
     try:return await _validate_raw(payload)
     except HTTPException:raise
-    except Exception as exc:raise HTTPException(400,f'{payload.provider} validation failed: {str(exc)[:300]}') from exc
+    except Exception as exc:
+        code=503 if payload.provider=='MT5' and 'execution node is pending' in str(exc).lower() else 400
+        raise HTTPException(code,f'{payload.provider} validation failed: {str(exc)[:300]}') from exc
 
 @router.post('/connect',response_model=BrokerConnectResult,status_code=status.HTTP_201_CREATED)
 async def connect_account(payload:BrokerConnectRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -174,7 +178,8 @@ def live_execution(profile_id:uuid.UUID,payload:LiveExecutionUpdate,user:User=De
 async def test_connection(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     p=_authorized_profile(db,user,profile_id);now=datetime.now(timezone.utc)
     try:p.last_connection_status,_=await _probe(p)
-    except Exception as exc:p.last_connection_status='FAILED';p.last_connection_test_at=now;db.commit();raise HTTPException(502,f'{p.provider} connection failed: {str(exc)[:240]}') from exc
+    except Exception as exc:
+        pending=p.provider=='MT5' and 'execution node is pending' in str(exc).lower();p.last_connection_status='PENDING' if pending else 'FAILED';p.last_connection_test_at=now;db.commit();raise HTTPException(503 if pending else 502,f'{p.provider} connection {"pending" if pending else "failed"}: {str(exc)[:240]}') from exc
     p.last_connection_test_at=now;db.commit();db.refresh(p);return p
 
 @router.post('/{profile_id}/sync',response_model=BrokerProfilePublic)
@@ -189,4 +194,5 @@ async def sync_account(profile_id:uuid.UUID,user:User=Depends(get_current_user),
         else:raise HTTPException(409,'provider sync is not available yet')
         p.last_connection_status='CONNECTED';p.last_connection_test_at=datetime.now(timezone.utc);db.commit();db.refresh(p);return p
     except HTTPException:raise
-    except Exception as exc:p.last_connection_status='FAILED';db.commit();raise HTTPException(502,f'{p.provider} sync failed: {str(exc)[:240]}') from exc
+    except Exception as exc:
+        pending=p.provider=='MT5' and 'execution node is pending' in str(exc).lower();p.last_connection_status='PENDING' if pending else 'FAILED';db.commit();raise HTTPException(503 if pending else 502,f'{p.provider} sync {"pending" if pending else "failed"}: {str(exc)[:240]}') from exc

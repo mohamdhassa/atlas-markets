@@ -27,6 +27,10 @@ async def certify_bybit(p):
 def bridge_creds(p):
  if not p.credential_blob_encrypted:raise RuntimeError('bridge configuration missing')
  return json.loads(decrypt_secret(p.credential_blob_encrypted))
+def _mt5_client():
+ s=get_settings();url=(s.mt5_bridge_url or '').strip()
+ if not url:raise RuntimeError('MT5 execution node is pending and has not been configured on the ATLAS server')
+ return Mt5BridgeClient(url,(s.mt5_bridge_token or '').strip() or None,s.market_data_timeout_seconds)
 def _sync_mt5_simulation_identity(p,c0,account):
  expected=str(c0.get('login') or '').strip();actual=str(account.get('login') or '').strip();changed=[]
  if expected and actual and expected!=actual:
@@ -39,8 +43,8 @@ def _sync_mt5_simulation_identity(p,c0,account):
   c0['server']=actual_server;p.credential_blob_encrypted=encrypt_secret(json.dumps(c0,separators=(',',':')));changed.append(f'server {stored_server}->{actual_server}')
  return ', '.join(changed)
 async def certify_mt5(p):
- c0=bridge_creds(p);c=Mt5BridgeClient(c0.get('bridge_url') or 'http://host.docker.internal:8765',c0.get('bridge_token'),get_settings().market_data_timeout_seconds);health=await c.health();account=await c.account()
- if not health.get('connected'):raise RuntimeError('bridge reachable but terminal disconnected')
+ c0=bridge_creds(p);c=_mt5_client();health=await c.health();account=await c.account()
+ if not health.get('connected'):raise RuntimeError('MT5 execution node is reachable but terminal disconnected')
  actual=str(account.get('login') or '').strip();repair=_sync_mt5_simulation_identity(p,c0,account)
  pos=await c.positions();orders=await c.orders();history=await c.history_deals(30);fx=await c.candles('EURUSD','5m',20);market_checks=[f"FX=EURUSD:{len(fx.get('list',[]))}"]
  for label,candidates in [('METAL',['XAUUSD','GOLD']),('COMMODITY',['USOIL','WTI','XTIUSD','UKOIL','BRENT'])]:
@@ -77,7 +81,8 @@ async def verify():
     out.append('PASS | '+msg)
    except Exception as exc:
     detail=_detail(exc)
-    if p.provider=='TWELVE_DATA' and ('429' in detail or 'Too Many Requests' in detail):out.append('WARN | TWELVE_DATA: RATE LIMITED (secondary market data; broker-native data remains available)')
+    if p.provider=='MT5' and 'execution node' in detail.lower():p.last_connection_status='PENDING';out.append(f'WARN | MT5 {p.account_label}: PENDING | {detail}')
+    elif p.provider=='TWELVE_DATA' and ('429' in detail or 'Too Many Requests' in detail):out.append('WARN | TWELVE_DATA: RATE LIMITED (secondary market data; broker-native data remains available)')
     else:p.last_connection_status='FAILED';out.append(f'FAIL | {p.provider} {p.account_label}: {detail}')
   db.commit()
  finally:db.close()

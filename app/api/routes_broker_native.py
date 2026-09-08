@@ -28,7 +28,9 @@ def _bybit(p):
  s=get_settings();base=s.bybit_public_base_url if p.environment=='LIVE' else s.bybit_demo_base_url if p.environment=='DEMO' else s.bybit_testnet_base_url
  return BybitPrivateClient(decrypt_secret(p.api_key_encrypted or ''),decrypt_secret(p.api_secret_encrypted or ''),base,s.market_data_timeout_seconds)
 def _mt5(p):
- c=_creds(p);return Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),get_settings().market_data_timeout_seconds)
+ _creds(p);s=get_settings();url=(s.mt5_bridge_url or '').strip()
+ if not url:raise RuntimeError('MT5 execution node is pending and has not been configured on the ATLAS server')
+ return Mt5BridgeClient(url,(s.mt5_bridge_token or '').strip() or None,s.market_data_timeout_seconds)
 def _ibkr(p):
  c=_creds(p);return IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),get_settings().market_data_timeout_seconds)
 def _f(v):
