@@ -119,7 +119,7 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
    account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'equity':equity,'available':available})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
  by_account=defaultdict(list);by_market=defaultdict(list);by_symbol=defaultdict(list)
- for r in trade_rows:by_account[r['profile_id']].append(r);by_market[r['market']].append(r);by_symbol[f"{r['market']}:{r['symbol']}"] .append(r)
+ for r in trade_rows:by_account[r['profile_id']].append(r);by_market[r['market']].append(r);by_symbol[f"{r['market']}:{r['symbol']}"].append(r)
  accounts=[{**a,**_stats(by_account[a['profile_id']])} for a in account_rows]
  markets=[]
  for market in MARKETS:
