@@ -29,6 +29,48 @@ def _minimum_strength(cfg,default):return float((cfg.minimum_signal_strength if 
 def _timeframe(cfg,default):return str((cfg.timeframe if cfg.timeframe else default.timeframe) or '5m')
 def _opposite(position_side,decision):return (position_side=='LONG' and decision=='SELL') or (position_side=='SHORT' and decision=='BUY')
 
+def _execution_matches_action(action, execution, account_id):
+    """Return True only when broker execution evidence exactly proves an ATLAS entry fill."""
+    try:
+        if int(execution.get('order_id'))!=int(action.broker_order_id):return False
+    except (TypeError,ValueError):return False
+    if _canonical(execution.get('symbol'))!=_canonical(action.symbol):return False
+    expected_side='BOT' if str(action.side or '').upper()=='BUY' else 'SLD' if str(action.side or '').upper()=='SELL' else None
+    if expected_side is None or str(execution.get('side') or '').upper()!=expected_side:return False
+    if account_id and str(execution.get('account') or '')!=str(account_id):return False
+    return True
+
+def _reconciliation_evidence(action, executions, account_id):
+    matches=[x for x in executions if _execution_matches_action(action,x,account_id)]
+    expected=float(action.quantity or 0)
+    filled=sum(float(x.get('quantity') or 0) for x in matches)
+    if expected<=0 or abs(filled-expected)>=1e-9:return None
+    return {'order_id':str(action.broker_order_id),'symbol':_canonical(action.symbol),'side':str(action.side or '').upper(),'quantity':expected,'execution_ids':[str(x.get('execution_id') or '') for x in matches if x.get('execution_id')]}
+
+def _reconcile_submitted_entries(db,profile,executions,account_id):
+    """Promote delayed IBKR Paper fills only when execution history proves exact ownership."""
+    rows=list(db.scalars(select(AutomationAction).where(
+        AutomationAction.user_id==profile.user_id,
+        AutomationAction.broker_profile_id==profile.id,
+        AutomationAction.provider=='IBKR',
+        AutomationAction.environment=='PAPER',
+        AutomationAction.status=='SUBMITTED',
+        AutomationAction.reason=='BROKER_FILL_NOT_CONFIRMED',
+        AutomationAction.broker_order_id.is_not(None),
+    )).all())
+    reconciled=[]
+    for action in rows:
+        evidence=_reconciliation_evidence(action,executions,account_id)
+        if evidence is None:continue
+        action.status='EXECUTED';action.reason='BROKER_EXECUTION_RECONCILED'
+        try:raw=json.loads(action.raw_json or '{}')
+        except (TypeError,ValueError,json.JSONDecodeError):raw={}
+        raw['reconciliation']={'source':'IBKR_EXECUTIONS','verified_at':datetime.now(timezone.utc).isoformat(),**evidence}
+        action.raw_json=json.dumps(raw,default=str)
+        reconciled.append(action)
+    if reconciled:db.flush()
+    return reconciled
+
 def _latest_entry(db,user_id,profile_id,symbol):
     rows=list(db.scalars(select(AutomationAction).where(
         AutomationAction.user_id==user_id,
@@ -58,7 +100,6 @@ def _entry_fill_verified(entry, broker_entry, position_side, quantity):
     if entry.status=='EXECUTED' and expected_side==position_side and persisted_qty>0 and abs(persisted_qty-float(quantity))<1e-9:
         return True,'PERSISTED_EXECUTED_LIVE_POSITION_MATCH'
     return False,'ENTRY_FILL_NOT_VERIFIED'
-
 def _persist(db,scan,user_id,profile,item,result):
     broker_result=result.get('broker_result') or {};order_id=broker_result.get('order_id')
     db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id,provider='IBKR',environment='PAPER',market=_short(item.get('market'),24),symbol=_short(item.get('symbol'),32),side=_short(result.get('close_side'),8),status=_short(result.get('status') or 'UNKNOWN',24),reason=_short(result.get('reason'),128),quantity=float(item.get('quantity') or 0),sizing_policy='POSITION_LIFECYCLE_EXIT',broker_order_id=_short(order_id,128),broker_position_id=None,raw_json=json.dumps({'position':item,'result':result},default=str)))
@@ -86,6 +127,8 @@ async def run_ibkr_position_manager():
             for profile in profiles:
                 creds=_secret(profile);broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),get_settings().market_data_timeout_seconds);health=await broker.health()
                 if not health.get('connected') or not health.get('simulation'):continue
+                executions=(await broker.executions(30)).get('list',[])
+                _reconcile_submitted_entries(db,profile,executions,creds.get('account_id'))
                 positions=(await broker.positions()).get('list',[])
                 for p in positions:
                     qty=float(p.get('quantity') or 0)
