@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.services.ibkr_position_manager import _entry_fill_verified, _opposite
+from app.services.ibkr_position_manager import _entry_fill_verified, _execution_matches_action, _opposite, _reconciliation_evidence
 
 
 def test_ibkr_exit_direction_logic():
@@ -32,9 +32,35 @@ def test_ibkr_entry_fill_never_overrides_explicit_broker_nonfilled_state():
     assert _entry_fill_verified(entry,{'status':'Cancelled'},'LONG',1.0)==(False,'BROKER_NOT_FILLED')
 
 
+def test_ibkr_delayed_fill_reconciliation_requires_exact_broker_identity():
+    action=SimpleNamespace(broker_order_id='31',symbol='IWM',side='BUY',quantity=1.0)
+    execution={'execution_id':'exec-31','order_id':31,'account':'DUR980544','symbol':'IWM','side':'BOT','quantity':1.0}
+    assert _execution_matches_action(action,execution,'DUR980544') is True
+    assert _reconciliation_evidence(action,[execution],'DUR980544')['execution_ids']==['exec-31']
+    for field,value in [('order_id',32),('account','OTHER'),('symbol','QQQ'),('side','SLD')]:
+        changed=dict(execution);changed[field]=value
+        assert _execution_matches_action(action,changed,'DUR980544') is False
+
+
+def test_ibkr_delayed_fill_reconciliation_requires_exact_aggregate_quantity():
+    action=SimpleNamespace(broker_order_id='37',symbol='QQQ',side='BUY',quantity=1.0)
+    partial={'execution_id':'partial','order_id':37,'account':'DUR980544','symbol':'QQQ','side':'BOT','quantity':0.5}
+    assert _reconciliation_evidence(action,[partial],'DUR980544') is None
+    second={**partial,'execution_id':'second','quantity':0.5}
+    evidence=_reconciliation_evidence(action,[partial,second],'DUR980544')
+    assert evidence is not None
+    assert evidence['quantity']==1.0
+    overfill={**partial,'execution_id':'over','quantity':1.0}
+    assert _reconciliation_evidence(action,[partial,overfill],'DUR980544') is None
+
+
 def test_ibkr_exit_manager_is_paper_owned_and_lifecycle_guarded():
     text=Path('app/services/ibkr_position_manager.py').read_text()
     assert "BrokerProfile.environment=='PAPER'" in text
+    assert "AutomationAction.status=='SUBMITTED'" in text
+    assert "AutomationAction.reason=='BROKER_FILL_NOT_CONFIRMED'" in text
+    assert "broker.executions(30)" in text
+    assert 'BROKER_EXECUTION_RECONCILED' in text
     assert "entry is None" in text
     assert 'OWNERSHIP_NOT_VERIFIED' in text
     assert 'ENTRY_FILL_NOT_VERIFIED' in text
