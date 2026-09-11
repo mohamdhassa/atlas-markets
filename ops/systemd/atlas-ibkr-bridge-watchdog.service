@@ -1,0 +1,8 @@
+[Unit]
+Description=ATLAS IBKR Bridge Health Recovery
+After=atlas-ibgateway.service docker.service
+Wants=atlas-ibgateway.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/atlas-markets/ops/ibkr_bridge_watchdog.sh
