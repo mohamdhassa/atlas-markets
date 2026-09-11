@@ -27,6 +27,9 @@ class IbkrBridgeClient:
         account_key=payload.get('account_id') or self.base_url
         async with reserve_execution(f'IBKR:{account_key}',symbol) as reservation:
             if reservation is None:raise RuntimeError('EXECUTION_ALREADY_IN_PROGRESS')
+            health=await self.health()
+            if not health.get('connected'):raise RuntimeError('IBKR_BRIDGE_DISCONNECTED')
+            if not health.get('simulation'):raise RuntimeError('IBKR_PAPER_BRIDGE_REQUIRED')
             positions=(await self.positions()).get('list',[])
             if symbol in exposure_symbols(positions,'quantity'):raise RuntimeError('SYMBOL_ALREADY_HAS_POSITION')
             orders=(await self.orders()).get('list',[])
