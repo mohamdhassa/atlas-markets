@@ -90,6 +90,25 @@ async def _validate(environment: str, values: dict | None) -> BrokerValidationRe
     )
 
 
+async def _live_profile_ready(profile: BrokerProfile) -> bool:
+    """Fail closed unless the configured profile's bridge is live and in the expected environment."""
+    if not profile.credential_blob_encrypted:
+        return False
+    try:
+        creds = _clean(json.loads(decrypt_secret(profile.credential_blob_encrypted)))
+        health = await _client(creds).health()
+    except Exception:
+        return False
+    if health.get("connected") is not True:
+        return False
+    simulation = bool(health.get("simulation"))
+    if profile.environment == "PAPER":
+        return simulation
+    if profile.environment == "LIVE":
+        return not simulation
+    return False
+
+
 @router.post("/validate", response_model=BrokerValidationResult)
 async def validate_ibkr(payload: BrokerValidateRequest, _: User = Depends(get_current_user)):
     if payload.provider != "IBKR":
@@ -185,9 +204,23 @@ async def sync_ibkr(profile_id: uuid.UUID, user: User = Depends(get_current_user
 
 
 @router.get("/readiness")
-def readiness(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def readiness(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = select(BrokerProfile).where(BrokerProfile.provider == "IBKR", BrokerProfile.is_enabled.is_(True))
-    if not _is_admin(user): q = q.where(BrokerProfile.user_id == user.id)
+    if not _is_admin(user):
+        q = q.where(BrokerProfile.user_id == user.id)
     rows = list(db.scalars(q).all())
-    connected = [p for p in rows if p.last_connection_status == "CONNECTED"]
-    return {"provider": "IBKR", "adapter_ready": True, "bridge_port": 8766, "accounts": len(rows), "connected": len(connected), "simulation_ready": any(p.environment == "PAPER" for p in connected), "live_money_ready": any(p.environment == "LIVE" for p in connected), "markets": ["STOCK", "ETF"]}
+    live_connected = []
+    for profile in rows:
+        if await _live_profile_ready(profile):
+            live_connected.append(profile)
+    return {
+        "provider": "IBKR",
+        "adapter_ready": True,
+        "bridge_port": 8766,
+        "accounts": len(rows),
+        "connected": len(live_connected),
+        "simulation_ready": any(p.environment == "PAPER" for p in live_connected),
+        "live_money_ready": any(p.environment == "LIVE" for p in live_connected),
+        "health_source": "LIVE_BRIDGE",
+        "markets": ["STOCK", "ETF"],
+    }
