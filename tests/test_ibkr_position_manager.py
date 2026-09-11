@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.services.ibkr_position_manager import _entry_fill_verified, _execution_matches_action, _opposite, _reconciliation_evidence
+from app.services.ibkr_position_manager import _entry_fill_verified, _execution_matches_action, _opposite, _position_fallback_evidence, _reconciliation_evidence
 
 
 def test_ibkr_exit_direction_logic():
@@ -54,6 +54,20 @@ def test_ibkr_delayed_fill_reconciliation_requires_exact_aggregate_quantity():
     assert _reconciliation_evidence(action,[partial,overfill],'DUR980544') is None
 
 
+def test_ibkr_position_fallback_requires_account_symbol_direction_and_quantity():
+    buy=SimpleNamespace(broker_order_id='31',symbol='IWM',side='BUY',quantity=1.0)
+    sell=SimpleNamespace(broker_order_id='39',symbol='AAPL',side='SELL',quantity=1.0)
+    long_position={'account':'DUR980544','symbol':'IWM','quantity':1.0,'avg_cost':296.3}
+    short_position={'account':'DUR980544','symbol':'AAPL','quantity':-1.0,'avg_cost':316.1533}
+    assert _position_fallback_evidence(buy,long_position,'DUR980544')['live_position_quantity']==1.0
+    assert _position_fallback_evidence(sell,short_position,'DUR980544')['live_position_quantity']==-1.0
+    assert _position_fallback_evidence(buy,{**long_position,'account':'OTHER'},'DUR980544') is None
+    assert _position_fallback_evidence(buy,{**long_position,'symbol':'QQQ'},'DUR980544') is None
+    assert _position_fallback_evidence(buy,{**long_position,'quantity':-1.0},'DUR980544') is None
+    assert _position_fallback_evidence(sell,{**short_position,'quantity':1.0},'DUR980544') is None
+    assert _position_fallback_evidence(buy,{**long_position,'quantity':0.5},'DUR980544') is None
+
+
 def test_ibkr_exit_manager_is_paper_owned_and_lifecycle_guarded():
     text=Path('app/services/ibkr_position_manager.py').read_text()
     assert "BrokerProfile.environment=='PAPER'" in text
@@ -61,6 +75,9 @@ def test_ibkr_exit_manager_is_paper_owned_and_lifecycle_guarded():
     assert "AutomationAction.reason=='BROKER_FILL_NOT_CONFIRMED'" in text
     assert "broker.executions(30)" in text
     assert 'BROKER_EXECUTION_RECONCILED' in text
+    assert 'IBKR_CURRENT_POSITION_FALLBACK' in text
+    assert 'BROKER_POSITION_RECONCILED' in text
+    assert 'len(actions)!=1 or len(broker_positions)!=1' in text
     assert "entry is None" in text
     assert 'OWNERSHIP_NOT_VERIFIED' in text
     assert 'ENTRY_FILL_NOT_VERIFIED' in text
