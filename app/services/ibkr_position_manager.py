@@ -47,9 +47,8 @@ def _reconciliation_evidence(action, executions, account_id):
     if expected<=0 or abs(filled-expected)>=1e-9:return None
     return {'order_id':str(action.broker_order_id),'symbol':_canonical(action.symbol),'side':str(action.side or '').upper(),'quantity':expected,'execution_ids':[str(x.get('execution_id') or '') for x in matches if x.get('execution_id')]}
 
-def _reconcile_submitted_entries(db,profile,executions,account_id):
-    """Promote delayed IBKR Paper fills only when execution history proves exact ownership."""
-    rows=list(db.scalars(select(AutomationAction).where(
+def _submitted_entries(db,profile):
+    return list(db.scalars(select(AutomationAction).where(
         AutomationAction.user_id==profile.user_id,
         AutomationAction.broker_profile_id==profile.id,
         AutomationAction.provider=='IBKR',
@@ -58,15 +57,60 @@ def _reconcile_submitted_entries(db,profile,executions,account_id):
         AutomationAction.reason=='BROKER_FILL_NOT_CONFIRMED',
         AutomationAction.broker_order_id.is_not(None),
     )).all())
+
+def _mark_reconciled(action,source,evidence):
+    action.status='EXECUTED'
+    action.reason='BROKER_EXECUTION_RECONCILED' if source=='IBKR_EXECUTIONS' else 'BROKER_POSITION_RECONCILED'
+    try:raw=json.loads(action.raw_json or '{}')
+    except (TypeError,ValueError,json.JSONDecodeError):raw={}
+    raw['reconciliation']={'source':source,'verified_at':datetime.now(timezone.utc).isoformat(),**evidence}
+    action.raw_json=json.dumps(raw,default=str)
+
+def _reconcile_submitted_entries(db,profile,executions,account_id):
+    """Promote delayed IBKR Paper fills only when execution history proves exact ownership."""
     reconciled=[]
-    for action in rows:
+    for action in _submitted_entries(db,profile):
         evidence=_reconciliation_evidence(action,executions,account_id)
         if evidence is None:continue
-        action.status='EXECUTED';action.reason='BROKER_EXECUTION_RECONCILED'
-        try:raw=json.loads(action.raw_json or '{}')
-        except (TypeError,ValueError,json.JSONDecodeError):raw={}
-        raw['reconciliation']={'source':'IBKR_EXECUTIONS','verified_at':datetime.now(timezone.utc).isoformat(),**evidence}
-        action.raw_json=json.dumps(raw,default=str)
+        _mark_reconciled(action,'IBKR_EXECUTIONS',evidence)
+        reconciled.append(action)
+    if reconciled:db.flush()
+    return reconciled
+
+def _position_fallback_evidence(action,position,account_id):
+    """Return strict current-position evidence for one unresolved Paper entry.
+
+    This is intentionally weaker than execution history and is used only when the
+    broker no longer exposes completed executions after a Gateway restart.
+    """
+    if account_id and str(position.get('account') or '')!=str(account_id):return None
+    if _canonical(position.get('symbol'))!=_canonical(action.symbol):return None
+    expected=float(action.quantity or 0);live=float(position.get('quantity') or 0)
+    side=str(action.side or '').upper()
+    if expected<=0:return None
+    if side=='BUY' and live<=0:return None
+    if side=='SELL' and live>=0:return None
+    if abs(live)+1e-9<expected:return None
+    return {'order_id':str(action.broker_order_id),'account':str(position.get('account') or account_id or ''),'symbol':_canonical(action.symbol),'side':side,'quantity':expected,'live_position_quantity':live,'live_avg_cost':position.get('avg_cost')}
+
+def _reconcile_submitted_entries_from_positions(db,profile,positions,account_id):
+    """Fallback reconciliation only for an unambiguous unresolved entry/live position pair."""
+    rows=_submitted_entries(db,profile)
+    by_symbol={}
+    for action in rows:by_symbol.setdefault(_canonical(action.symbol),[]).append(action)
+    pos_by_symbol={}
+    for position in positions:
+        if account_id and str(position.get('account') or '')!=str(account_id):continue
+        if abs(float(position.get('quantity') or 0))<=1e-9:continue
+        pos_by_symbol.setdefault(_canonical(position.get('symbol')),[]).append(position)
+    reconciled=[]
+    for symbol,actions in by_symbol.items():
+        broker_positions=pos_by_symbol.get(symbol,[])
+        if len(actions)!=1 or len(broker_positions)!=1:continue
+        action=actions[0];position=broker_positions[0]
+        evidence=_position_fallback_evidence(action,position,account_id)
+        if evidence is None:continue
+        _mark_reconciled(action,'IBKR_CURRENT_POSITION_FALLBACK',evidence)
         reconciled.append(action)
     if reconciled:db.flush()
     return reconciled
@@ -130,6 +174,7 @@ async def run_ibkr_position_manager():
                 executions=(await broker.executions(30)).get('list',[])
                 _reconcile_submitted_entries(db,profile,executions,creds.get('account_id'))
                 positions=(await broker.positions()).get('list',[])
+                _reconcile_submitted_entries_from_positions(db,profile,positions,creds.get('account_id'))
                 for p in positions:
                     qty=float(p.get('quantity') or 0)
                     if qty==0:continue
