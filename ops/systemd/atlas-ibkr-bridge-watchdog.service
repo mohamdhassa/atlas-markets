@@ -5,4 +5,4 @@ Wants=atlas-ibgateway.service docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/home/ubuntu/atlas-markets/ops/ibkr_bridge_watchdog.sh
+ExecStart=/bin/bash /home/ubuntu/atlas-markets/ops/ibkr_bridge_watchdog.sh
