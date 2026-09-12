@@ -62,8 +62,24 @@ class BybitPrivateClient:
     async def api_key_info(self)->dict:return await self.get("/v5/user/query-api")
     async def positions(self)->dict:return await self.get("/v5/position/list",{"category":"linear","settleCoin":"USDT"})
     async def open_orders(self)->dict:return await self.get("/v5/order/realtime",{"category":"linear","settleCoin":"USDT","openOnly":0})
+    async def spot_open_orders(self)->dict:return await self.get("/v5/order/realtime",{"category":"spot","openOnly":0})
+    async def spot_order_history(self,limit:int=100)->dict:return await self.get("/v5/order/history",{"category":"spot","limit":max(1,min(limit,100))})
     async def closed_pnl(self,limit:int=100)->dict:return await self.get("/v5/position/closed-pnl",{"category":"linear","limit":max(1,min(limit,100))})
     async def order_history(self,limit:int=100)->dict:return await self.get("/v5/order/history",{"category":"linear","limit":max(1,min(limit,100))})
+
+    @staticmethod
+    def spot_holdings_from_wallet(wallet:dict)->list[dict]:
+        rows=(wallet.get("list") or [])
+        coins=(rows[0].get("coin") or []) if rows else []
+        holdings=[]
+        for coin in coins:
+            symbol=str(coin.get("coin") or "").upper()
+            if not symbol or symbol in {"USDT","USDC","USD","USDE","DAI"}:continue
+            qty=float(coin.get("walletBalance") or 0)
+            usd=float(coin.get("usdValue") or 0)
+            if qty<=0 or usd<=0:continue
+            holdings.append({"coin":symbol,"quantity":qty,"usd_value":usd,"available_to_withdraw":coin.get("availableToWithdraw")})
+        return holdings
 
     async def place_demo_market_order(self,*,symbol:str,side:str,qty:float,stop_loss:float|None=None,take_profit:float|None=None,order_link_id:str|None=None)->dict:
         if self.base_url.rstrip("/")=="https://api.bybit.com":raise BybitPrivateError("ATLAS refuses broker-native demo execution on the Bybit LIVE endpoint")

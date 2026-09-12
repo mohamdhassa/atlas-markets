@@ -127,6 +127,16 @@ def list_accounts(user:User=Depends(get_current_user),db:Session=Depends(get_db)
 def capabilities(user:User=Depends(get_current_user)):
     s=get_settings();mt5_configured=bool((s.mt5_bridge_url or '').strip());return {'providers':{k:sorted(v) for k,v in PROVIDER_ENVIRONMENTS.items()},'trading_providers':sorted(TRADING_PROVIDERS),'market_data_only':['TWELVE_DATA'],'credential_fields':{'BYBIT':['api_key','api_secret'],'TWELVE_DATA':['api_key'],'MT5':['login','password','server'],'IBKR':['account_id','host','port','client_id']},'allow_live_trading':bool(s.allow_live_trading),'can_manage_live':_is_admin(user),'account_modes':{'simulation':sorted(SIMULATION_ENVIRONMENTS),'live_money':['LIVE']},'external_accounts_only':True,'preflight_validation':True,'execution_nodes':{'MT5':{'configured':mt5_configured,'status':'READY' if mt5_configured else 'PENDING'}}}
 
+@router.get('/{profile_id}/bybit-spot-state')
+async def bybit_spot_state(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    p=_authorized_profile(db,user,profile_id)
+    if p.provider!='BYBIT':raise HTTPException(400,'Bybit profile required')
+    try:
+        client=_bybit_client(p);wallet=await client.wallet();holdings=client.spot_holdings_from_wallet(wallet);spot_orders=(await client.spot_open_orders()).get('list') or []
+        return {'provider':'BYBIT','environment':p.environment,'profile_id':str(p.id),'holdings':holdings,'spot_holdings_count':len(holdings),'spot_open_orders':spot_orders,'spot_open_orders_count':len(spot_orders),'derivative_positions_count':p.open_positions_count,'execution_certified':False,'execution_status':'BLOCKED_PENDING_CERTIFICATION'}
+    except HTTPException:raise
+    except Exception as exc:raise HTTPException(502,f'BYBIT spot state failed: {str(exc)[:240]}') from exc
+
 @router.post('/validate',response_model=BrokerValidationResult)
 async def validate_account(payload:BrokerValidateRequest,user:User=Depends(get_current_user)):
     try:return await _validate_raw(payload)
@@ -187,12 +197,12 @@ async def sync_account(profile_id:uuid.UUID,user:User=Depends(get_current_user),
     p=_authorized_profile(db,user,profile_id)
     try:
         if p.provider=='BYBIT':
-            wallet=await _bybit_client(p).wallet();row=(wallet.get('list') or [{}])[0];p.equity_usd=float(row.get('totalEquity') or 0);p.wallet_balance_usd=float(row.get('totalWalletBalance') or 0);p.available_balance_usd=float(row.get('totalAvailableBalance') or row.get('totalWalletBalance') or 0);pos=await _bybit_client(p).positions();p.open_positions_count=sum(1 for x in (pos.get('list') or []) if float(x.get('size') or 0)!=0);orders=await _bybit_client(p).open_orders();p.open_orders_count=len(orders.get('list') or [])
+            client=_bybit_client(p);wallet=await client.wallet();row=(wallet.get('list') or [{}])[0];p.equity_usd=float(row.get('totalEquity') or 0);p.wallet_balance_usd=float(row.get('totalWalletBalance') or 0);p.available_balance_usd=float(row.get('totalAvailableBalance') or row.get('totalWalletBalance') or 0);deriv=(await client.positions()).get('list') or [];holdings=client.spot_holdings_from_wallet(wallet);p.open_positions_count=sum(1 for x in deriv if float(x.get('size') or 0)!=0)+len(holdings);linear_orders=(await client.open_orders()).get('list') or [];spot_orders=(await client.spot_open_orders()).get('list') or [];p.open_orders_count=len(linear_orders)+len(spot_orders)
         elif p.provider=='MT5':
             client=_mt5_client(p);a=await client.account();p.equity_usd=float(a.get('equity') or 0);p.wallet_balance_usd=float(a.get('balance') or 0);p.available_balance_usd=float(a.get('margin_free') or 0);p.open_positions_count=len((await client.positions()).get('list') or []);p.open_orders_count=len((await client.orders()).get('list') or [])
         elif p.provider=='TWELVE_DATA':await _probe(p)
         else:raise HTTPException(409,'provider sync is not available yet')
-        p.last_connection_status='CONNECTED';p.last_connection_test_at=datetime.now(timezone.utc);db.commit();db.refresh(p);return p
+        p.last_connection_status='CONNECTED';p.last_connection_test_at=datetime.now(timezone.utc);p.last_sync_at=datetime.now(timezone.utc);db.commit();db.refresh(p);return p
     except HTTPException:raise
     except Exception as exc:
         pending=p.provider=='MT5' and 'execution node is pending' in str(exc).lower();p.last_connection_status='PENDING' if pending else 'FAILED';db.commit();raise HTTPException(503 if pending else 502,f'{p.provider} sync {"pending" if pending else "failed"}: {str(exc)[:240]}') from exc
