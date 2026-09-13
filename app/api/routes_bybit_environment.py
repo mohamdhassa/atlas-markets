@@ -55,7 +55,7 @@ def _client(profile: BrokerProfile) -> BybitPrivateClient:
 class BybitCertificationOrder(BaseModel):
     symbol: str = Field(default="BTCUSDT", min_length=3, max_length=24)
     side: str = Field(default="BUY", pattern="^(BUY|SELL)$")
-    quantity: float = Field(default=0.001, ge=0.001, le=0.01)
+    quantity: float = Field(default=0.0001, ge=0.00001, le=0.001)
 
 
 @router.post("/{profile_id}/detect-bybit-environment")
@@ -121,27 +121,24 @@ async def certify_bybit_test_order(
         raise HTTPException(403, "ADMIN role required")
     profile = _profile(db, user, profile_id)
     if profile.environment not in {"TESTNET", "DEMO"}:
-        raise HTTPException(409, "Bybit certification is restricted to TESTNET or DEMO")
+        raise HTTPException(409, "Bybit Spot certification is restricted to TESTNET or DEMO")
 
     symbol = payload.symbol.strip().upper().replace("/", "").replace(" ", "")
     side = "Buy" if payload.side == "BUY" else "Sell"
     client = _client(profile)
 
-    positions_before = (await client.positions()).get("list", [])
-    active_before = [
-        row for row in positions_before
-        if str(row.get("symbol") or "").upper() == symbol and float(row.get("size") or 0) != 0
-    ]
-    if active_before:
-        raise HTTPException(409, "BYBIT_CERTIFICATION_SYMBOL_ALREADY_HAS_POSITION")
-
-    open_orders_before = (await client.open_orders()).get("list", [])
+    open_orders_before = (await client.spot_open_orders()).get("list", [])
     if any(str(row.get("symbol") or "").upper() == symbol for row in open_orders_before):
-        raise HTTPException(409, "BYBIT_CERTIFICATION_SYMBOL_ALREADY_HAS_OPEN_ORDER")
+        raise HTTPException(409, "BYBIT_SPOT_CERTIFICATION_SYMBOL_ALREADY_HAS_OPEN_ORDER")
 
-    link_id = f"atlas-cert-{uuid.uuid4().hex[:20]}"
+    wallet_before = await client.wallet()
+    holdings_before = client.spot_holdings_from_wallet(wallet_before)
+    base_coin = symbol[:-4] if symbol.endswith("USDT") else ""
+    before_qty = next((float(x.get("quantity") or 0) for x in holdings_before if x.get("coin") == base_coin), 0.0)
+
+    link_id = f"atlas-spot-cert-{uuid.uuid4().hex[:15]}"
     try:
-        placed = await client.place_demo_market_order(
+        placed = await client.place_test_spot_market_order(
             symbol=symbol,
             side=side,
             qty=payload.quantity,
@@ -152,27 +149,20 @@ async def certify_bybit_test_order(
             409,
             {
                 "provider": "BYBIT",
+                "product": "SPOT",
                 "environment": profile.environment,
-                "purpose": "CONTROLLED_SIMULATION_CERTIFICATION",
+                "purpose": "CONTROLLED_SPOT_SIMULATION_CERTIFICATION",
                 "certification_pass": False,
                 "symbol": symbol,
                 "side": payload.side,
                 "quantity": payload.quantity,
                 "provider_error": str(exc)[:500],
-                "next_action": "Do not bypass provider restrictions. Resolve the Bybit-side rejection before certification.",
+                "next_action": "Do not bypass provider restrictions. Keep automatic Bybit execution blocked until Spot certification succeeds.",
             },
         ) from exc
 
     await asyncio.sleep(1.0)
-    positions_after = (await client.positions()).get("list", [])
-    position = next(
-        (
-            row for row in positions_after
-            if str(row.get("symbol") or "").upper() == symbol and float(row.get("size") or 0) != 0
-        ),
-        None,
-    )
-    history = (await client.order_history(20)).get("list", [])
+    history = (await client.spot_order_history(20)).get("list", [])
     order = next(
         (
             row for row in history
@@ -181,18 +171,29 @@ async def certify_bybit_test_order(
         ),
         None,
     )
+    wallet_after = await client.wallet()
+    holdings_after = client.spot_holdings_from_wallet(wallet_after)
+    after_qty = next((float(x.get("quantity") or 0) for x in holdings_after if x.get("coin") == base_coin), 0.0)
+    balance_changed = after_qty > before_qty if side == "Buy" else after_qty < before_qty
+    order_filled = bool(order) and str(order.get("orderStatus") or "").lower() in {"filled", "partiallyfilled"}
+    certification_pass = bool(order_filled and balance_changed)
 
     return {
         "provider": "BYBIT",
+        "product": "SPOT",
         "environment": profile.environment,
-        "purpose": "CONTROLLED_SIMULATION_CERTIFICATION",
-        "certification_pass": bool(position),
+        "purpose": "CONTROLLED_SPOT_SIMULATION_CERTIFICATION",
+        "certification_pass": certification_pass,
         "symbol": symbol,
         "side": payload.side,
         "quantity": payload.quantity,
         "order_link_id": link_id,
         "placed": placed,
         "order": order,
-        "position": position,
-        "next_action": "Verify the Testnet order and position, then add a controlled reduce-only close before enabling automatic Bybit execution.",
+        "base_coin": base_coin,
+        "base_quantity_before": before_qty,
+        "base_quantity_after": after_qty,
+        "balance_changed": balance_changed,
+        "execution_status": "CERTIFICATION_PROBE_PASSED" if certification_pass else "BLOCKED_PENDING_CERTIFICATION",
+        "next_action": "Keep automatic Bybit execution blocked. Verify the Spot fill and add a controlled Spot close/reversal certification before enabling automation.",
     }
