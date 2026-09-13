@@ -13,6 +13,7 @@ from app.api.routes_auth import router as auth_router
 from app.api.routes_automation import router as automation_router
 from app.api.routes_position_lifecycle import router as position_lifecycle_router
 from app.api.routes_broker_native import router as broker_native_router
+from app.api.routes_bybit_certification_state import router as bybit_certification_state_router
 from app.api.routes_bybit_environment import router as bybit_environment_router
 from app.api.routes_bybit_oauth import router as bybit_oauth_router
 from app.api.routes_historical import router as historical_router
@@ -48,7 +49,7 @@ async def lifespan(app:FastAPI):
             try:await asyncio.wait_for(task,timeout=3)
             except (asyncio.TimeoutError,asyncio.CancelledError):task.cancel()
 app=FastAPI(title=settings.app_name,version='1.0.0',debug=settings.debug,lifespan=lifespan)
-app.include_router(health_router);app.include_router(auth_router);app.include_router(admin_router);app.include_router(markets_router);app.include_router(workspace_quotes_router);app.include_router(accounts_router);app.include_router(account_lifecycle_router);app.include_router(bybit_environment_router);app.include_router(bybit_oauth_router);app.include_router(ibkr_external_router);app.include_router(provider_certification_router);app.include_router(analysis_router);app.include_router(signals_router);app.include_router(legacy_account_router);app.include_router(automation_router);app.include_router(position_lifecycle_router);app.include_router(broker_native_router);app.include_router(phase35_router);app.include_router(phase36_router);app.include_router(phase36_verified_router);app.include_router(performance_router);app.include_router(news_router);app.include_router(reporting_router);app.include_router(historical_router);app.include_router(symbol_strategies_router);app.include_router(universe_engine_router);app.include_router(release_router)
+app.include_router(health_router);app.include_router(auth_router);app.include_router(admin_router);app.include_router(markets_router);app.include_router(workspace_quotes_router);app.include_router(bybit_certification_state_router);app.include_router(accounts_router);app.include_router(account_lifecycle_router);app.include_router(bybit_environment_router);app.include_router(bybit_oauth_router);app.include_router(ibkr_external_router);app.include_router(provider_certification_router);app.include_router(analysis_router);app.include_router(signals_router);app.include_router(legacy_account_router);app.include_router(automation_router);app.include_router(position_lifecycle_router);app.include_router(broker_native_router);app.include_router(phase35_router);app.include_router(phase36_router);app.include_router(phase36_verified_router);app.include_router(performance_router);app.include_router(news_router);app.include_router(reporting_router);app.include_router(historical_router);app.include_router(symbol_strategies_router);app.include_router(universe_engine_router);app.include_router(release_router)
 
 def _register_missing_router_routes(router):
     existing={(getattr(r,'path',None),frozenset(getattr(r,'methods',set()) or set())) for r in app.routes}

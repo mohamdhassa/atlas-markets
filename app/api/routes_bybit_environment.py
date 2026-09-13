@@ -59,34 +59,31 @@ class BybitCertificationOrder(BaseModel):
 
 
 @router.post("/{profile_id}/detect-bybit-environment")
-async def detect_bybit_environment(
-    profile_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+async def detect_bybit_environment(profile_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     profile = _profile(db, user, profile_id)
     api_key = decrypt_secret(profile.api_key_encrypted)
     api_secret = decrypt_secret(profile.api_secret_encrypted)
     timeout = get_settings().market_data_timeout_seconds
-
     successes: list[tuple[str, dict]] = []
     errors: dict[str, str] = {}
     for environment in ("DEMO", "TESTNET", "LIVE"):
         try:
             client = BybitPrivateClient(api_key, api_secret, _base(environment), timeout)
-            wallet = await client.wallet()
-            row = (wallet.get("list") or [{}])[0]
+            wallet = await client.wallet(); row = (wallet.get("list") or [{}])[0]
             successes.append((environment, row))
         except Exception as exc:
             errors[environment] = str(exc)[:240]
-
     if not successes:
         raise HTTPException(502, {"message": "Saved Bybit credentials did not authenticate against any configured Bybit environment.", "errors": errors})
     if len(successes) > 1:
         raise HTTPException(409, {"message": "Bybit credentials authenticated against more than one configured environment; ATLAS will not reclassify automatically.", "matches": [x[0] for x in successes]})
-
     environment, row = successes[0]
     previous = profile.environment
+    if previous != environment:
+        profile.execution_certified = False
+        profile.execution_certified_at = None
+        profile.execution_certification_buy_passed = False
+        profile.execution_certification_sell_passed = False
     profile.environment = environment
     profile.last_connection_status = "CONNECTED"
     profile.last_connection_test_at = datetime.now(timezone.utc)
@@ -95,105 +92,40 @@ async def detect_bybit_environment(
     profile.available_balance_usd = float(row.get("totalAvailableBalance") or row.get("totalWalletBalance") or 0)
     profile.live_execution_enabled = False
     profile.live_execution_armed_at = None
-    db.commit()
-    db.refresh(profile)
-
-    return {
-        "id": str(profile.id),
-        "previous_environment": previous,
-        "detected_environment": environment,
-        "mode": "LIVE MONEY" if environment == "LIVE" else "SIMULATION",
-        "equity": profile.equity_usd,
-        "available": profile.available_balance_usd,
-        "status": profile.last_connection_status,
-        "message": f"Bybit environment detected as {environment}; account profile synchronized.",
-    }
+    db.commit(); db.refresh(profile)
+    return {"id": str(profile.id), "previous_environment": previous, "detected_environment": environment, "mode": "LIVE MONEY" if environment == "LIVE" else "SIMULATION", "equity": profile.equity_usd, "available": profile.available_balance_usd, "status": profile.last_connection_status, "message": f"Bybit environment detected as {environment}; account profile synchronized."}
 
 
 @router.post("/{profile_id}/certify-bybit-test-order")
-async def certify_bybit_test_order(
-    profile_id: uuid.UUID,
-    payload: BybitCertificationOrder,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if not _is_admin(user):
-        raise HTTPException(403, "ADMIN role required")
+async def certify_bybit_test_order(profile_id: uuid.UUID, payload: BybitCertificationOrder, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not _is_admin(user): raise HTTPException(403, "ADMIN role required")
     profile = _profile(db, user, profile_id)
-    if profile.environment not in {"TESTNET", "DEMO"}:
-        raise HTTPException(409, "Bybit Spot certification is restricted to TESTNET or DEMO")
-
+    if profile.environment not in {"TESTNET", "DEMO"}: raise HTTPException(409, "Bybit Spot certification is restricted to TESTNET or DEMO")
     symbol = payload.symbol.strip().upper().replace("/", "").replace(" ", "")
     side = "Buy" if payload.side == "BUY" else "Sell"
     client = _client(profile)
-
     open_orders_before = (await client.spot_open_orders()).get("list", [])
-    if any(str(row.get("symbol") or "").upper() == symbol for row in open_orders_before):
-        raise HTTPException(409, "BYBIT_SPOT_CERTIFICATION_SYMBOL_ALREADY_HAS_OPEN_ORDER")
-
-    wallet_before = await client.wallet()
-    holdings_before = client.spot_holdings_from_wallet(wallet_before)
+    if any(str(row.get("symbol") or "").upper() == symbol for row in open_orders_before): raise HTTPException(409, "BYBIT_SPOT_CERTIFICATION_SYMBOL_ALREADY_HAS_OPEN_ORDER")
+    wallet_before = await client.wallet(); holdings_before = client.spot_holdings_from_wallet(wallet_before)
     base_coin = symbol[:-4] if symbol.endswith("USDT") else ""
     before_qty = next((float(x.get("quantity") or 0) for x in holdings_before if x.get("coin") == base_coin), 0.0)
-
     link_id = f"atlas-spot-cert-{uuid.uuid4().hex[:15]}"
     try:
-        placed = await client.place_test_spot_market_order(
-            symbol=symbol,
-            side=side,
-            qty=payload.quantity,
-            order_link_id=link_id,
-        )
+        placed = await client.place_test_spot_market_order(symbol=symbol, side=side, qty=payload.quantity, order_link_id=link_id)
     except Exception as exc:
-        raise HTTPException(
-            409,
-            {
-                "provider": "BYBIT",
-                "product": "SPOT",
-                "environment": profile.environment,
-                "purpose": "CONTROLLED_SPOT_SIMULATION_CERTIFICATION",
-                "certification_pass": False,
-                "symbol": symbol,
-                "side": payload.side,
-                "quantity": payload.quantity,
-                "provider_error": str(exc)[:500],
-                "next_action": "Do not bypass provider restrictions. Keep automatic Bybit execution blocked until Spot certification succeeds.",
-            },
-        ) from exc
-
+        raise HTTPException(409, {"provider": "BYBIT", "product": "SPOT", "environment": profile.environment, "purpose": "CONTROLLED_SPOT_SIMULATION_CERTIFICATION", "certification_pass": False, "symbol": symbol, "side": payload.side, "quantity": payload.quantity, "provider_error": str(exc)[:500], "next_action": "Do not bypass provider restrictions. Keep automatic Bybit execution blocked until Spot certification succeeds."}) from exc
     await asyncio.sleep(1.0)
     history = (await client.spot_order_history(20)).get("list", [])
-    order = next(
-        (
-            row for row in history
-            if str(row.get("orderLinkId") or "") == link_id
-            or str(row.get("orderId") or "") == str(placed.get("orderId") or "")
-        ),
-        None,
-    )
-    wallet_after = await client.wallet()
-    holdings_after = client.spot_holdings_from_wallet(wallet_after)
+    order = next((row for row in history if str(row.get("orderLinkId") or "") == link_id or str(row.get("orderId") or "") == str(placed.get("orderId") or "")), None)
+    wallet_after = await client.wallet(); holdings_after = client.spot_holdings_from_wallet(wallet_after)
     after_qty = next((float(x.get("quantity") or 0) for x in holdings_after if x.get("coin") == base_coin), 0.0)
     balance_changed = after_qty > before_qty if side == "Buy" else after_qty < before_qty
     order_filled = bool(order) and str(order.get("orderStatus") or "").lower() in {"filled", "partiallyfilled"}
     certification_pass = bool(order_filled and balance_changed)
-
-    return {
-        "provider": "BYBIT",
-        "product": "SPOT",
-        "environment": profile.environment,
-        "purpose": "CONTROLLED_SPOT_SIMULATION_CERTIFICATION",
-        "certification_pass": certification_pass,
-        "symbol": symbol,
-        "side": payload.side,
-        "quantity": payload.quantity,
-        "order_link_id": link_id,
-        "placed": placed,
-        "order": order,
-        "base_coin": base_coin,
-        "base_quantity_before": before_qty,
-        "base_quantity_after": after_qty,
-        "balance_changed": balance_changed,
-        "execution_status": "CERTIFICATION_PROBE_PASSED" if certification_pass else "BLOCKED_PENDING_CERTIFICATION",
-        "next_action": "Keep automatic Bybit execution blocked. Verify the Spot fill and add a controlled Spot close/reversal certification before enabling automation.",
-    }
+    if certification_pass:
+        if payload.side == "BUY": profile.execution_certification_buy_passed = True
+        else: profile.execution_certification_sell_passed = True
+        profile.execution_certified = bool(profile.execution_certification_buy_passed and profile.execution_certification_sell_passed)
+        profile.execution_certified_at = datetime.now(timezone.utc) if profile.execution_certified else None
+        db.commit(); db.refresh(profile)
+    return {"provider": "BYBIT", "product": "SPOT", "environment": profile.environment, "purpose": "CONTROLLED_SPOT_SIMULATION_CERTIFICATION", "certification_pass": certification_pass, "symbol": symbol, "side": payload.side, "quantity": payload.quantity, "order_link_id": link_id, "placed": placed, "order": order, "base_coin": base_coin, "base_quantity_before": before_qty, "base_quantity_after": after_qty, "balance_changed": balance_changed, "buy_certified": profile.execution_certification_buy_passed, "sell_certified": profile.execution_certification_sell_passed, "execution_certified": profile.execution_certified, "execution_certified_at": profile.execution_certified_at, "execution_status": "CERTIFIED" if profile.execution_certified else ("CERTIFICATION_PROBE_PASSED" if certification_pass else "BLOCKED_PENDING_CERTIFICATION"), "next_action": "Automatic Bybit execution remains blocked until the separate automation integration is reviewed and enabled."}
