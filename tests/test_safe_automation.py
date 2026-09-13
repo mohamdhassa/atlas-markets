@@ -26,4 +26,4 @@ def test_bybit_demo_is_certified_route():
 
 
 def test_bybit_live_remains_blocked():
-    assert automation_certification_blocker('BYBIT', 'LIVE') == 'BYBIT_SIMULATION_ONLY_CERTIFIED'
+    assert automation_certification_blocker('BYBIT', 'LIVE') == 'BYBIT_TESTNET_OR_DEMO_REQUIRED'
