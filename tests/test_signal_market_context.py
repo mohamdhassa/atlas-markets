@@ -33,6 +33,6 @@ def test_generate_signal_passes_market_and_timeframe(monkeypatch):
 def test_automation_and_exit_paths_use_configured_context():
     readiness = Path('app/services/autotrade_readiness.py').read_text(encoding='utf-8')
     lifecycle = Path('app/services/position_lifecycle.py').read_text(encoding='utf-8')
-    assert 'timeframe=timeframe,market=signal_market' in readiness
+    assert 'timeframe=timeframe, market=signal_market' in readiness
     assert "timeframe=timeframe, market=market or 'FX'" in lifecycle
     assert 'scenario_from_candles(candles,timeframe="5m",market="CRYPTO")' not in Path('app/services/signal_risk.py').read_text(encoding='utf-8')

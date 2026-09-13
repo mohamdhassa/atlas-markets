@@ -3,12 +3,30 @@ from types import SimpleNamespace
 from app.services.autotrade_readiness import _ibkr_quote_price, _portfolio_guard, _provider_execution_blockers
 
 
-def _profile(provider: str):
-    return SimpleNamespace(provider=provider)
+def _profile(provider: str, environment: str = 'DEMO', certified: bool = False):
+    return SimpleNamespace(
+        provider=provider,
+        environment=environment,
+        execution_certified=certified,
+        execution_certification_buy_passed=certified,
+        execution_certification_sell_passed=certified,
+    )
 
 
-def test_bybit_is_not_execution_certified():
-    assert _provider_execution_blockers(_profile('BYBIT')) == ['PROVIDER_EXECUTION_NOT_CERTIFIED']
+def test_bybit_requires_persistent_certification():
+    assert _provider_execution_blockers(_profile('BYBIT', 'TESTNET', certified=False)) == ['BYBIT_SPOT_CERTIFICATION_REQUIRED']
+
+
+def test_bybit_testnet_has_no_provider_blocker_after_certification():
+    assert _provider_execution_blockers(_profile('BYBIT', 'TESTNET', certified=True)) == []
+
+
+def test_bybit_demo_has_no_provider_blocker_after_certification():
+    assert _provider_execution_blockers(_profile('BYBIT', 'DEMO', certified=True)) == []
+
+
+def test_bybit_live_remains_blocked_even_if_certified():
+    assert _provider_execution_blockers(_profile('BYBIT', 'LIVE', certified=True)) == ['BYBIT_TESTNET_OR_DEMO_REQUIRED']
 
 
 def test_mt5_has_no_provider_certification_blocker():

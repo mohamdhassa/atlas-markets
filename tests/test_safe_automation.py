@@ -17,5 +17,13 @@ def test_ibkr_live_remains_blocked():
     assert automation_certification_blocker('IBKR', 'LIVE') == 'IBKR_PAPER_ONLY_CERTIFIED'
 
 
-def test_bybit_remains_hard_blocked():
-    assert automation_certification_blocker('BYBIT', 'TESTNET') == 'PROVIDER_EXECUTION_NOT_CERTIFIED'
+def test_bybit_testnet_is_certified_route():
+    assert automation_certification_blocker('BYBIT', 'TESTNET') is None
+
+
+def test_bybit_demo_is_certified_route():
+    assert automation_certification_blocker('BYBIT', 'DEMO') is None
+
+
+def test_bybit_live_remains_blocked():
+    assert automation_certification_blocker('BYBIT', 'LIVE') == 'BYBIT_TESTNET_OR_DEMO_REQUIRED'
