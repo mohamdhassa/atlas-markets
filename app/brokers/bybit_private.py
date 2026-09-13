@@ -81,6 +81,19 @@ class BybitPrivateClient:
             holdings.append({"coin":symbol,"quantity":qty,"usd_value":usd,"available_to_withdraw":coin.get("availableToWithdraw")})
         return holdings
 
+    async def place_test_spot_market_order(self,*,symbol:str,side:str,qty:float,order_link_id:str|None=None)->dict:
+        if self.base_url.rstrip("/") not in {"https://api-testnet.bybit.com","https://api-demo.bybit.com"}:raise BybitPrivateError("ATLAS refuses Spot certification outside Bybit TESTNET/DEMO")
+        symbol=str(symbol or '').strip().upper().replace('/','').replace(' ','')
+        if side not in {'Buy','Sell'}:raise BybitPrivateError('INVALID_SPOT_SIDE')
+        async with reserve_execution(f'BYBIT-SPOT:{self.api_key}',symbol) as reservation:
+            if reservation is None:raise BybitPrivateError('EXECUTION_ALREADY_IN_PROGRESS')
+            orders=(await self.spot_open_orders()).get('list',[])
+            if symbol in pending_order_symbols(orders):raise BybitPrivateError('SYMBOL_ALREADY_HAS_OPEN_SPOT_ORDER')
+            payload={"category":"spot","symbol":symbol,"side":side,"orderType":"Market","qty":f"{qty:.8f}".rstrip("0").rstrip(".")}
+            if side=='Buy':payload["marketUnit"]="baseCoin"
+            if order_link_id:payload["orderLinkId"]=order_link_id[:36]
+            return await self.post("/v5/order/create",payload)
+
     async def place_demo_market_order(self,*,symbol:str,side:str,qty:float,stop_loss:float|None=None,take_profit:float|None=None,order_link_id:str|None=None)->dict:
         if self.base_url.rstrip("/")=="https://api.bybit.com":raise BybitPrivateError("ATLAS refuses broker-native demo execution on the Bybit LIVE endpoint")
         symbol=str(symbol or '').strip().upper().replace('/','').replace(' ','')
