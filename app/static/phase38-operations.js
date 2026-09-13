@@ -1,5 +1,5 @@
 (()=>{
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const money=v=>v==null?'—':Number(v).toLocaleString(undefined,{style:'currency',currency:'USD'});
 const dti=v=>v?new Date(v).toLocaleString():'—';
 const good=s=>['EXECUTED','FILLED','COMPLETED','CONNECTED','READY'].includes(String(s||'').toUpperCase());
@@ -28,7 +28,7 @@ async function render(e){e?.preventDefault?.();if(typeof setActive==='function')
   document.getElementById('p38Restart').onclick=async()=>{await api('/automation/restart',{method:'POST'});setTimeout(render,300)};
   document.getElementById('p38Kill').onclick=async()=>{if(!confirm('Activate the automation kill switch?'))return;await api('/automation/kill',{method:'POST'});setTimeout(render,300)};
  }
- }catch(x){root.innerHTML=`<div class="panel empty-state"><strong>Automation Operations unavailable</strong><br>${esc(x.message)}</div>`}}
+ }catch(x){root.innerHTML=`<div class="panel empty-state"><strong>Automation Operations unavailable</strong><br>${esc(x.message)}</div>`}
 }
 const previousRenderPage=window.renderPage;
 if(typeof previousRenderPage==='function')window.renderPage=function(page,...args){if(page==='Automation')return render();return previousRenderPage.call(this,page,...args)};
