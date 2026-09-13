@@ -132,8 +132,13 @@ async def bybit_spot_state(profile_id:uuid.UUID,user:User=Depends(get_current_us
     p=_authorized_profile(db,user,profile_id)
     if p.provider!='BYBIT':raise HTTPException(400,'Bybit profile required')
     try:
-        client=_bybit_client(p);wallet=await client.wallet();holdings=client.spot_holdings_from_wallet(wallet);spot_orders=(await client.spot_open_orders()).get('list') or []
-        return {'provider':'BYBIT','environment':p.environment,'profile_id':str(p.id),'holdings':holdings,'spot_holdings_count':len(holdings),'spot_open_orders':spot_orders,'spot_open_orders_count':len(spot_orders),'derivative_positions_count':p.open_positions_count,'execution_certified':False,'execution_status':'BLOCKED_PENDING_CERTIFICATION'}
+        client=_bybit_client(p)
+        wallet=await client.wallet()
+        holdings=client.spot_holdings_from_wallet(wallet)
+        spot_orders=(await client.spot_open_orders()).get('list') or []
+        derivative_positions=(await client.positions()).get('list') or []
+        active_derivative_positions=[row for row in derivative_positions if float(row.get('size') or 0)!=0]
+        return {'provider':'BYBIT','environment':p.environment,'profile_id':str(p.id),'holdings':holdings,'spot_holdings_count':len(holdings),'spot_open_orders':spot_orders,'spot_open_orders_count':len(spot_orders),'derivative_positions_count':len(active_derivative_positions),'execution_certified':False,'execution_status':'BLOCKED_PENDING_CERTIFICATION'}
     except HTTPException:raise
     except Exception as exc:raise HTTPException(502,f'BYBIT spot state failed: {str(exc)[:240]}') from exc
 
@@ -176,33 +181,50 @@ def activate(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session
 
 @router.put('/{profile_id}/live-execution',response_model=BrokerProfilePublic)
 def live_execution(profile_id:uuid.UUID,payload:LiveExecutionUpdate,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    if not _is_admin(user):raise HTTPException(403,'ADMIN role required')
+    if not _is_admin(user):raise HTTPException(403,'admin role required')
     p=_authorized_profile(db,user,profile_id)
-    if p.provider not in TRADING_PROVIDERS:raise HTTPException(400,'this provider is market data only')
-    if p.environment!='LIVE':raise HTTPException(400,'live-money execution can only be changed for live-money accounts')
-    if payload.enabled and not get_settings().allow_live_trading:raise HTTPException(409,'global live-money trading permission is disabled')
-    if payload.enabled and (not p.credentials_configured or p.last_connection_status!='CONNECTED'):raise HTTPException(409,'test and connect the account before enabling live-money execution')
-    p.live_execution_enabled=payload.enabled;p.live_execution_armed_at=datetime.now(timezone.utc) if payload.enabled else None;db.commit();db.refresh(p);return p
+    if p.provider not in TRADING_PROVIDERS:raise HTTPException(400,'market-data-only providers do not support execution mode')
+    if p.environment!='LIVE' and payload.enabled:raise HTTPException(400,'simulation accounts cannot enable live execution')
+    if payload.enabled:
+        s=get_settings()
+        if not s.allow_live_trading:raise HTTPException(409,'server policy blocks live trading')
+        if not payload.confirmation or payload.confirmation.strip()!=f'ENABLE LIVE {p.provider} {p.account_label}':raise HTTPException(400,'exact live-trading confirmation phrase required')
+        p.live_execution_enabled=True;p.live_execution_armed_at=datetime.now(timezone.utc)
+    else:p.live_execution_enabled=False;p.live_execution_armed_at=None
+    db.commit();db.refresh(p);return p
 
-@router.post('/{profile_id}/test',response_model=BrokerProfilePublic)
+@router.post('/{profile_id}/test',response_model=BrokerConnectResult)
 async def test_connection(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    p=_authorized_profile(db,user,profile_id);now=datetime.now(timezone.utc)
-    try:p.last_connection_status,_=await _probe(p)
-    except Exception as exc:
-        pending=p.provider=='MT5' and 'execution node is pending' in str(exc).lower();p.last_connection_status='PENDING' if pending else 'FAILED';p.last_connection_test_at=now;db.commit();raise HTTPException(503 if pending else 502,f'{p.provider} connection {"pending" if pending else "failed"}: {str(exc)[:240]}') from exc
-    p.last_connection_test_at=now;db.commit();db.refresh(p);return p
+    p=_authorized_profile(db,user,profile_id)
+    if not p.credentials_configured:raise HTTPException(400,'credentials are not configured')
+    try:state,message=await _probe(p)
+    except Exception as exc:p.last_connection_status='FAILED';p.last_connection_test_at=datetime.now(timezone.utc);db.commit();raise HTTPException(400,f'connection test failed: {str(exc)[:300]}') from exc
+    p.last_connection_status=state;p.last_connection_test_at=datetime.now(timezone.utc);db.commit();db.refresh(p);return BrokerConnectResult(profile=p,connected=state=='CONNECTED',message=message,next_action='Sync balances and positions.' if state=='CONNECTED' else 'Complete the provider adapter first.')
 
 @router.post('/{profile_id}/sync',response_model=BrokerProfilePublic)
-async def sync_account(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+async def sync(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     p=_authorized_profile(db,user,profile_id)
+    if not p.credentials_configured:raise HTTPException(400,'credentials are not configured')
     try:
         if p.provider=='BYBIT':
-            client=_bybit_client(p);wallet=await client.wallet();row=(wallet.get('list') or [{}])[0];p.equity_usd=float(row.get('totalEquity') or 0);p.wallet_balance_usd=float(row.get('totalWalletBalance') or 0);p.available_balance_usd=float(row.get('totalAvailableBalance') or row.get('totalWalletBalance') or 0);deriv=(await client.positions()).get('list') or [];holdings=client.spot_holdings_from_wallet(wallet);p.open_positions_count=sum(1 for x in deriv if float(x.get('size') or 0)!=0)+len(holdings);linear_orders=(await client.open_orders()).get('list') or [];spot_orders=(await client.spot_open_orders()).get('list') or [];p.open_orders_count=len(linear_orders)+len(spot_orders)
+            client=_bybit_client(p)
+            wallet=await client.wallet();row=(wallet.get('list') or [{}])[0]
+            p.equity_usd=float(row.get('totalEquity') or 0);p.wallet_balance_usd=float(row.get('totalWalletBalance') or 0);p.available_balance_usd=float(row.get('totalAvailableBalance') or row.get('totalWalletBalance') or 0)
+            deriv=(await client.positions()).get('list') or [];holdings=client.spot_holdings_from_wallet(wallet)
+            p.open_positions_count=sum(1 for x in deriv if float(x.get('size') or 0)!=0)+len(holdings)
+            linear_orders=(await client.open_orders()).get('list') or [];spot_orders=(await client.spot_open_orders()).get('list') or [];p.open_orders_count=len(linear_orders)+len(spot_orders)
         elif p.provider=='MT5':
-            client=_mt5_client(p);a=await client.account();p.equity_usd=float(a.get('equity') or 0);p.wallet_balance_usd=float(a.get('balance') or 0);p.available_balance_usd=float(a.get('margin_free') or 0);p.open_positions_count=len((await client.positions()).get('list') or []);p.open_orders_count=len((await client.orders()).get('list') or [])
-        elif p.provider=='TWELVE_DATA':await _probe(p)
-        else:raise HTTPException(409,'provider sync is not available yet')
-        p.last_connection_status='CONNECTED';p.last_connection_test_at=datetime.now(timezone.utc);p.last_sync_at=datetime.now(timezone.utc);db.commit();db.refresh(p);return p
+            bridge=_mt5_client(p);a=await bridge.account();positions=await bridge.positions();orders=await bridge.orders();p.equity_usd=float(a.get('equity') or 0);p.wallet_balance_usd=float(a.get('balance') or 0);p.available_balance_usd=float(a.get('margin_free') or 0);p.open_positions_count=len(positions);p.open_orders_count=len(orders)
+        elif p.provider=='TWELVE_DATA':
+            await _probe(p);p.equity_usd=p.wallet_balance_usd=p.available_balance_usd=0;p.open_positions_count=p.open_orders_count=0
+        elif p.provider=='IBKR':raise HTTPException(409,'IBKR account sync is not available until the adapter is complete')
+        else:raise HTTPException(400,'unsupported provider')
+        p.last_connection_status='CONNECTED';p.last_sync_at=datetime.now(timezone.utc);db.commit();db.refresh(p);return p
     except HTTPException:raise
-    except Exception as exc:
-        pending=p.provider=='MT5' and 'execution node is pending' in str(exc).lower();p.last_connection_status='PENDING' if pending else 'FAILED';db.commit();raise HTTPException(503 if pending else 502,f'{p.provider} sync {"pending" if pending else "failed"}: {str(exc)[:240]}') from exc
+    except Exception as exc:p.last_connection_status='FAILED';db.commit();raise HTTPException(400,f'sync failed: {str(exc)[:300]}') from exc
+
+@router.delete('/{profile_id}')
+def remove(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    p=_authorized_profile(db,user,profile_id)
+    if p.live_execution_enabled:raise HTTPException(409,'disable live execution before removing this account')
+    db.delete(p);db.commit();return {'deleted':True,'profile_id':str(profile_id)}
