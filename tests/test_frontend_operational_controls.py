@@ -3,25 +3,35 @@ from pathlib import Path
 STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
 
 
-def test_operations_exposes_safe_admin_controls():
-    js = (STATIC / "phase50-operational-parity.js").read_text()
-    assert "/automation/kill" in js
-    assert "/automation/restart" in js
-    assert "/automation/scan-now" in js
-    assert "method:'PUT'" in js
-    assert "state.user?.role!=='ADMIN'" in js
-    assert "Live Money" in js
-
-
-def test_ibkr_frontend_uses_current_oracle_gateway_architecture():
-    js = (STATIC / "phase51-integration-architecture-fix.js").read_text()
-    assert "Oracle Linux execution host" in js
-    assert "IB Gateway :4002" in js
-    assert "localhost:8766" in js
-
-
-def test_phase51_is_loaded_after_operations():
+def test_frontend_entrypoint_uses_consolidated_core_only():
     html = (STATIC / "index.html").read_text()
-    assert "phase50-operational-parity.js?v=50.1" in html
-    assert "phase51-integration-architecture-fix.js?v=51.0" in html
-    assert html.index("phase50-operational-parity.js") < html.index("phase51-integration-architecture-fix.js")
+    assert '/static/app.js?v=53.0' in html
+    assert '/static/atlas-core.js?v=53.0' in html
+    assert 'phase50-operational-parity.js' not in html
+    assert 'phase51-integration-architecture-fix.js' not in html
+    assert 'phase52-bybit-operational-parity.js' not in html
+
+
+def test_operations_exposes_guarded_bybit_certification():
+    js = (STATIC / "atlas-core.js").read_text()
+    assert "/certify-bybit-test-order" in js
+    assert "/reconcile-bybit-spot-certification" in js
+    assert "TESTNET" in js and "DEMO" in js
+    assert "state.user?.role==='ADMIN'" in js
+    assert "confirm(" in js
+
+
+def test_core_uses_live_operations_and_account_state():
+    js = (STATIC / "atlas-core.js").read_text()
+    assert "api('/accounts')" in js
+    assert "api('/automation/state')" in js
+    assert "api('/automation/actions?limit=100')" in js
+    assert "/bybit-spot-state" in js
+
+
+def test_legacy_provider_architecture_files_remain_available_during_migration():
+    # The consolidated entrypoint no longer executes phase scripts, but keeping the
+    # files temporarily gives us a rollback/reference path while backend/provider
+    # modules are migrated into the core UI.
+    assert (STATIC / "phase50-operational-parity.js").exists()
+    assert (STATIC / "phase51-integration-architecture-fix.js").exists()
