@@ -19,11 +19,11 @@ def test_live_execution_providers_are_separately_locked():
     assert all(not status['providers'][p]['live_execution_allowed'] for p in ('MT5', 'IBKR', 'BYBIT', 'TWELVE_DATA'))
 
 
-def test_live_certification_frontend_module_is_loaded():
+def test_legacy_live_certification_module_is_not_runtime_loaded():
     root = Path(__file__).resolve().parents[1]
     index = (root / 'app/static/index.html').read_text(encoding='utf-8')
-    script = (root / 'app/static/phase49-live-certification.js').read_text(encoding='utf-8')
-    assert '/static/phase49-live-certification.js?v=49.0' in index
-    assert '/release/readiness' in script
-    assert 'Live provider certification' in script
-    assert 'Simulation certification is tracked separately from real-money certification.' in script
+    core = (root / 'app/static/atlas-core.js').read_text(encoding='utf-8')
+    assert '/static/atlas-core.js?v=53.0' in index
+    assert '/static/phase49-live-certification.js' not in index
+    assert 'TESTNET' in core and 'DEMO' in core
+    assert 'certify-bybit-test-order' in core
