@@ -70,39 +70,37 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, version="2.0.0", debug=settings.debug, lifespan=lifespan)
 
-# Canonical route registration. Routers are included exactly once; the old
-# post-registration route-copy workaround made route ownership/order ambiguous.
-for router in (
-    health_router,
-    auth_router,
-    admin_router,
-    markets_router,
-    workspace_quotes_router,
-    bybit_certification_state_router,
-    accounts_router,
-    account_lifecycle_router,
-    bybit_environment_router,
-    bybit_oauth_router,
-    ibkr_external_router,
-    provider_certification_router,
-    analysis_router,
-    signals_router,
-    legacy_account_router,
-    automation_router,
-    position_lifecycle_router,
-    broker_native_router,
-    phase35_router,
-    phase36_router,
-    phase36_verified_router,
-    performance_router,
-    news_router,
-    reporting_router,
-    historical_router,
-    symbol_strategies_router,
-    universe_engine_router,
-    release_router,
-):
+routers = (
+    health_router, auth_router, admin_router, markets_router, workspace_quotes_router,
+    bybit_certification_state_router, accounts_router, account_lifecycle_router,
+    bybit_environment_router, bybit_oauth_router, ibkr_external_router,
+    provider_certification_router, analysis_router, signals_router,
+    legacy_account_router, automation_router, position_lifecycle_router,
+    broker_native_router, phase35_router, phase36_router, phase36_verified_router,
+    performance_router, news_router, reporting_router, historical_router,
+    symbol_strategies_router, universe_engine_router, release_router,
+)
+for router in routers:
     app.include_router(router)
+
+# Some legacy modules add routes to shared APIRouters during circular imports.
+# FastAPI copies router routes at include_router() time, so synchronize any
+# late-bound routes once all modules/services are imported. Deduplication keeps
+# route ownership deterministic while preserving the complete API surface.
+def _sync_late_bound_routes(*source_routers) -> None:
+    existing = {
+        (getattr(route, "path", None), frozenset(getattr(route, "methods", set()) or set()))
+        for route in app.routes
+    }
+    for source in source_routers:
+        for route in source.routes:
+            key = (getattr(route, "path", None), frozenset(getattr(route, "methods", set()) or set()))
+            if key not in existing:
+                app.router.routes.append(route)
+                existing.add(key)
+
+
+_sync_late_bound_routes(*routers)
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
@@ -114,12 +112,6 @@ async def root() -> FileResponse:
 
 @app.get("/api/system", tags=["system"])
 async def system_info() -> dict[str, object]:
-    """Stable product capabilities only; runtime readiness comes from provider APIs.
-
-    This endpoint intentionally does not claim that a broker is connected or
-    certified. Those values change at runtime and are exposed by account,
-    certification, automation and release-readiness endpoints.
-    """
     return {
         "name": settings.app_name,
         "status": "running",
