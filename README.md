@@ -1,48 +1,49 @@
 # ATLAS MARKETS
 
-**v1.1 deployment candidate — multi-broker simulation + Oracle Cloud**
+**v2 consolidated-core rebuild — multi-provider simulation + Oracle Cloud**
 
-ATLAS MARKETS is a multi-market, multi-provider automated trading platform for stocks, ETFs, FX, metals, commodities and crypto.
+ATLAS MARKETS is a multi-market, multi-provider trading analysis, simulation and operations platform for stocks, ETFs, FX, metals, commodities and crypto.
 
-The v1.0.0 Simulation Release remains the permanent tagged baseline. v1.1 expands the observation deployment: all eligible certified simulation symbols can be promoted to AUTO_TRADE, the core app/database moves to Oracle Cloud, and provider operations/documentation are consolidated.
+The v1.0.0 Simulation Release remains the rollback/reference baseline. The active rebuild consolidates the frontend and backend around stable provider, automation, portfolio, reporting and administration APIs instead of phase-by-phase browser patches.
 
 Live Money remains intentionally gated.
 
 ## Provider status
 
-| Provider | Purpose | Environment | Automatic execution |
+| Provider | Purpose | Environment | Current route |
 |---|---|---|---|
-| Fusion Markets MT5 | FX, metals, commodities | Demo | CERTIFIED |
-| Interactive Brokers | Stocks, ETFs | Paper | CERTIFIED; max 1 share/order |
-| Bybit | Crypto | Testnet | BLOCKED by provider error `10024` |
-| Twelve Data | Market/historical data | Data only | NEVER execution |
+| Fusion Markets MT5 | FX, metals, commodities | Demo | Bridge/readiness supported; runtime terminal authorization must be healthy |
+| Interactive Brokers | Stocks, ETFs | Paper | Certified simulation route; max 1 share/order |
+| Bybit | Crypto Spot | Testnet / Demo | Managed Spot infrastructure with BUY/SELL certification and reconciliation gates |
+| Twelve Data | Market/historical data | Data only | Data provider; never an execution route |
 
-## v1.1 AUTO_TRADE expansion
+Provider status shown in the application must come from runtime account/readiness APIs. Documentation must not hard-code a temporary broker error as permanent platform state.
 
-ADMIN may use:
+## Consolidated-core rebuild
 
-```text
-POST /strategies/symbols/auto-trade/eligible
-```
+The rebuild is removing the old chain of `phaseXX` frontend runtime patches from the application entrypoint. The canonical browser entrypoint loads `app.js` plus `atlas-core.js`; legacy phase files remain temporarily as rollback/reference material while pages are migrated.
 
-This operation can seed/promote all starter-universe symbols assigned to **ready certified simulation routes**.
+Current rebuild goals:
 
-Current result by design:
+- stable ADMIN / USER navigation and routing;
+- responsive desktop/mobile layout;
+- real provider/account state instead of phase placeholders;
+- Operations control center for automation/readiness/certification visibility;
+- unified accounts, positions, orders, performance and strategy views;
+- truthful runtime system metadata;
+- preserve broker safety gates, kill switch and audit history;
+- remove stale `Phase 6`, `COMING NEXT` and obsolete provider-state copy;
+- maintain Oracle deployment compatibility.
 
-- Fusion MT5 Demo FX/metals/commodities -> eligible for AUTO_TRADE.
-- IBKR Paper stocks/ETFs -> eligible for AUTO_TRADE under the certified 1-share cap and broker/risk guards.
-- Bybit crypto -> reported as blocked until Bybit resolves `10024` and ATLAS re-certifies execution.
-- Live Money -> never bulk-promoted.
+## Bybit Spot
 
-## Bybit `10024`
+Bybit TESTNET/DEMO support includes managed Spot inventory, provider fill verification, BUY/SELL certification state and reconciliation. Certification is restricted to simulation environments and ADMIN operations. ATLAS-managed inventory prevents the system from treating unrelated wallet holdings as its own position.
 
-ATLAS private diagnostics and account permissions pass, and the order request reaches Bybit. Bybit returns a regulatory/product-availability restriction. This is provider-side, not an API-signing bug. The valid resolution path is a Bybit support/account-product review followed by controlled ATLAS re-certification. ATLAS will not bypass jurisdiction/KYC/compliance controls.
-
-See `docs/PROVIDERS.md`.
+Real-money Bybit execution is not part of this rebuild and remains gated.
 
 ## IBKR Paper
 
-IBKR Paper automatic execution is certified and may be used during the multi-week simulation. Safeguards include:
+IBKR Paper safeguards include:
 
 - Paper bridge only;
 - WhatIf preflight;
@@ -51,7 +52,7 @@ IBKR Paper automatic execution is certified and may be used during the multi-wee
 - broker status polling;
 - cancelled orders never counted as executed.
 
-For broad unattended U.S. stock/ETF testing, appropriate **real-time IBKR API market-data subscriptions are strongly recommended**. Delayed quotes are not equivalent to real-time execution-quality pricing.
+Appropriate real-time IBKR API market-data subscriptions are strongly recommended for broad U.S. stock/ETF testing.
 
 ## Oracle Cloud target
 
@@ -62,17 +63,9 @@ Oracle hosts the always-on core:
 - Redis 7;
 - automation/history/reporting loops.
 
-The Oracle production profile is:
-
-```text
-docker-compose.oracle.yml
-.env.oracle.example
-docs/ORACLE_DEPLOYMENT.md
-```
+Production configuration lives in `docker-compose.oracle.yml`, `.env.oracle.example`, and `docs/ORACLE_DEPLOYMENT.md`.
 
 The public server should expose only HTTPS. PostgreSQL, Redis, FastAPI's internal port and broker bridges stay private.
-
-Fusion MT5 remains on a Windows execution node. IBKR TWS/IB Gateway also remains an execution-node dependency unless separately migrated. Oracle reaches broker bridges through a private VPN; do not publish ports 8765/8766 publicly.
 
 ## Core functionality
 
@@ -80,25 +73,24 @@ Fusion MT5 remains on a Windows execution node. IBKR TWS/IB Gateway also remains
 - encrypted provider credentials
 - external broker account synchronization
 - configurable multi-market symbol universe
-- WATCH / SIGNALS / AUTO_TRADE modes
+- WATCH / SIGNALS / AUTO_TRADE strategy modes
 - technical, historical and news intelligence
-- BUY / SELL / HOLD decision pipeline
+- BUY / SELL / HOLD decision support
 - risk/preflight controls and kill switch
-- scheduled certified-route-only automation
 - persistent scan/action audit ledger
-- MT5 Demo execution
-- IBKR Paper execution with broker fill verification
 - broker-native portfolio/order/history views
 - unified P&L and strategy diagnostics
 - conservative verified attribution
-- responsive Dashboard / Automation Operations Center
+- responsive Dashboard / Operations workspace
 - release readiness and operational status
 
 ## Local development/runtime
 
 ```powershell
 cd "C:\Users\USER\Downloads\altas-markets"
-git pull origin main
+git fetch origin
+git checkout feature/frontend-core-rebuild
+git pull origin feature/frontend-core-rebuild
 docker compose stop app
 docker compose rm -f app
 docker compose build --no-cache app
@@ -120,6 +112,8 @@ docker compose --env-file .env.oracle -f docker-compose.oracle.yml up -d --build
 docker compose --env-file .env.oracle -f docker-compose.oracle.yml ps
 ```
 
+Do not replace or restart the legacy ATLAS Trader containers while validating ATLAS MARKETS.
+
 ## Important APIs
 
 - `GET /health`
@@ -128,7 +122,6 @@ docker compose --env-file .env.oracle -f docker-compose.oracle.yml ps
 - `GET /accounts`
 - `GET /portfolio`
 - `GET /strategies/symbols`
-- `POST /strategies/symbols/auto-trade/eligible`
 - `GET /automation/state`
 - `GET /automation/scans`
 - `GET /automation/actions`
@@ -155,4 +148,4 @@ docker compose --env-file .env.oracle -f docker-compose.oracle.yml ps
 
 `DESIGN → BUILD → TEST → COMMIT → DEPLOY → BROKER/APP SMOKE TEST → DOCUMENT`
 
-A new provider environment or Live Money route must be certified independently. The v1.0.0 Git tag remains the rollback/reference checkpoint for the completed simulation foundation.
+A provider environment must be validated independently. The v1.0.0 Git tag remains the rollback/reference checkpoint while the consolidated-core rebuild is tested.
