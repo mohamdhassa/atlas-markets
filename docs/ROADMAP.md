@@ -1,86 +1,117 @@
-# ATLAS MARKETS — Roadmap
+# ATLAS MARKETS — Consolidated Core Roadmap
 
-Last updated: 2026-08-30
+Last updated: 2026-09-15
 
-## Completed foundation
+## Baseline
 
-v1.0.0 Simulation Release is complete and tagged. Core architecture, external provider profiles, auth, strategies, risk, automation, MT5 Demo execution, IBKR Paper execution, persistent action history, unified performance, historical/news intelligence and frontend operations are implemented.
+v1.0.0 remains the rollback/reference Simulation Release. The active work is the `feature/frontend-core-rebuild` branch and PR #34.
 
-## Active v1.1 rollout
+The objective is not another phase layer. It is one maintainable application core with provider integrations, analysis, strategy/risk, portfolio/reporting, administration and a responsive frontend using stable APIs.
 
-### 1. Broad certified simulation AUTO_TRADE
+## 1. Frontend consolidation
 
-- [x] Add ADMIN bulk eligible AUTO_TRADE endpoint.
-- [ ] Deploy locally and pass full tests.
-- [ ] Promote all ready MT5 Demo and IBKR Paper starter symbols.
-- [ ] Review blocked list and confirm Bybit remains provider-blocked.
-- [ ] Run monitored scan and verify broker truth.
+- [x] Remove phase-script chain from `index.html` runtime.
+- [x] Add canonical `atlas-core.js` navigation/routing layer.
+- [x] Add responsive Operations workspace and Bybit state/certification visibility.
+- [x] Fix lexical `buildNav` / `renderPage` integration with legacy `app.js`.
+- [ ] Migrate remaining useful page implementations out of legacy phase patches.
+- [ ] Replace stale Phase/COMING NEXT copy with runtime state.
+- [ ] Verify Dashboard, Markets, Charts, Signals, Positions, Orders, Performance, Accounts, Operations, Users, Strategy, Risk, Integrations and System on desktop and mobile.
+- [ ] Remove legacy phase assets only after equivalent behavior is covered by tests.
 
-### 2. IBKR broad Paper operation
+## 2. Backend consolidation
 
-- [x] Paper execution certification.
+- [x] Remove missing-router registration workaround from the rebuild core.
+- [x] Replace hard-coded temporary provider status in `/api/system` with stable platform metadata.
+- [ ] Review route ownership and eliminate duplicate/obsolete route definitions.
+- [ ] Keep provider readiness/status sourced from runtime APIs.
+- [ ] Validate auth/RBAC isolation for ADMIN and USER.
+- [ ] Validate migrations at current Alembic head against a clean database and production-shaped database.
+
+## 3. Provider integration
+
+### Bybit Testnet / Demo
+
+- [x] Private account connectivity infrastructure.
+- [x] Spot wallet/holdings/open-order/history support.
+- [x] Persistent ATLAS-managed Spot inventory.
+- [x] Controlled BUY/SELL certification endpoint.
+- [x] Certification reconciliation.
+- [x] Provider fill verification.
+- [x] Simulation-environment and certification gates.
+- [ ] Run controlled certification against the currently configured Testnet account.
+- [ ] Verify broker order history and wallet movement against ATLAS state.
+- [ ] Verify managed inventory reconciliation after restart.
+- [ ] Surface clear provider errors/readiness in Operations.
+
+### Interactive Brokers
+
+- [x] Paper bridge and account route.
 - [x] WhatIf preflight.
-- [x] 1-share cap.
-- [x] broker fill/cancel state verification.
-- [ ] Enable appropriate real-time U.S. market-data subscriptions for API use.
-- [ ] Validate all configured stock/ETF AUTO_TRADE symbols across market hours.
+- [x] Certified 1-share/order cap.
+- [x] broker fill/cancel verification.
+- [ ] Preserve current working route through rebuild regression testing.
+- [ ] Validate configured stock/ETF symbols during market hours.
 
-### 3. Bybit resolution
+### Fusion Markets / MT5
 
-- [x] private diagnostics PASS.
-- [x] order request reaches provider.
-- [x] identify provider `10024` compliance/product restriction.
-- [ ] reproduce product access in Testnet UI.
-- [ ] open/complete Bybit support review.
-- [ ] controlled order accepted after provider resolution.
-- [ ] controlled reduce-only close certification.
-- [ ] only then add Bybit to certified automation routes.
+- [x] Bridge integration exists.
+- [ ] Resolve/validate external terminal authorization on the execution node.
+- [ ] Show terminal/bridge authorization failure distinctly from application failure.
+- [ ] Regression-test Demo route after terminal connectivity is healthy.
 
-### 4. Oracle Cloud deployment
+### Twelve Data
 
-- [x] Oracle compose profile.
-- [x] Oracle env template.
-- [x] deployment/network/backup runbook.
-- [ ] provision/update OCI Ubuntu host.
-- [ ] copy production secrets privately.
-- [ ] restore application database.
-- [ ] configure HTTPS reverse proxy.
-- [ ] establish private VPN to broker execution nodes.
-- [ ] run Oracle acceptance suite.
-- [ ] start continuous observation.
+- [x] Data-provider integration exists.
+- [ ] Regression-test market/historical data ingestion through rebuild.
+- [ ] Keep provider data-only; never expose it as an execution account.
 
-### 5. Multi-week observation
+## 4. Intelligence and strategy visibility
 
-Target: several weeks of stable simulation without constant strategy changes.
+- [x] Technical analysis foundation.
+- [x] Historical candle/backtest persistence.
+- [x] News persistence with sentiment/relevance fields.
+- [ ] Present technical, historical and news evidence together in the Signals/Strategy UI.
+- [ ] Make decision reasons and risk blockers visible and auditable.
+- [ ] Add performance diagnostics by provider, symbol and strategy.
+- [ ] Avoid representing unverified attribution as broker truth.
 
-Measure:
+## 5. Portfolio, orders and performance
 
-- total/realized/unrealized P&L;
-- maximum drawdown;
-- win rate and profit factor;
-- average winner/loser;
-- provider and symbol performance;
-- broker cancellations/rejections;
-- risk blocks and duplicate prevention;
-- automation uptime;
-- broker/ATLAS position consistency;
-- verified strategy attribution coverage.
+- [ ] Verify broker-native positions and orders pages for every connected provider.
+- [ ] Verify unified realized/unrealized P&L.
+- [ ] Add usable daily/monthly performance views.
+- [ ] Add provider/symbol/strategy filters.
+- [ ] Ensure empty/error/loading states are useful on mobile.
 
-## After observation
+## 6. Testing
 
-Possible v1.2 work is driven by evidence, not by a fixed feature list. Candidate improvements include strategy tuning, richer verified attribution, performance charts, alerting, additional providers and execution-node service hardening.
+GitHub Actions is currently unable to start because of the account billing lock; that is infrastructure state, not a test result.
 
-## Live Money program
+Until Actions is restored:
 
-Live Money is not part of v1.1. It gets its own certification/release after the observation data is reviewed.
+- [ ] Run full pytest suite in an isolated local/Oracle rebuild container.
+- [ ] Run clean-database migration test.
+- [ ] Run API smoke tests.
+- [ ] Run ADMIN/USER frontend smoke tests.
+- [ ] Run provider-specific smoke tests without changing the legacy ATLAS Trader deployment.
+- [ ] Fix all regressions before merge.
 
-Requirements include:
+## 7. Oracle deployment
 
-- provider-specific Live account certification;
-- smaller initial risk limits than simulation;
-- real-time market data where required;
-- operational monitoring/alerts;
-- backup/recovery validation;
-- explicit rollback/kill procedures;
-- legal/provider eligibility checks;
-- controlled tiny-size deployment before any scaling.
+- [x] Oracle compose profile and environment template exist.
+- [x] PostgreSQL/Redis/application production topology exists.
+- [ ] Build rebuild image separately from current production image.
+- [ ] Run migrations and tests against the rebuild stack.
+- [ ] Smoke-test on a non-conflicting port/container name.
+- [ ] Back up production database before cutover.
+- [ ] Cut over only after acceptance checks pass.
+- [ ] Keep v1.0.0/previous production image available for rollback.
+
+## 8. Observation
+
+After the consolidated rebuild is stable, run a multi-week simulation observation without constant strategy changes. Measure P&L, drawdown, win rate, profit factor, average winner/loser, provider/symbol performance, cancellations/rejections, risk blocks, automation uptime and broker/ATLAS state consistency.
+
+## Live Money
+
+Live Money is outside this rebuild. It requires a separate provider-specific release/certification process, smaller initial limits, monitoring, backup/recovery validation, legal/provider eligibility checks and explicit rollback/kill procedures.
