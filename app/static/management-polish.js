@@ -1,0 +1,1 @@
+(()=>{'use strict';const content=document.getElementById('content');const nav=document.getElementById('nav');if(!content||!nav)return;const apply=page=>content.classList.toggle('mg-page',page==='Strategy'||page==='Integrations');nav.addEventListener('click',e=>{const b=e.target.closest('.nav-button');if(b)apply(b.dataset.page)});})();
