@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.brokers.bybit_private import BybitPrivateClient
 from app.brokers.mt5_bridge import Mt5BridgeClient
+from app.brokers.ibkr_bridge import IbkrBridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.db.models.auth import User
@@ -116,7 +117,30 @@ async def _probe(p):
         s=get_settings();await TwelveDataFxMarketData(s.fx_market_data_base_url,decrypt_secret(p.api_key_encrypted or ''),s.market_data_timeout_seconds).get_quote('EURUSD');return 'CONNECTED','Twelve Data authenticated successfully.'
     if p.provider=='MT5':
         data=await _mt5_client(p).account();p.equity_usd=float(data.get('equity') or 0);p.wallet_balance_usd=float(data.get('balance') or 0);p.available_balance_usd=float(data.get('margin_free') or 0);return 'CONNECTED','MT5 execution node and broker account connected.'
-    if p.provider=='IBKR':return 'NOT_READY','IBKR adapter is not connected yet.'
+    if p.provider=='IBKR':
+        c=_creds(p)
+        bridge=IbkrBridgeClient(
+            c.get('bridge_url') or 'http://host.docker.internal:8766',
+            c.get('bridge_token'),
+            get_settings().market_data_timeout_seconds
+        )
+        health=await bridge.health()
+        if not health.get('connected'):
+            return 'FAILED','IBKR bridge is reachable but IB Gateway is not connected.'
+        account=await bridge.account()
+        actual=str(account.get('account_id') or '').strip()
+        expected=str(c.get('account_id') or p.external_account_ref or '').strip()
+        simulation=bool(account.get('simulation',health.get('simulation')))
+        if not actual or actual!=expected:
+            return 'FAILED','IBKR connected account does not match the configured profile.'
+        if p.environment=='PAPER' and not simulation:
+            return 'FAILED','IBKR profile requires a Paper Trading session.'
+        if p.environment=='LIVE' and simulation:
+            return 'FAILED','IBKR Live profile is connected to a Paper Trading session.'
+        p.equity_usd=float(account.get('equity') or 0)
+        p.wallet_balance_usd=float(account.get('cash') or 0)
+        p.available_balance_usd=float(account.get('available') or 0)
+        return 'CONNECTED',f'IBKR account {actual} connected through the ATLAS bridge.'
     raise ValueError('unsupported provider')
 
 @router.get('',response_model=list[BrokerProfilePublic])

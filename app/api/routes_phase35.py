@@ -129,7 +129,31 @@ async def unified_performance(days: int = Query(default=30, ge=1, le=366), user:
                 c = _ibkr(p); a = await c.account(); hist = await c.executions(days)
                 equity, available = _f(a.get("equity")), _f(a.get("available"))
                 for x in hist.get("list", []):
-                    trades.append({"profile_id": str(p.id), "account": p.account_label, "provider": "IBKR", "environment": p.environment, "market": "STOCK", "symbol": str(x.get("symbol") or "").upper(), "position_id": x.get("exec_id") or x.get("order_id"), "side": x.get("side"), "quantity": _f(x.get("quantity")), "entry_price": None, "exit_price": _f(x.get("price")), "gross_pnl": None, "commission": None, "swap": None, "fee": None, "realized_pnl": None, "pnl_available": False, "opened_at": 0, "closed_at": 0, "status": "EXECUTION_RECORDED"})
+                    pnl_available = bool(x.get("pnl_available")) and x.get("realized_pnl") is not None
+                    trades.append({
+                        "profile_id": str(p.id),
+                        "account": p.account_label,
+                        "provider": "IBKR",
+                        "environment": p.environment,
+                        "market": "STOCK",
+                        "symbol": str(x.get("symbol") or "").upper(),
+                        "position_id": x.get("execution_id") or x.get("exec_id") or x.get("order_id"),
+                        "broker_order_id": x.get("order_id"),
+                        "execution_id": x.get("execution_id") or x.get("exec_id"),
+                        "side": x.get("side"),
+                        "quantity": _f(x.get("quantity")),
+                        "entry_price": None,
+                        "exit_price": _f(x.get("price")),
+                        "gross_pnl": _f(x.get("realized_pnl")) if pnl_available else None,
+                        "commission": _f(x.get("commission")) if x.get("commission") is not None else None,
+                        "swap": None,
+                        "fee": None,
+                        "realized_pnl": _f(x.get("realized_pnl")) if pnl_available else None,
+                        "pnl_available": pnl_available,
+                        "opened_at": 0,
+                        "closed_at": 0,
+                        "status": "CLOSED" if pnl_available else "EXECUTION_RECORDED",
+                    })
             accounts.append({"profile_id": str(p.id), "account": p.account_label, "provider": p.provider, "environment": p.environment, "equity": equity, "available": available})
         except Exception as exc:
             errors.append({"profile_id": str(p.id), "account": p.account_label, "provider": p.provider, "error": str(exc)[:300]})
