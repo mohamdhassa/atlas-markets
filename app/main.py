@@ -27,6 +27,7 @@ from app.api.routes_phase35 import router as phase35_router
 from app.api.routes_phase36 import router as phase36_router
 from app.api.routes_phase36_verified import router as phase36_verified_router
 from app.api.routes_position_lifecycle import router as position_lifecycle_router
+from app.api.routes_portfolio_market import router as portfolio_market_router
 from app.api.routes_provider_certification import router as provider_certification_router
 from app.api.routes_release import router as release_router
 from app.api.routes_reporting import router as reporting_router
@@ -76,7 +77,7 @@ routers = (
     bybit_environment_router, bybit_oauth_router, ibkr_external_router,
     provider_certification_router, analysis_router, signals_router,
     legacy_account_router, automation_router, position_lifecycle_router,
-    broker_native_router, phase35_router, phase36_router, phase36_verified_router,
+    broker_native_router, portfolio_market_router, phase35_router, phase36_router, phase36_verified_router,
     performance_router, news_router, reporting_router, historical_router,
     symbol_strategies_router, universe_engine_router, release_router,
 )
