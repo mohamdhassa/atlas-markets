@@ -140,16 +140,35 @@ def _match_action(trade, order_ids, actions):
     position_id = str(trade.get('position_id') or '')
     market = str(trade.get('market') or '').upper()
     symbol = str(trade.get('symbol') or '').upper()
+    normalized_order_ids = {str(x) for x in order_ids if x not in (None, '', 0, '0')}
+
+    position_matches = []
+    order_matches = []
+
     for action in actions:
         if str(action.broker_profile_id or '') != profile_id:
             continue
         if str(action.market or '').upper() != market or str(action.symbol or '').upper() != symbol:
             continue
+
         action_orders, action_positions = _action_broker_ids(action)
+
         if position_id and position_id in action_positions:
-            return action, 'BROKER_POSITION_ID'
-        if order_ids and action_orders.intersection({str(x) for x in order_ids}):
-            return action, 'BROKER_ORDER_ID'
+            position_matches.append(action)
+
+        if normalized_order_ids and action_orders.intersection(normalized_order_ids):
+            order_matches.append(action)
+
+    if len(position_matches) == 1:
+        return position_matches[0], 'BROKER_POSITION_ID'
+    if len(position_matches) > 1:
+        return None, 'AMBIGUOUS_BROKER_POSITION_ID'
+
+    if len(order_matches) == 1:
+        return order_matches[0], 'BROKER_ORDER_ID'
+    if len(order_matches) > 1:
+        return None, 'AMBIGUOUS_BROKER_ORDER_ID'
+
     return None, None
 
 
@@ -161,7 +180,7 @@ async def verified_strategy_attribution(
 ):
     perf = await unified_performance(days=days, user=user, db=db)
     action_q = select(AutomationAction).where(
-        AutomationAction.status == 'EXECUTED',
+        AutomationAction.status.in_(['EXECUTED', 'EXIT_EXECUTED']),
         AutomationAction.broker_profile_id.is_not(None),
     )
     if user.role != 'ADMIN':
@@ -199,6 +218,8 @@ async def verified_strategy_attribution(
             order_ids = mt5_orders_by_position.get((str(trade.get('profile_id')), str(trade.get('position_id'))), set())
         elif trade.get('provider') == 'BYBIT' and trade.get('position_id'):
             order_ids.add(str(trade.get('position_id')))
+        elif trade.get('provider') == 'IBKR' and trade.get('broker_order_id'):
+            order_ids.add(str(trade.get('broker_order_id')))
 
         action, method = _match_action(trade, order_ids, actions)
         row = dict(trade)
@@ -214,8 +235,12 @@ async def verified_strategy_attribution(
             strategy_groups[(str(trade.get('profile_id')), str(trade.get('market') or '').upper(), str(trade.get('symbol') or '').upper())].append(row)
         else:
             row['atlas_origin_verified'] = False
-            row['attribution_confidence'] = 'BROKER_SYMBOL_MATCH_ONLY'
-            row['match_method'] = None
+            if method and method.startswith('AMBIGUOUS_'):
+                row['attribution_confidence'] = 'AMBIGUOUS_BROKER_ID'
+                row['match_method'] = method
+            else:
+                row['attribution_confidence'] = 'BROKER_SYMBOL_MATCH_ONLY'
+                row['match_method'] = None
             unverified.append(row)
 
     strategies = []
