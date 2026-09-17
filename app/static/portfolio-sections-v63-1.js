@@ -1,0 +1,11 @@
+/* ATLAS Portfolio v63.1 — presentation cleanup only. */
+(()=>{'use strict';
+function clean(){const shell=document.querySelector('.v61-shell');if(!shell)return;
+// Make the v62 diagnostics compact and direct.
+const u=shell.querySelector('.v62-universe');if(u){const head=u.querySelector('.v61-section-head');if(head){const eye=head.querySelector('.eyebrow'),h=head.querySelector('h3'),p=head.querySelector('p.muted');if(eye)eye.textContent='TRADING UNIVERSE';if(h)h.textContent='Monitored instruments';if(p)p.textContent='Latest recorded automation status for configured symbols.'}u.classList.add('v631-compact-universe')}
+// Rename the old LIVE MARKET panel to Open Positions and remove redundant wording.
+[...shell.querySelectorAll('.panel')].forEach(panel=>{const eye=panel.querySelector('.v61-section-head .eyebrow'),h=panel.querySelector('.v61-section-head h3');if(eye?.textContent.trim()==='LIVE MARKET'&&h?.textContent.trim()==='Open positions'){eye.textContent='PORTFOLIO';h.textContent='Open Positions';const status=panel.querySelector('.v61-status-line');if(status)status.textContent='Broker-held positions';panel.classList.add('v631-open-positions')}});
+// In the v63 terminal, describe actual holdings as provider + OPEN POSITION + side; watchlist stays out of Open Positions.
+const terminal=document.getElementById('v63-terminal');if(terminal){const active=document.querySelector('.v63-symbol.active'),symbol=active?.dataset.symbol,pid=active?.dataset.profile;if(symbol&&pid&&typeof api==='function'){api('/portfolio').then(data=>{const p=(data.positions||[]).find(x=>String(x.profile_id)===String(pid)&&String(x.symbol).toUpperCase()===String(symbol).toUpperCase()),sub=terminal.querySelector('.v63-head .muted');if(sub)sub.textContent=p?`${p.provider} · OPEN POSITION · ${String(p.side||'').toUpperCase()}`:`WATCHLIST · ${symbol}`}).catch(()=>{})}}
+}
+const prior=renderPage;renderPage=async page=>{const r=await prior(page);if(page==='Portfolio'){setTimeout(clean,80);setTimeout(clean,400)}return r};document.addEventListener('click',e=>{if(e.target.closest?.('.v63-symbol'))setTimeout(clean,80)});window.AtlasPortfolioV631={clean};})();
