@@ -8,6 +8,7 @@ from app.api.dependencies import get_current_user
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
 from app.db.models.signal import RiskProfile
+from app.db.models.strategy import StrategyProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 from app.services.instrument_universe import STARTER_UNIVERSE,build_universe,starter_symbols
@@ -125,6 +126,34 @@ def resolve_symbol_route(payload:RouteRequest,user:User=Depends(get_current_user
  q=select(BrokerProfile).where(BrokerProfile.provider.in_(supported));q=q if _admin(user) else q.where(BrokerProfile.user_id==user.id)
  profiles=list(db.scalars(q).all());candidates=route_candidates(market,profiles);selected=select_execution_route(market,profiles)
  return {'market':market,'symbol':symbol,'supported_providers':list(supported),'selected':selected.__dict__ if selected else None,'candidates':[{'profile_id':c.profile_id,'provider':c.provider,'label':c.label,'environment':c.environment,'connected':c.connected,'enabled':c.enabled,'active':c.active,'credentials_configured':c.credentials_configured,'executable':c.executable} for c in candidates]}
+@router.get('/effective')
+def list_effective_symbol_strategies(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ q=select(SymbolStrategy).order_by(SymbolStrategy.market,SymbolStrategy.symbol);q=q if _admin(user) else q.where(SymbolStrategy.user_id==user.id)
+ rows=list(db.scalars(q).all())
+ default=db.scalar(select(StrategyProfile).where(StrategyProfile.name=='Default')) or StrategyProfile(name='Default')
+ risk=db.scalar(select(RiskProfile).where(RiskProfile.name=='Default')) or RiskProfile(name='Default')
+ def effective(x):
+  minimum=max(risk.minimum_signal_score,x.minimum_signal_strength if x.minimum_signal_strength is not None else default.minimum_signal_strength)
+  risk_pct=min(risk.risk_per_trade_pct,x.risk_per_trade_pct if x.risk_per_trade_pct is not None else risk.risk_per_trade_pct)
+  return {
+   'id':str(x.id),'profile_id':str(x.profile_id),'market':x.market,'symbol':x.symbol,'mode':x.mode,'enabled':x.enabled,
+   'timeframe':x.timeframe or default.timeframe,
+   'minimum_signal_strength':minimum,
+   'risk_per_trade_pct':risk_pct,
+   'stop_atr_multiplier':x.stop_atr_multiplier if x.stop_atr_multiplier is not None else default.stop_atr_multiplier,
+   'take_profit_rr':x.take_profit_rr if x.take_profit_rr is not None else default.take_profit_rr,
+   'max_position_notional_pct':x.max_position_notional_pct if x.max_position_notional_pct is not None else default.max_position_notional_pct,
+   'parameter_source':{
+    'timeframe':'SYMBOL' if x.timeframe is not None else 'DEFAULT',
+    'minimum_signal_strength':'SYMBOL/RISK_LIMIT' if x.minimum_signal_strength is not None else 'DEFAULT/RISK_LIMIT',
+    'risk_per_trade_pct':'SYMBOL/RISK_LIMIT' if x.risk_per_trade_pct is not None else 'RISK_LIMIT',
+    'stop_atr_multiplier':'SYMBOL' if x.stop_atr_multiplier is not None else 'DEFAULT',
+    'take_profit_rr':'SYMBOL' if x.take_profit_rr is not None else 'DEFAULT',
+    'max_position_notional_pct':'SYMBOL' if x.max_position_notional_pct is not None else 'DEFAULT',
+   },
+  }
+ return [effective(x) for x in rows]
+
 @router.get('')
 def list_symbol_strategies(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  q=select(SymbolStrategy).order_by(SymbolStrategy.market,SymbolStrategy.symbol);q=q if _admin(user) else q.where(SymbolStrategy.user_id==user.id)
