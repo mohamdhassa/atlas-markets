@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
+from app.db.models.strategy import SymbolStrategy
 from app.db.session import get_db
 from app.services.autotrade_preflight import autotrade_preflight
 from app.services.autotrade_readiness import autotrade_readiness
