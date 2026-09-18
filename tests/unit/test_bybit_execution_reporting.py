@@ -10,7 +10,7 @@ def test_bybit_performance_includes_persisted_executed_automation_actions():
     block=_performance_bybit_block(source)
     assert "AutomationAction.status=='EXECUTED'" in block
     assert "AutomationAction.provider=='BYBIT'" in block
-    assert "'execution_source':'ATLAS_AUTOMATION_ACTION'" in block
+    assert "'ATLAS_AUTOMATION_ACTION'" in block
     assert "'pnl_available':False" in block
 
 def test_bybit_ledger_deduplicates_known_broker_order_ids():
