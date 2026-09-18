@@ -19,6 +19,16 @@ DEFAULT_FEEDS=(
     ("Cointelegraph","https://cointelegraph.com/rss"),
     ("Yahoo Finance","https://finance.yahoo.com/news/rssindex"),
     ("Reuters Business","https://feeds.reuters.com/reuters/businessNews"),
+    # Symbol-targeted Google News RSS feeds provide broad stock/ETF coverage.
+    ("Google News AAPL","https://news.google.com/rss/search?q=Apple%20AAPL%20stock&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News AMZN","https://news.google.com/rss/search?q=Amazon%20AMZN%20stock&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News META","https://news.google.com/rss/search?q=Meta%20META%20stock&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News MSFT","https://news.google.com/rss/search?q=Microsoft%20MSFT%20stock&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News NVDA","https://news.google.com/rss/search?q=Nvidia%20NVDA%20stock&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News TSLA","https://news.google.com/rss/search?q=Tesla%20TSLA%20stock&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News SPY","https://news.google.com/rss/search?q=SPY%20ETF%20S%26P%20500&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News QQQ","https://news.google.com/rss/search?q=QQQ%20ETF%20Nasdaq%20100&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News IWM","https://news.google.com/rss/search?q=IWM%20ETF%20Russell%202000&hl=en-US&gl=US&ceid=US:en"),
 )
 SYMBOL_TERMS={
     "BTCUSDT":("bitcoin","btc"),"ETHUSDT":("ethereum","ether","eth"),"SOLUSDT":("solana","sol"),
