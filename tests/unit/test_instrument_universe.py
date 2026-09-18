@@ -25,6 +25,8 @@ def test_starter_universe_spans_all_execution_markets():
     assert ('STOCK','NVDA') in starter_symbols()
     assert ('FX','EURUSD') in starter_symbols()
     assert ('CRYPTO','BTCUSDT') in starter_symbols()
+    assert ('CRYPTO','XRPUSDT') in starter_symbols()
+    assert ('CRYPTO','BNBUSDT') in starter_symbols()
 
 
 def test_starter_symbols_can_be_filtered_by_market():
