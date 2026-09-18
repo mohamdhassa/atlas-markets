@@ -1,0 +1,37 @@
+/* ATLAS v72.1 — read-only Operations command center presentation. */
+(()=>{'use strict';
+const E=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const U=v=>v==null||!Number.isFinite(Number(v))?'—':'$'+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const D=v=>v?new Date(v).toLocaleString():'—';
+const B=(v,k='')=>`<span class="badge ${k}">${E(v)}</span>`;
+const css=document.createElement('style');css.textContent=`
+.v721-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:14px}.v721-status{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.v721-providers{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px;margin:12px 0}.v721-provider{min-width:0}.v721-provider-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.v721-provider-name{font-size:1.1rem;font-weight:800}.v721-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}.v721-fact{padding:10px;border:1px solid var(--border,#263445);border-radius:10px}.v721-fact span{display:block;font-size:.75rem;opacity:.68}.v721-fact strong{display:block;margin-top:3px;overflow-wrap:anywhere}
+.v721-actions{max-height:430px;overflow:auto}.v721-actions thead th{position:sticky;top:0;z-index:1}.v721-route{margin-top:12px;font-size:.85rem}
+@media(max-width:720px){.v721-hero{display:block}.v721-status{justify-content:flex-start;margin-top:10px}.v721-providers{grid-template-columns:1fr}.v721-facts{grid-template-columns:1fr 1fr}}
+`;document.head.appendChild(css);
+function providerCard(a,actions,positions,spot){
+ const provider=String(a.provider||'').toUpperCase(),connected=String(a.last_connection_status||'').toUpperCase()==='CONNECTED',paper=String(a.environment||'').toUpperCase()==='PAPER',ps=positions.filter(x=>String(x.profile_id)===String(a.id)),recent=actions.filter(x=>String(x.provider||'').toUpperCase()===provider);
+ let route=connected?(provider==='IBKR'?(paper?'PAPER READY':'CONNECTED'):'CONNECTED'):'GATED',routeGood=connected;
+ if(provider==='BYBIT'&&spot&&!spot.error){route=spot.route_ready?'AUTOMATION READY':'GATED';routeGood=!!spot.route_ready}
+ const extra=provider==='BYBIT'&&spot&&!spot.error?`<div class="v721-fact"><span>BUY certification</span><strong>${spot.buy_certified?'PASSED':'PENDING'}</strong></div><div class="v721-fact"><span>SELL certification</span><strong>${spot.sell_certified?'PASSED':'PENDING'}</strong></div>`:`<div class="v721-fact"><span>Open positions</span><strong>${ps.length}</strong></div><div class="v721-fact"><span>Recent decisions</span><strong>${recent.length}</strong></div>`;
+ return `<article class="panel v721-provider"><div class="v721-provider-head"><div><p class="eyebrow">${E(provider)}</p><div class="v721-provider-name">${E(a.account_label)}</div><div class="muted">${E(a.environment)} · ${E(a.market||'—')}</div></div>${B(route,routeGood?'good':'warn')}</div><div class="v721-facts"><div class="v721-fact"><span>Connection</span><strong>${E(a.last_connection_status||'UNKNOWN')}</strong></div><div class="v721-fact"><span>Equity</span><strong>${U(a.equity_usd)}</strong></div>${extra}</div><div class="v721-route muted">${provider==='BYBIT'?'Managed Spot simulation route':'IBKR Paper broker route'} · ${recent.length} recent ATLAS actions</div></article>`;
+}
+async function operations(){
+ content.innerHTML='<div class="panel empty-state">Loading Operations command center…</div>';
+ try{
+  const [accounts,auto,actions,portfolio]=await Promise.all([api('/accounts'),api('/automation/state'),api('/automation/actions?limit=100'),api('/portfolio').catch(()=>({positions:[],errors:[]}))]);
+  const execution=accounts.filter(a=>['BYBIT','IBKR'].includes(String(a.provider||'').toUpperCase())),spots={};
+  await Promise.all(execution.filter(a=>String(a.provider).toUpperCase()==='BYBIT').map(async a=>{try{spots[a.id]=await api(`/accounts/${a.id}/bybit-spot-state`)}catch(e){spots[a.id]={error:e.message}}}));
+  const running=auto.enabled&&!auto.killed,connected=execution.filter(a=>String(a.last_connection_status||'').toUpperCase()==='CONNECTED').length,executed=actions.filter(a=>String(a.status||'').toUpperCase()==='EXECUTED').length,blocked=actions.filter(a=>['BLOCKED','RISK_BLOCKED'].includes(String(a.status||'').toUpperCase())).length;
+  content.innerHTML=`<div class="v721-hero"><div><p class="eyebrow">OPERATIONS COMMAND CENTER</p><h3>Unified execution operations</h3><p class="muted">Bybit Testnet + IBKR Paper readiness, positions and ATLAS activity in one workspace.</p></div><div class="v721-status">${B(running?'AUTOMATION RUNNING':'AUTOMATION STOPPED',running?'good':'warn')}${B(auto.killed?'KILL SWITCH ACTIVE':'KILL SWITCH CLEAR',auto.killed?'warn':'good')}${B(`${connected}/${execution.length} ROUTES CONNECTED`,connected===execution.length?'good':'warn')}</div></div>
+  <div class="metric-grid"><div class="metric-card"><span>Scan interval</span><strong>${Number(auto.interval_seconds||0)}s</strong><small>Automation cycle</small></div><div class="metric-card"><span>Execution providers</span><strong>${execution.length}</strong><small>Bybit + IBKR</small></div><div class="metric-card"><span>Open positions</span><strong>${(portfolio.positions||[]).length}</strong><small>Broker-held / managed</small></div><div class="metric-card"><span>Executed · recent</span><strong>${executed}</strong><small>Latest 100 actions</small></div><div class="metric-card"><span>Blocked · recent</span><strong>${blocked}</strong><small>Risk/execution blocks</small></div></div>
+  <div class="v721-providers">${execution.map(a=>providerCard(a,actions,portfolio.positions||[],spots[a.id])).join('')||'<div class="panel empty-state">No Bybit or IBKR execution provider configured.</div>'}</div>
+  <section class="panel"><div class="page-intro"><div><p class="eyebrow">UNIFIED ACTIVITY</p><h3>Recent ATLAS decisions</h3><p class="muted">Provider, strategy action and execution result remain separate fields.</p></div>${B(actions.length+' ACTIONS',true)}</div><div class="table-wrap v721-actions"><table class="data-table"><thead><tr><th>Time</th><th>Provider</th><th>Symbol</th><th>Decision</th><th>Status</th><th>Reason</th><th>Qty</th></tr></thead><tbody>${actions.map(x=>`<tr><td>${D(x.created_at)}</td><td><strong>${E(x.provider)}</strong></td><td>${E(x.symbol)}</td><td>${E(x.side||'HOLD')}</td><td>${B(x.status,String(x.status).toUpperCase()==='EXECUTED'?'good':'warn')}</td><td>${E(x.reason)}</td><td>${x.quantity==null?'—':E(x.quantity)}</td></tr>`).join('')||'<tr><td colspan="7">No recent actions.</td></tr>'}</tbody></table></div></section>
+  <section class="panel"><details><summary><strong>All provider accounts</strong></summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Account</th><th>Environment</th><th>Connection</th><th>Equity</th></tr></thead><tbody>${accounts.map(a=>`<tr><td>${E(a.provider)}</td><td>${E(a.account_label)}</td><td>${E(a.environment)}</td><td>${E(a.last_connection_status||'UNKNOWN')}</td><td>${U(a.equity_usd)}</td></tr>`).join('')}</tbody></table></div></details></section>`;
+ }catch(e){content.innerHTML=`<div class="panel empty-state">Operations unavailable: ${E(e.message)}</div>`}
+}
+const previous=renderPage;renderPage=async page=>{if(page==='Operations'){setActive(page);return operations()}return previous(page)};
+window.AtlasOperationsV721={operations};
+})();
