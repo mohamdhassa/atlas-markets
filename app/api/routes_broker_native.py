@@ -14,6 +14,7 @@ from app.core.crypto import decrypt_secret
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
 from app.db.models.bybit_inventory import BybitManagedInventory
+from app.db.models.automation import AutomationAction
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 
@@ -112,6 +113,15 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
    if p.provider=='BYBIT':
     c=_bybit(p);wallet=await c.wallet();hist=await c.closed_pnl(100);a=(wallet.get('list') or [{}])[0];equity=_f(a.get('totalEquity'));available=_f(a.get('totalAvailableBalance'));account_market='CRYPTO'
     for x in hist.get('list',[]):trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':'CRYPTO','provider':'BYBIT','symbol':x.get('symbol'),'pnl':_f(x.get('closedPnl')),'pnl_available':True,'time':int(x.get('updatedTime') or x.get('createdTime') or 0),'side':x.get('side')})
+    # Bybit Spot Testnet closed-PnL history does not represent ATLAS Spot fills reliably.
+    # Persisted EXECUTED automation actions are the authoritative ATLAS execution audit trail.
+    existing_ids={str(x.get('broker_order_id') or '') for x in trade_rows if x.get('provider')=='BYBIT' and str(x.get('profile_id'))==str(p.id)}
+    actions=list(db.scalars(select(AutomationAction).where(AutomationAction.broker_profile_id==p.id,AutomationAction.user_id==p.user_id,AutomationAction.provider=='BYBIT',AutomationAction.status=='EXECUTED').order_by(AutomationAction.created_at.desc())).all())
+    for x in actions:
+     oid=str(x.broker_order_id or '')
+     if oid and oid in existing_ids:continue
+     trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':x.market or 'CRYPTO','provider':'BYBIT','symbol':x.symbol,'pnl':0,'pnl_available':False,'time':int(x.created_at.timestamp()*1000) if x.created_at else 0,'side':x.side,'execution_price':None,'quantity':_f(x.quantity),'commission':None,'broker_order_id':oid or None,'execution_id':None,'execution_source':'ATLAS_AUTOMATION_ACTION'})
+     if oid:existing_ids.add(oid)
    elif p.provider=='MT5':
     c=_mt5(p);a=await c.account();hist=await c.history_deals(days);equity=_f(a.get('equity'));available=_f(a.get('margin_free'));account_market='FX+METAL+COMMODITY'
     for x in hist.get('list',[]):
