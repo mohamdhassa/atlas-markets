@@ -55,7 +55,7 @@ async def portfolio_candles(
         elif p.provider == "BYBIT":
             s = get_settings()
             client = BybitPublicMarketData(s.bybit_public_base_url, s.market_data_timeout_seconds)
-            rows = [x.model_dump() for x in await client.get_candles(symbol=symbol, interval=timeframe, category="linear", limit=limit)]
+            rows = [x.model_dump() for x in await client.get_candles(symbol=symbol, interval=timeframe, category="spot", limit=limit)]
         else:
             raise HTTPException(status_code=422, detail=f"live chart feed not available for {p.provider}")
         return {"profile_id": str(p.id), "provider": p.provider, "symbol": symbol, "timeframe": timeframe, "candles": rows}

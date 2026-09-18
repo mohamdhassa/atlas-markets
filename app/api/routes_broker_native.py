@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
+from app.db.models.bybit_inventory import BybitManagedInventory
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 
@@ -55,9 +56,13 @@ async def portfolio(user:User=Depends(get_current_user),db:Session=Depends(get_d
   try:
    symmap=_symbol_market_map(db,p.id)
    if p.provider=='BYBIT':
-    c=_bybit(p);w=await c.wallet();pos=await c.positions();a=(w.get('list') or [{}])[0];equity=_f(a.get('totalEquity'));available=_f(a.get('totalAvailableBalance'));plist=[x for x in pos.get('list',[]) if _f(x.get('size'))]
-    for x in plist:positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'BYBIT','market':'CRYPTO','symbol':x.get('symbol'),'side':x.get('side'),'quantity':_f(x.get('size')),'entry_price':_f(x.get('avgPrice')),'mark_price':_f(x.get('markPrice')),'unrealized_pnl':_f(x.get('unrealisedPnl')),'leverage':x.get('leverage')})
-    unrealized=sum(_f(x.get('unrealisedPnl')) for x in plist)
+    c=_bybit(p);w=await c.wallet();a=(w.get('list') or [{}])[0];equity=_f(a.get('totalEquity'));available=_f(a.get('totalAvailableBalance'))
+    # ATLAS executes Bybit Spot. Show ATLAS-managed Spot inventory here instead of derivatives positions.
+    managed=list(db.scalars(select(BybitManagedInventory).where(BybitManagedInventory.broker_profile_id==p.id,BybitManagedInventory.user_id==p.user_id,BybitManagedInventory.managed_quantity>0)).all())
+    plist=managed
+    for x in managed:
+     positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'BYBIT','market':'CRYPTO','symbol':x.symbol,'side':'LONG','quantity':_f(x.managed_quantity),'entry_price':_f(x.average_entry_price),'mark_price':None,'unrealized_pnl':None,'leverage':None,'position_source':'ATLAS_MANAGED_SPOT'})
+    unrealized=0
    elif p.provider=='MT5':
     c=_mt5(p);a=await c.account();pos=await c.positions();equity=_f(a.get('equity'));available=_f(a.get('margin_free'));plist=pos.get('list',[])
     for x in plist:
