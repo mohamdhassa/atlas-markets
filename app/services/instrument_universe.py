@@ -12,7 +12,7 @@ STARTER_UNIVERSE: dict[str, tuple[str, ...]] = {
     'FX': ('EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF'),
     'METAL': ('XAUUSD', 'XAGUSD'),
     'COMMODITY': ('XTIUSD',),
-    'CRYPTO': ('BTCUSDT', 'ETHUSDT', 'SOLUSDT'),
+    'CRYPTO': ('BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT'),
 }
 
 

@@ -45,7 +45,7 @@ async def scan_user_universe(db, *, user_id, include_watch: bool = False) -> dic
         timeframe = cfg.timeframe or '5m'
         try:
             if profile.provider == 'BYBIT':
-                candles = await bybit_market.get_candles(symbol=cfg.symbol, interval=timeframe, category='linear', limit=200)
+                candles = await bybit_market.get_candles(symbol=cfg.symbol, interval=timeframe, category='spot', limit=200)
                 raw = [c.model_dump() for c in candles]
             elif profile.provider == 'MT5':
                 c = _bridge_cfg(profile)
