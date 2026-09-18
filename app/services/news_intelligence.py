@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 from dataclasses import dataclass, replace
@@ -10,15 +11,23 @@ import httpx
 from sqlalchemy import select
 
 from app.db.models.news import NewsArticle
+from app.db.session import SessionLocal
 from app.services.signal_risk import GeneratedSignal
 
 DEFAULT_FEEDS=(
     ("CoinDesk","https://www.coindesk.com/arc/outboundfeeds/rss/"),
     ("Cointelegraph","https://cointelegraph.com/rss"),
+    ("Yahoo Finance","https://finance.yahoo.com/news/rssindex"),
+    ("Reuters Business","https://feeds.reuters.com/reuters/businessNews"),
 )
 SYMBOL_TERMS={
     "BTCUSDT":("bitcoin","btc"),"ETHUSDT":("ethereum","ether","eth"),"SOLUSDT":("solana","sol"),
     "XRPUSDT":("xrp","ripple"),"BNBUSDT":("bnb","binance coin"),
+    "AAPL":("apple","aapl"),"AMZN":("amazon","amzn"),"META":("meta platforms","meta","facebook"),
+    "MSFT":("microsoft","msft"),"NVDA":("nvidia","nvda"),"TSLA":("tesla","tsla"),
+    "SPY":("s&p 500","s&p500","spdr s&p 500","spy etf"),
+    "QQQ":("nasdaq 100","nasdaq-100","invesco qqq","qqq etf"),
+    "IWM":("russell 2000","ishares russell 2000","iwm etf"),
 }
 POSITIVE={"surge","gain","gains","bullish","rally","rise","rises","growth","approval","record","breakout","adoption","upgrade","strong"}
 NEGATIVE={"fall","falls","drop","drops","bearish","crash","hack","lawsuit","ban","outflow","liquidation","weak","fraud","exploit"}
@@ -71,6 +80,21 @@ async def refresh_news(db,feeds=DEFAULT_FEEDS)->dict:
             except Exception as exc:
                 db.rollback();errors.append(f"{source}: {str(exc)[:120]}")
     return {"inserted":inserted,"errors":errors}
+
+async def news_intelligence_loop(stop:asyncio.Event,interval_seconds:int=900)->None:
+    """Refresh read-only news intelligence periodically; never places or modifies orders."""
+    while not stop.is_set():
+        db=SessionLocal()
+        try:
+            await refresh_news(db)
+        except Exception:
+            pass
+        finally:
+            db.close()
+        try:
+            await asyncio.wait_for(stop.wait(),timeout=max(300,interval_seconds))
+        except asyncio.TimeoutError:
+            continue
 
 def context_for_symbol(db,symbol:str,hours:int=24,limit:int=20)->NewsContext:
     symbol=symbol.upper();since=datetime.now(timezone.utc)-timedelta(hours=hours)
