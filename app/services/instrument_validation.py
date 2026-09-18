@@ -126,7 +126,7 @@ async def validate_instrument(profile, item: UniverseItem) -> ValidationResult:
             env = str(getattr(profile, 'environment', '') or '').upper()
             base = settings.bybit_demo_base_url if env == 'DEMO' else settings.bybit_testnet_base_url if env == 'TESTNET' else settings.bybit_public_base_url
             client = BybitPrivateClient(decrypt_secret(profile.api_key_encrypted), decrypt_secret(profile.api_secret_encrypted), base, settings.market_data_timeout_seconds)
-            data = await client.get('/v5/market/instruments-info', {'category': 'linear', 'symbol': item.symbol})
+            data = await client.get('/v5/market/instruments-info', {'category': 'spot', 'symbol': item.symbol})
             rows = data.get('list') or []
             if not rows:
                 return ValidationResult(item.market, item.symbol, provider, str(profile.id), False, 'BYBIT_SYMBOL_NOT_FOUND', {})
