@@ -117,11 +117,36 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
     # Persisted EXECUTED automation actions are the authoritative ATLAS execution audit trail.
     existing_ids={str(x.get('broker_order_id') or '') for x in trade_rows if x.get('provider')=='BYBIT' and str(x.get('profile_id'))==str(p.id)}
     actions=list(db.scalars(select(AutomationAction).where(AutomationAction.broker_profile_id==p.id,AutomationAction.user_id==p.user_id,AutomationAction.provider=='BYBIT',AutomationAction.status=='EXECUTED').order_by(AutomationAction.created_at.desc())).all())
+    bybit_report_rows=[]
     for x in actions:
      oid=str(x.broker_order_id or '')
      if oid and oid in existing_ids:continue
-     trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':x.market or 'CRYPTO','provider':'BYBIT','symbol':x.symbol,'pnl':0,'pnl_available':False,'time':int(x.created_at.timestamp()*1000) if x.created_at else 0,'side':x.side,'execution_price':None,'quantity':_f(x.quantity),'commission':None,'broker_order_id':oid or None,'execution_id':None,'execution_source':'ATLAS_AUTOMATION_ACTION'})
+     fills=[]
+     if oid:
+      try:fills=(await c.spot_executions(order_id=oid,limit=100)).get('list') or []
+      except Exception:fills=[]
+     exec_qty=sum(_f(f.get('execQty')) for f in fills)
+     exec_value=sum(_f(f.get('execValue')) for f in fills)
+     exec_fee=sum(_f(f.get('execFee')) for f in fills)
+     price=(exec_value/exec_qty) if exec_qty>0 and exec_value>0 else None
+     row={'profile_id':str(p.id),'account':p.account_label,'market':x.market or 'CRYPTO','provider':'BYBIT','symbol':x.symbol,'pnl':0,'pnl_available':False,'time':int(x.created_at.timestamp()*1000) if x.created_at else 0,'side':x.side,'execution_price':price,'quantity':exec_qty or _f(x.quantity),'notional':exec_value or None,'commission':exec_fee if fills else None,'commission_currency':(fills[0].get('feeCurrency') if fills else None),'broker_order_id':oid or None,'execution_id':(fills[0].get('execId') if len(fills)==1 else None),'execution_source':'BYBIT_SPOT_EXECUTION' if fills else 'ATLAS_AUTOMATION_ACTION'}
+     bybit_report_rows.append(row)
      if oid:existing_ids.add(oid)
+    # Match ATLAS-managed Spot sells to preceding buys for reporting P&L only.
+    inventory=defaultdict(list)
+    for row in sorted(bybit_report_rows,key=lambda z:z.get('time') or 0):
+     side=str(row.get('side') or '').upper();qty=_f(row.get('quantity'));price=row.get('execution_price')
+     if not price or qty<=0:continue
+     key=str(row.get('symbol') or '').upper()
+     if side=='BUY':inventory[key].append([qty,_f(price)])
+     elif side=='SELL':
+      remaining=qty;cost=0.0;matched=0.0
+      while remaining>1e-12 and inventory[key]:
+       lot=inventory[key][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;lot[0]-=take;remaining-=take
+       if lot[0]<=1e-12:inventory[key].pop(0)
+      if matched>0 and remaining<=1e-12:
+       row['pnl']=round(qty*_f(price)-cost,8);row['pnl_available']=True
+    trade_rows.extend(bybit_report_rows)
    elif p.provider=='MT5':
     c=_mt5(p);a=await c.account();hist=await c.history_deals(days);equity=_f(a.get('equity'));available=_f(a.get('margin_free'));account_market='FX+METAL+COMMODITY'
     for x in hist.get('list',[]):
