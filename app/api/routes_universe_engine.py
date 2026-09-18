@@ -67,7 +67,7 @@ async def market_monitor(user: User = Depends(get_current_user), db: Session = D
             gate='MONITOR_ONLY'
             gate_reasons=['MODE_'+str(cfg.mode)]
         items.append({
-            'market':u.get('market'),'symbol':u.get('symbol'),'provider':u.get('provider'),'environment':u.environment,
+            'market':u.market,'symbol':u.symbol,'provider':u.provider,'environment':u.environment,
             'configured':bool(cfg),'mode':cfg.mode if cfg else 'RESEARCH','timeframe':(analysis or {}).get('timeframe') or '5m',
             'analysis_status':(analysis or {}).get('status') or ('SCANNED' if r else 'NOT_SCANNED'),
             'decision':decision,'classification':(analysis or {}).get('classification'),'strength':(analysis or {}).get('strength'),
