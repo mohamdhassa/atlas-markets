@@ -64,6 +64,11 @@ class BybitPrivateClient:
     async def open_orders(self)->dict:return await self.get("/v5/order/realtime",{"category":"linear","settleCoin":"USDT","openOnly":0})
     async def spot_open_orders(self)->dict:return await self.get("/v5/order/realtime",{"category":"spot","openOnly":0})
     async def spot_order_history(self,limit:int=100)->dict:return await self.get("/v5/order/history",{"category":"spot","limit":max(1,min(limit,100))})
+    async def spot_executions(self,*,order_id:str|None=None,symbol:str|None=None,limit:int=100)->dict:
+        params={"category":"spot","limit":max(1,min(limit,100))}
+        if order_id:params["orderId"]=str(order_id)
+        elif symbol:params["symbol"]=str(symbol).upper()
+        return await self.get("/v5/execution/list",params)
     async def closed_pnl(self,limit:int=100)->dict:return await self.get("/v5/position/closed-pnl",{"category":"linear","limit":max(1,min(limit,100))})
     async def order_history(self,limit:int=100)->dict:return await self.get("/v5/order/history",{"category":"linear","limit":max(1,min(limit,100))})
 
