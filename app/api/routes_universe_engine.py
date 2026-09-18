@@ -58,7 +58,7 @@ async def market_monitor(user: User = Depends(get_current_user), db: Session = D
             continue
         key=(u.market,u.symbol);cfg=configured.get(key);r=rmap.get(key);p=pmap.get(key)
         analysis=r or p
-        decision=(analysis or {}).get('decision') or 'HOLD'
+        decision=(analysis or {}).get('decision') if analysis else None
         gate='NOT_CONFIGURED'
         gate_reasons=['RESEARCH_ONLY_NOT_CONFIGURED']
         if r:
