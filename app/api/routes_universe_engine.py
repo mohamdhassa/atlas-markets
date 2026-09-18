@@ -43,7 +43,8 @@ async def seed_validated(payload: ValidatedSeedRequest, user: User = Depends(get
 async def market_monitor(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """One read-only ATLAS monitor: configured IBKR + configured/starter Bybit instruments."""
     profiles = list(db.scalars(select(BrokerProfile).where(BrokerProfile.user_id == user.id, BrokerProfile.provider.in_(['BYBIT','IBKR']))).all())
-    universe = build_universe(db, user_id=user.id, profiles=profiles, markets=['CRYPTO','STOCK','ETF'])
+    strategies = list(db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id == user.id)).all())
+    universe = build_universe(profiles=profiles, strategies=strategies, markets=['CRYPTO','STOCK','ETF'])
     configured = {(x.market, x.symbol): x for x in db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id == user.id, SymbolStrategy.enabled.is_(True))).all()}
     # Scan configured SIGNALS/WATCH rows with the existing preview engine. AUTO_TRADE decisions/gates come from readiness.
     preview = await scan_user_universe(db, user_id=user.id, include_watch=True)
@@ -52,9 +53,9 @@ async def market_monitor(user: User = Depends(get_current_user), db: Session = D
     rmap = {(x.get('market'), x.get('symbol')): x for x in readiness.get('items', [])}
     items=[]
     for u in universe:
-        if u.get('provider') not in {'BYBIT','IBKR'}:
+        if u.provider not in {'BYBIT','IBKR'}:
             continue
-        key=(u.get('market'),u.get('symbol'));cfg=configured.get(key);r=rmap.get(key);p=pmap.get(key)
+        key=(u.market,u.symbol);cfg=configured.get(key);r=rmap.get(key);p=pmap.get(key)
         analysis=r or p
         decision=(analysis or {}).get('decision') or 'HOLD'
         gate='NOT_CONFIGURED'
@@ -66,7 +67,7 @@ async def market_monitor(user: User = Depends(get_current_user), db: Session = D
             gate='MONITOR_ONLY'
             gate_reasons=['MODE_'+str(cfg.mode)]
         items.append({
-            'market':u.get('market'),'symbol':u.get('symbol'),'provider':u.get('provider'),'environment':u.get('environment'),
+            'market':u.market,'symbol':u.symbol,'provider':u.provider,'environment':u.environment,
             'configured':bool(cfg),'mode':cfg.mode if cfg else 'RESEARCH','timeframe':(analysis or {}).get('timeframe') or '5m',
             'analysis_status':(analysis or {}).get('status') or ('SCANNED' if r else 'NOT_SCANNED'),
             'decision':decision,'classification':(analysis or {}).get('classification'),'strength':(analysis or {}).get('strength'),
