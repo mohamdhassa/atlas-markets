@@ -1,9 +1,13 @@
 from pathlib import Path
 
+def _performance_bybit_block(source: str) -> str:
+    performance = source.split("@router.get('/performance/broker-native')",1)[1]
+    return performance.split("if p.provider=='BYBIT':",1)[1].split("elif p.provider=='MT5':",1)[0]
+
 def test_bybit_performance_includes_persisted_executed_automation_actions():
     source=Path('app/api/routes_broker_native.py').read_text()
     assert 'from app.db.models.automation import AutomationAction' in source
-    block=source.split("if p.provider=='BYBIT':",1)[1].split("elif p.provider=='MT5':",1)[0]
+    block=_performance_bybit_block(source)
     assert "AutomationAction.status=='EXECUTED'" in block
     assert "AutomationAction.provider=='BYBIT'" in block
     assert "'execution_source':'ATLAS_AUTOMATION_ACTION'" in block
@@ -11,6 +15,6 @@ def test_bybit_performance_includes_persisted_executed_automation_actions():
 
 def test_bybit_ledger_deduplicates_known_broker_order_ids():
     source=Path('app/api/routes_broker_native.py').read_text()
-    block=source.split("if p.provider=='BYBIT':",1)[1].split("elif p.provider=='MT5':",1)[0]
+    block=_performance_bybit_block(source)
     assert 'existing_ids' in block
     assert 'if oid and oid in existing_ids:continue' in block
