@@ -13,7 +13,7 @@ log_event() {
   line="$(date -u '+%Y-%m-%dT%H:%M:%SZ') ${message}"
   echo "${line}"
   if [[ -d "$(dirname "${WATCHDOG_LOG}")" && -w "$(dirname "${WATCHDOG_LOG}")" ]]; then
-    printf '%s\\n' "${line}" >> "${WATCHDOG_LOG}"
+    printf '%s\n' "${line}" >> "${WATCHDOG_LOG}"
   fi
 }
 
