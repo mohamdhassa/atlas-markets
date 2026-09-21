@@ -61,12 +61,17 @@ async def market_monitor(user: User = Depends(get_current_user), db: Session = D
         decision=(analysis or {}).get('decision') if analysis else None
         gate='NOT_CONFIGURED'
         gate_reasons=['RESEARCH_ONLY_NOT_CONFIGURED']
-        if r:
+        # Only AUTO_TRADE rows may expose execution readiness. WATCH/SIGNALS
+        # remain analytical even though readiness is also calculated for sizing/risk preview.
+        if cfg and str(cfg.mode).upper() != 'AUTO_TRADE':
+            gate='MONITOR_ONLY'
+            gate_reasons=['MODE_'+str(cfg.mode).upper()]
+        elif r:
             gate=r.get('readiness') or 'BLOCK'
             gate_reasons=r.get('blockers') or ([r.get('reason')] if r.get('reason') else [])
         elif cfg:
             gate='MONITOR_ONLY'
-            gate_reasons=['MODE_'+str(cfg.mode)]
+            gate_reasons=['MODE_'+str(cfg.mode).upper()]
         items.append({
             'market':u.market,'symbol':u.symbol,'provider':u.provider,'environment':u.environment,
             'configured':bool(cfg),'mode':cfg.mode if cfg else 'RESEARCH','timeframe':(analysis or {}).get('timeframe') or '5m',
