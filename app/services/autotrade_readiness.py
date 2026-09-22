@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import httpx
 from sqlalchemy import select
 
 from app.brokers.bybit_private import BybitPrivateClient
@@ -67,6 +68,15 @@ def _ibkr_quote_price(quote, decision):
         if math.isfinite(price) and price > 0:
             return price
     return 0.0
+
+
+def _ibkr_provider_unavailable(exc: Exception) -> bool:
+    """Return True only for IBKR bridge/network availability failures."""
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in {502, 503, 504}
+    return False
 
 
 def _provider_execution_blockers(profile):
@@ -358,7 +368,15 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 "blockers": blockers,
             })
         except Exception as exc:
-            rows.append({**base, "readiness": "BLOCK", "reason": f"{type(exc).__name__}: {str(exc) or repr(exc)}"})
+            if profile.provider == "IBKR" and _ibkr_provider_unavailable(exc):
+                rows.append({
+                    **base,
+                    "readiness": "PROVIDER_UNAVAILABLE",
+                    "reason": "IBKR_PROVIDER_UNAVAILABLE",
+                    "provider_status": "UNAVAILABLE",
+                })
+            else:
+                rows.append({**base, "readiness": "BLOCK", "reason": f"{type(exc).__name__}: {str(exc) or repr(exc)}"})
 
     return {
         "execution_enabled": False,
@@ -374,5 +392,6 @@ async def autotrade_readiness(db, *, user_id) -> dict:
         "configured_count": len(configs),
         "pass_count": sum(x.get("readiness") == "PASS" for x in rows),
         "block_count": sum(x.get("readiness") == "BLOCK" for x in rows),
+        "provider_unavailable_count": sum(x.get("readiness") == "PROVIDER_UNAVAILABLE" for x in rows),
         "items": rows,
     }
