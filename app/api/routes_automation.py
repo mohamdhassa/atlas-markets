@@ -21,7 +21,7 @@ class AutomationUpdate(BaseModel):
     auto_execute_paper:bool|None=None
     interval_seconds:int=Field(300,ge=30,le=86400)
     symbols:list[str]=Field(default_factory=lambda:["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","BNBUSDT"])
-def _state_payload(s):return {"enabled":s.enabled,"killed":s.killed,"simulation_execution":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at,"execution_policy":"CERTIFIED_ROUTES_ONLY","certified_routes":[{"provider":"MT5","environment":"DEMO"},{"provider":"IBKR","environment":"PAPER","max_shares_per_order":IBKR_CERTIFIED_MAX_SHARES_PER_ORDER}],"blocked_routes":{"BYBIT":"PROVIDER_EXECUTION_NOT_CERTIFIED"}}
+def _state_payload(s):return {"enabled":s.enabled,"killed":s.killed,"simulation_execution":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at,"execution_policy":"CERTIFIED_ROUTES_ONLY","certified_routes":[{"provider":"BYBIT","environment":"TESTNET/DEMO","product":"SPOT","sell_policy":"ATLAS_MANAGED_INVENTORY_ONLY"},{"provider":"MT5","environment":"DEMO"},{"provider":"IBKR","environment":"PAPER","max_shares_per_order":IBKR_CERTIFIED_MAX_SHARES_PER_ORDER}],"blocked_routes":{"BYBIT_LIVE":"LIVE_MONEY_NOT_ARMED"}}
 @router.get('/state')
 def state(_:User=Depends(get_current_user),db:Session=Depends(get_db)):return _state_payload(get_or_create_state(db))
 @router.put('/state')
