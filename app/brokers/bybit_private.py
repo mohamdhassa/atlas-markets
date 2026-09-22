@@ -108,7 +108,7 @@ class BybitPrivateClient:
         if not rows:
             raise BybitPrivateError(f"SPOT_INSTRUMENT_METADATA_MISSING:{symbol}")
         lot = rows[0].get("lotSizeFilter") or {}
-        qty_step = str(lot.get("qtyStep") or "")
+        qty_step = str(lot.get("qtyStep") or lot.get("basePrecision") or "")
         min_qty = str(lot.get("minOrderQty") or "")
         if not qty_step:
             raise BybitPrivateError(f"SPOT_QTY_STEP_MISSING:{symbol}")
