@@ -312,14 +312,23 @@ async def run_safe_scan():
                         continue
                     scan.signals_count += 1
                     scan.approved_count += 1
-                    if provider == "BYBIT":
-                        result = await _execute_bybit(db, user_id=user_id, item=item)
-                    elif provider == "MT5":
-                        result = await _execute_mt5(db, user_id=user_id, item=item)
-                    elif provider == "IBKR":
-                        result = await _execute_ibkr(db, user_id=user_id, item=item)
-                    else:
-                        result = {"market": item.get("market"), "symbol": item.get("symbol"), "provider": provider, "status": "BLOCK", "reason": automation_certification_blocker(provider, None)}
+                    try:
+                        if provider == "BYBIT":
+                            result = await _execute_bybit(db, user_id=user_id, item=item)
+                        elif provider == "MT5":
+                            result = await _execute_mt5(db, user_id=user_id, item=item)
+                        elif provider == "IBKR":
+                            result = await _execute_ibkr(db, user_id=user_id, item=item)
+                        else:
+                            result = {"market": item.get("market"), "symbol": item.get("symbol"), "provider": provider, "status": "BLOCK", "reason": automation_certification_blocker(provider, None)}
+                    except Exception as exc:
+                        result = {
+                            "market": item.get("market"),
+                            "symbol": item.get("symbol"),
+                            "provider": provider,
+                            "status": "BLOCK",
+                            "reason": f"EXECUTION_ERROR:{_short(exc, 100)}",
+                        }
                     results.append(result)
                     _persist_action(db, scan, user_id, item, result)
                     if result.get("status") == "EXECUTED":
