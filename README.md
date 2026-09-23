@@ -143,6 +143,7 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 - `docs/TESTING_AND_CERTIFICATION.md`
 - `docs/ORACLE_DEPLOYMENT.md`
 - `docs/ROADMAP.md`
+- `docs/RELEASE_V78.md`
 
 ## Engineering rule
 
