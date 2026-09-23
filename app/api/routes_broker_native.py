@@ -38,6 +38,19 @@ def _ibkr(p):
 def _f(v):
  try:return float(v or 0)
  except:return 0.0
+
+def _execution_time_ms(row):
+ for key in ('time','executed_at','execution_time','timestamp','datetime'):
+  value=row.get(key)
+  if value in (None,''):continue
+  if isinstance(value,(int,float)):
+   number=int(value);return number*1000 if number and number<10_000_000_000 else number
+  text=str(value).strip()
+  if text.isdigit():
+   number=int(text);return number*1000 if number and number<10_000_000_000 else number
+  try:return int(datetime.fromisoformat(text.replace('Z','+00:00')).timestamp()*1000)
+  except ValueError:continue
+ return 0
 def _mt5_market(symbol):
  s=str(symbol or '').upper().replace('/','')
  if s.startswith(('XAU','XAG','XPT','XPD')):return 'METAL'
@@ -145,7 +158,7 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
        lot=inventory[key][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;lot[0]-=take;remaining-=take
        if lot[0]<=1e-12:inventory[key].pop(0)
       if matched>0 and remaining<=1e-12:
-       row['pnl']=round(qty*_f(price)-cost,8);row['pnl_available']=True
+       row['pnl']=round(qty*_f(price)-cost,8);row['pnl_available']=True;row['entry_price']=cost/matched if matched else None
     trade_rows.extend(bybit_report_rows)
    elif p.provider=='MT5':
     c=_mt5(p);a=await c.account();hist=await c.history_deals(days);equity=_f(a.get('equity'));available=_f(a.get('margin_free'));account_market='FX+METAL+COMMODITY'
@@ -155,9 +168,12 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
    else:
     c=_ibkr(p);a=await c.account();hist=await c.executions(days);equity=_f(a.get('equity'));available=_f(a.get('available'));account_market='STOCK+ETF'
     for x in hist.get('list',[]):
-     symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':0,'side':x.get('side'),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
+     symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':_execution_time_ms(x),'side':x.get('side'),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
    account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'equity':equity,'available':available})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
+ for row in trade_rows:
+  stamp=int(row.get('time') or 0)
+  row['executed_at']=datetime.fromtimestamp(stamp/1000,tz=timezone.utc).isoformat() if stamp else None
  by_account=defaultdict(list);by_market=defaultdict(list);by_symbol=defaultdict(list)
  for r in trade_rows:by_account[r['profile_id']].append(r);by_market[r['market']].append(r);by_symbol[f"{r['market']}:{r['symbol']}"].append(r)
  accounts=[{**a,**_stats(by_account[a['profile_id']])} for a in account_rows]
