@@ -1,6 +1,6 @@
 # ATLAS MARKETS
 
-**v2 consolidated-core rebuild — multi-provider simulation + Oracle Cloud**
+**v78 production — consolidated-core multi-provider simulation on Oracle Cloud**
 
 ATLAS MARKETS is a multi-market, multi-provider trading analysis, simulation and operations platform for stocks, ETFs, FX, metals, commodities and crypto.
 
@@ -144,6 +144,8 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 - `docs/ORACLE_DEPLOYMENT.md`
 - `docs/ROADMAP.md`
 - `docs/RELEASE_V78.md`
+- `docs/PRODUCTION_DEPLOYMENT_V78.md`
+- `docs/ROADMAP_V79.md`
 
 ## Engineering rule
 
