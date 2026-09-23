@@ -1,104 +1,92 @@
-# ATLAS MARKETS — Final Handover
+# ATLAS MARKETS — Operational Handover
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
+Production checkpoint: v77 `a141d2c`
 
-## Release checkpoints
+## Purpose
 
-- `v1.0.0` — completed Simulation Release and permanent rollback/reference tag.
-- `main` — v1.1 deployment candidate for multi-broker observation and Oracle Cloud hosting.
+ATLAS MARKETS is an Oracle-hosted multi-provider market analysis, simulation, automation and reporting platform. Current production work is simulation-only: Bybit Testnet, IBKR Paper and provider-specific Demo routes. Live Money remains separately gated.
 
-## What v1.1 changes
+## Current production stack
 
-- promotes all eligible certified simulation symbols to `AUTO_TRADE` through an ADMIN-only bulk endpoint;
-- keeps Bybit execution blocked until provider-side `10024` is resolved and re-certified;
-- keeps IBKR Paper enabled under WhatIf, duplicate guards, broker fill verification and max 1 share/order;
-- introduces Oracle production compose/environment assets;
-- moves the always-on app/data tier to Oracle;
-- keeps MT5/IBKR broker bridges on private execution nodes;
-- refreshes all operational documentation.
+- FastAPI application/frontend
+- PostgreSQL 17
+- Redis 7
+- Oracle Cloud production host
+- IB Gateway Paper + private IBKR bridge on Oracle
+- Bybit Testnet HTTPS API
+- Twelve Data market/historical data
+- Fusion MT5 Demo integration with terminal authorization dependency
 
-## Current certified execution routes
+## Current checkpoints
 
-1. Fusion MT5 Demo — FX, metals, commodities.
-2. IBKR Paper — stocks, ETFs; max 1 share/order.
+- v74: Bybit Spot metadata/execution isolation
+- v75: Live Activity Log
+- v76: Bybit managed SELL wallet reconciliation
+- v77: operational frontend visibility
+- Production `main`: `a141d2c`
 
-Blocked/non-execution:
+## Current broker state
 
-- Bybit Testnet — provider `10024`.
-- Twelve Data — data only.
-- Live Money — gated.
+Bybit Testnet is a managed Spot simulation route. ATLAS tracks its own managed inventory and must not silently sell unrelated broker wallet holdings. The v76 reconciliation path only reduces ATLAS managed quantity to broker-observed balance before a SELL; it does not increase managed inventory from external holdings. The next natural ETH/SOL SELL remains the runtime proof point for the reconciliation fix.
 
-## Bulk AUTO_TRADE
+IBKR Paper is connected through the Oracle-hosted Gateway and bridge. Strategy/risk BLOCK is distinct from provider unavailability. Gateway authentication can still require manual IBKR login/2FA after security/session resets. Do not automate or bypass 2FA.
 
-ADMIN endpoint:
+## Deployment rule
 
-`POST /strategies/symbols/auto-trade/eligible`
+Use the production app-only rebuild when only application code changes:
 
-It may seed missing starter symbols and promote all configured symbols on ready certified simulation routes. It returns `created`, `promoted`, and `blocked` lists. Bybit and Live Money remain blocked by design.
-
-## Oracle deployment
-
-Use:
-
-- `docker-compose.oracle.yml`
-- `.env.oracle.example`
-- `docs/ORACLE_DEPLOYMENT.md`
-
-Oracle hosts FastAPI, PostgreSQL and Redis. Public ingress should terminate at HTTPS 443. Do not expose PostgreSQL, Redis, FastAPI internal port or broker bridge ports publicly.
-
-## Broker execution nodes
-
-### MT5
-
-Requires always-on Windows MT5 Demo terminal with Algo Trading enabled and `tools/mt5_bridge.py` running.
-
-### IBKR
-
-Requires TWS/IB Gateway Paper session plus `tools/ibkr_bridge.py`. Appropriate real-time U.S. market-data subscriptions are recommended before broad unattended stock/ETF automation.
-
-Oracle should reach bridge nodes via a private VPN. If the execution node is a personal computer, trading stops when that machine sleeps/reboots/goes offline.
-
-## Bybit resolution
-
-Do not modify ATLAS to suppress or ignore `10024`. Use the same Testnet account in Bybit UI, reproduce the product restriction if possible, open support with the account UID and exact error, then re-run diagnostics and a controlled open/close certification after provider approval.
-
-## Local v1.1 acceptance
-
-```powershell
-cd "C:\Users\USER\Downloads\altas-markets"
-git pull origin main
-docker compose stop app
-docker compose rm -f app
-docker compose build --no-cache app
-docker compose up -d app
-docker compose exec app python -m pytest -q
-docker compose ps
+```bash
+cd ~/atlas-markets
+git checkout main
+git fetch origin
+git status --short
+git reset --hard origin/main
+docker compose -f docker-compose.yml -f docker-compose.oracle.prod.yml up -d --build --no-deps app
+sleep 10
+curl -s http://127.0.0.1:8100/health
+echo
 ```
 
-Then authenticate as ADMIN and call the bulk AUTO_TRADE endpoint. Review its blocked list before starting the observation run.
+Before reset, inspect `git status --short`. Production-only untracked files must not be deleted or overwritten, including the Oracle production compose override and operational backup artifacts.
 
-## Oracle acceptance
+## Testing rule
 
-See `ORACLE_DEPLOYMENT.md`. Minimum acceptance:
+Prefer an isolated worktree and disposable container. Do not use a Compose test command that can recreate the production PostgreSQL service.
 
-- app/PostgreSQL/Redis healthy;
-- migration at head;
-- tests pass;
-- `/api/system` healthy;
-- HTTPS works;
-- private bridge connectivity works;
-- one monitored scan completes;
-- MT5/IBKR broker truth matches ATLAS action ledger;
-- backup completes successfully.
+```bash
+git fetch origin
+rm -rf /tmp/atlas-test
+git worktree prune
+git worktree add --detach /tmp/atlas-test origin/<branch>
+docker run --rm -e PYTHONPATH=/app -v /tmp/atlas-test:/app -w /app atlas-markets-app pytest -q
+```
 
-## Backup rule
+## Operational verification
 
-Database dumps, `.env`, `.env.oracle`, broker secrets and private keys never go into Git. The repository now ignores `backups/` and database dump extensions.
+After deployment verify:
+- `/health` is OK;
+- latest automation scans continue;
+- provider/account states are truthful;
+- broker fills are not inferred from decision rows;
+- Bybit reconciliation is verified only after a natural SELL;
+- IBKR API port/bridge recover correctly after any Gateway authentication event;
+- Live Money remains disabled.
 
-## Observation period
+## Frontend behavior
 
-Run the v1.1 simulation continuously for several weeks without repeatedly changing strategy logic. Track P&L, drawdown, profit factor, broker cancellations, risk blocks, action lineage, automation uptime and broker/ATLAS consistency.
+Live Activity is broker-aware. Decision-only rows show `N/A · no broker fill` for execution-only fields. v77 also improves provider-unavailable/auth attention visibility and reconciliation markers.
 
-## Live Money
+## Security
 
-Live Money remains a separate future certification. Oracle hosting and broad AUTO_TRADE simulation do not change that boundary.
+Never commit or paste credentials, API secrets, session tokens, 2FA codes, SSH private keys or database dumps. Keep PostgreSQL, Redis, broker bridge ports, IBKR API and VNC private. VNC should be reached through an SSH tunnel.
+
+## Remaining work
+
+- natural Bybit SELL reconciliation verification;
+- IBKR restart/auth observation;
+- managed-vs-external portfolio visibility;
+- continued multi-week simulation measurement;
+- documentation/architecture refresh after each meaningful production change.
+
+Live Money requires a separate future certification and explicit human decision; simulation deployment does not authorize it.
