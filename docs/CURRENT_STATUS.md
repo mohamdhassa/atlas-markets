@@ -1,115 +1,62 @@
 # ATLAS MARKETS — Current Status
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
+Production checkpoint: v77 `a141d2c`
 
-## Baseline
+## Production state
 
-- v1.0.0 Simulation Release: COMPLETE and tagged.
-- v1.1: active deployment/expansion candidate.
-- Database baseline verified at Alembic head before v1.1 work.
-- Live Money remains gated.
+ATLAS MARKETS is running on Oracle Cloud with FastAPI, PostgreSQL 17 and Redis 7 healthy. Production deployment uses the Oracle compose override and app-only upgrades are used when database/Redis changes are not required.
 
-## v1.1 objectives
+Live Money remains gated. Current automatic execution work is limited to certified simulation environments.
 
-1. Promote all eligible certified simulation symbols to AUTO_TRADE.
-2. Use both certified execution brokers during the observation period: Fusion MT5 Demo and IBKR Paper.
-3. Resolve Bybit `10024` through provider support/account-product approval and re-certify before enabling crypto execution.
-4. Run the application, PostgreSQL and Redis continuously on Oracle Cloud.
-5. Keep broker bridges reachable privately from Oracle.
-6. Keep documentation synchronized with the deployed architecture.
-
-## Provider state
-
-### Fusion MT5 Demo
-
-- Connectivity: CERTIFIED
-- Execution: CERTIFIED
-- Automatic route: ENABLED when account/strategy/risk gates pass
-- Markets: FX, metals, commodities
-
-### IBKR Paper
-
-- Connectivity: CERTIFIED
-- Execution: CERTIFIED
-- Automatic route: ELIGIBLE
-- Markets: stocks, ETFs
-- Hard cap: 1 share/order
-- WhatIf + broker fill verification required
-- Real-time API market-data subscriptions strongly recommended for broad unattended U.S. equity automation
+## Providers
 
 ### Bybit Testnet
+- Connected managed Spot simulation route.
+- AUTO_TRADE universe: BNBUSDT, BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT.
+- BUY execution has been verified on Testnet.
+- SELL is restricted to ATLAS-managed inventory; unrelated wallet holdings are not adopted automatically.
+- v76 added broker-wallet reconciliation before managed SELL submission to address managed quantity vs broker balance drift.
+- Runtime verification of the next naturally occurring ETH/SOL SELL is still pending. Do not force a trade or change risk rules solely to test it.
+- Live Bybit execution remains gated.
 
-- Private/API diagnostics: PASS
-- Wallet/account/permissions: PASS
-- Controlled order reaches provider
-- Provider response: `10024` compliance/product restriction
-- Execution certification: BLOCKED
-- Automation: provider gate remains active
+### Interactive Brokers Paper
+- Connected Paper route for stocks/ETFs.
+- Certified safeguard: maximum 1 share/order plus existing preflight/duplicate controls.
+- Provider-unavailable conditions are represented separately from strategy/risk BLOCK decisions.
+- Gateway and bridge run on Oracle. IB Gateway authentication/2FA remains an operational dependency after security/session resets.
+- Daily authenticated restart behavior is under observation; do not bypass IBKR 2FA.
+
+### Fusion Markets MT5 Demo
+- Demo integration exists.
+- Terminal/authorization health remains an external runtime dependency and should be verified independently before relying on the route.
 
 ### Twelve Data
+- Data provider only; never an execution route.
 
-- Market/historical data only
-- Never execution
+## v74-v77 operational changes
 
-## Bulk AUTO_TRADE
+- v74: Bybit Spot metadata fallback and per-symbol execution isolation.
+- v75: broker-aware Live Activity Log with execution/fill context.
+- v76: Bybit Testnet managed SELL balance reconciliation and explicit no-fill UI values.
+- v77: frontend operational visibility for provider state, BLOCK/provider-unavailable counts, reconciliation markers and Live Activity rendering.
 
-v1.1 adds ADMIN endpoint:
+## Frontend
 
-`POST /strategies/symbols/auto-trade/eligible`
+The Live Activity Log now distinguishes decision rows from broker fills. Non-filled rows display `N/A · no broker fill` for execution-only values. Broker/account/environment, reason, quantity, price/notional, fee, realized P&L, broker IDs and scan IDs are exposed when available.
 
-It seeds/promotes starter-universe symbols only on ready certified simulation routes. MT5 Demo and IBKR Paper can be promoted. Bybit is reported as blocked. Live Money is never included.
+## Acceptance evidence
 
-## Oracle deployment
+The v77 branch passed the full pytest suite on Oracle (four existing skipped tests; only known dependency deprecation warnings). Production was rebuilt from `main` and `/health` returned application, database and Redis status `ok`.
 
-New assets:
+## Open verification items
 
-- `docker-compose.oracle.yml`
-- `.env.oracle.example`
-- `docs/ORACLE_DEPLOYMENT.md`
-
-Oracle target:
-
-- FastAPI bound internally to `127.0.0.1:8000`
-- PostgreSQL/Redis private Docker network
-- persistent volumes
-- `restart: unless-stopped`
-- HTTPS reverse proxy/load balancer
-- private VPN to execution nodes
-
-## Execution-node requirement
-
-A fully online website does not guarantee broker execution. Fusion MT5 requires an always-on Windows execution node. IBKR requires TWS/IB Gateway plus the ATLAS IBKR bridge. For a true multi-week unattended run, these execution nodes must also remain online and reachable from Oracle.
-
-## Documentation state
-
-Updated for v1.1:
-
-- README
-- Architecture
-- ERD
-- Authorization
-- Providers
-- Testing & Certification
-- Oracle Deployment
-- Current Status
-
-Final handover/roadmap are updated as part of the same rollout before the Oracle cutover is considered complete.
-
-## Immediate acceptance sequence
-
-1. Pull v1.1 changes locally.
-2. Rebuild app.
-3. Run full pytest.
-4. Call bulk eligible AUTO_TRADE endpoint as ADMIN.
-5. Review promoted vs blocked symbols.
-6. Run one monitored automatic scan.
-7. Confirm MT5 + IBKR broker truth.
-8. Prepare Oracle VM secrets/network.
-9. Restore/copy PostgreSQL state to Oracle.
-10. Establish private broker-bridge connectivity.
-11. Run Oracle acceptance suite.
-12. Begin multi-week observation.
+1. Observe the next natural Bybit ETH/SOL SELL and verify v76 reconciliation prevents the prior `170131 Insufficient balance` failure.
+2. Observe the next IB Gateway daily restart and confirm whether authentication survives as configured; weekly/security-reset 2FA may still require manual action.
+3. Continue frontend portfolio work to distinguish ATLAS-managed positions from broker-held/external assets wherever broker data supports that distinction.
+4. Keep documentation synchronized after operational changes.
+5. Run a multi-week simulation observation without repeatedly changing strategy/risk logic.
 
 ## Safety boundary
 
-Do not remove the Bybit provider gate to make the UI look complete. Do not expose bridge/database ports publicly. Do not enable Live Money as part of the Oracle migration.
+Do not enable Live Money as part of routine deployment. Do not manually adopt external broker holdings into ATLAS-managed inventory. Do not bypass broker authentication, provider restrictions, risk gates or the kill switch.

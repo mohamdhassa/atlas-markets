@@ -1,12 +1,12 @@
 # ATLAS MARKETS — Consolidated Core Roadmap
 
-Last updated: 2026-09-15
+Last updated: 2026-09-23
 
 ## Baseline
 
 v1.0.0 remains the rollback/reference Simulation Release. The active work is the `feature/frontend-core-rebuild` branch and PR #34.
 
-The objective is not another phase layer. It is one maintainable application core with provider integrations, analysis, strategy/risk, portfolio/reporting, administration and a responsive frontend using stable APIs.
+Production main is now at the v77 operational checkpoint. The objective remains one maintainable application core with provider integrations, analysis, strategy/risk, portfolio/reporting, administration and a responsive frontend using stable APIs.
 
 ## 1. Frontend consolidation
 
@@ -42,7 +42,9 @@ The objective is not another phase layer. It is one maintainable application cor
 - [ ] Run controlled certification against the currently configured Testnet account.
 - [ ] Verify broker order history and wallet movement against ATLAS state.
 - [ ] Verify managed inventory reconciliation after restart.
-- [ ] Surface clear provider errors/readiness in Operations.
+- [x] Surface clear provider errors/readiness in Operations.
+- [x] Add managed Spot balance reconciliation before Bybit Testnet SELL.
+- [ ] Verify the next natural ETH/SOL SELL after v76 reconciliation.
 
 ### Interactive Brokers
 
@@ -50,7 +52,9 @@ The objective is not another phase layer. It is one maintainable application cor
 - [x] WhatIf preflight.
 - [x] Certified 1-share/order cap.
 - [x] broker fill/cancel verification.
-- [ ] Preserve current working route through rebuild regression testing.
+- [x] Preserve current working route through rebuild regression testing.
+- [x] Distinguish IBKR provider-unavailable state from strategy/risk BLOCK.
+- [ ] Observe the next scheduled Gateway restart and verify authenticated-session behavior.
 - [ ] Validate configured stock/ETF symbols during market hours.
 
 ### Fusion Markets / MT5
