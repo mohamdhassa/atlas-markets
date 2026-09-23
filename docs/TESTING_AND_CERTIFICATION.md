@@ -1,6 +1,6 @@
 # ATLAS MARKETS — Testing and Certification
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
 
 ## Release rule
 
@@ -51,20 +51,18 @@ Known operational dependency: real-time market-data entitlement. The bridge can 
 ### Bybit Testnet
 
 Connectivity/private API diagnostics: PASS.
-Execution certification: BLOCKED.
+Managed Spot simulation execution: CERTIFIED with managed-inventory safeguards.
 
-Controlled order result: Bybit `10024` compliance/product restriction.
+Verified:
+- Testnet account connectivity;
+- Spot BUY execution;
+- broker order evidence;
+- ATLAS-managed inventory persistence;
+- external/unmanaged wallet holdings are not automatically sold.
 
-Re-certification checklist after Bybit support resolves account/product access:
+v76 adds pre-SELL reconciliation when ATLAS managed quantity is above the broker-observed wallet quantity. The next natural ETH/SOL SELL remains the required runtime verification for the previously observed insufficient-balance case. Do not force a trade or relax risk rules solely for certification.
 
-1. private diagnostics PASS;
-2. manual Testnet product access works;
-3. controlled small order accepted;
-4. position appears;
-5. controlled reduce-only close succeeds;
-6. final position returns flat;
-7. order/history evidence captured;
-8. only then add Bybit to certified automatic routes.
+Live Money remains separately gated.
 
 ## Bulk AUTO_TRADE v1.1
 
