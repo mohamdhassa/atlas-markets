@@ -1,6 +1,6 @@
 # ATLAS MARKETS — Consolidated Core Roadmap
 
-Last updated: 2026-09-15
+Last updated: 2026-09-23
 
 ## Baseline
 
@@ -39,10 +39,11 @@ The objective is not another phase layer. It is one maintainable application cor
 - [x] Certification reconciliation.
 - [x] Provider fill verification.
 - [x] Simulation-environment and certification gates.
-- [ ] Run controlled certification against the currently configured Testnet account.
-- [ ] Verify broker order history and wallet movement against ATLAS state.
-- [ ] Verify managed inventory reconciliation after restart.
-- [ ] Surface clear provider errors/readiness in Operations.
+- [x] Run controlled certification against the configured Testnet account.
+- [x] Verify broker order history and wallet movement against ATLAS state.
+- [x] Reconcile managed SELL quantities to available broker balance.
+- [x] Surface provider state, reconciliation markers and broker context in Operations/Live Activity.
+- [ ] Continue restart and long-duration managed-inventory reconciliation observation.
 
 ### Interactive Brokers
 
@@ -90,7 +91,7 @@ GitHub Actions is currently unable to start because of the account billing lock;
 
 Until Actions is restored:
 
-- [ ] Run full pytest suite in an isolated local/Oracle rebuild container.
+- [x] Run full pytest suite in the Oracle production app container (216 tests passed on 2026-09-23 before v78).
 - [ ] Run clean-database migration test.
 - [ ] Run API smoke tests.
 - [ ] Run ADMIN/USER frontend smoke tests.

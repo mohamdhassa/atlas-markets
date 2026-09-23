@@ -117,7 +117,7 @@ def promote_all_eligible_auto_trade(payload:BulkAutoTradeRequest,user:User=Depen
   changed=row.mode!='AUTO_TRADE' or not row.enabled;row.mode='AUTO_TRADE';row.enabled=True
   if changed:promoted.append({'id':str(row.id),'market':row.market,'symbol':row.symbol,'provider':p.provider,'environment':p.environment})
  db.commit()
- return {'policy':'CERTIFIED_SIMULATION_ROUTES_ONLY','created_count':len(created),'promoted_count':len(promoted),'blocked_count':len(blocked),'created':created,'promoted':promoted,'blocked':blocked,'note':'Bybit remains blocked until provider-side execution certification succeeds; Live Money routes are never bulk-promoted.'}
+ return {'policy':'CERTIFIED_SIMULATION_ROUTES_ONLY','created_count':len(created),'promoted_count':len(promoted),'blocked_count':len(blocked),'created':created,'promoted':promoted,'blocked':blocked,'note':'MT5 Demo, IBKR Paper, and Bybit Testnet/Demo Spot are eligible when their routes are ready; Live Money routes are never bulk-promoted.'}
 @router.post('/route')
 def resolve_symbol_route(payload:RouteRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  try:

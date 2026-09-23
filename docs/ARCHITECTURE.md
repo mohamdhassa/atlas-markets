@@ -1,6 +1,6 @@
 # ATLAS MARKETS — Architecture
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
 Target: v1.1 multi-broker simulation on Oracle Cloud
 
 ## Product boundary
@@ -16,7 +16,7 @@ ATLAS MARKETS is a multi-market automated trading platform with a strict separat
 | Commodities | Fusion MT5 | Demo | certified automatic execution |
 | Stocks | IBKR | Paper | certified automatic execution with safeguards |
 | ETFs | IBKR | Paper | certified automatic execution with safeguards |
-| Crypto | Bybit | Testnet | connected/private API healthy; execution blocked by Bybit `10024` |
+| Crypto | Bybit | Testnet / Demo Spot | certified automatic execution with managed-inventory safeguards |
 | Market/historical data | Twelve Data | data-only | connected; never execution |
 
 ## High-level topology
@@ -99,7 +99,7 @@ Inputs include provider-native prices/candles, Twelve Data, historical storage a
 - `SIGNALS` — compute/show signals but do not execute.
 - `AUTO_TRADE` — eligible for automatic execution after all safety/provider gates pass.
 
-v1.1 adds an ADMIN bulk-promotion endpoint for **eligible certified simulation routes only**. It can seed/promote MT5 Demo and IBKR Paper symbols while explicitly leaving Bybit blocked and never bulk-promoting Live Money.
+The ADMIN bulk-promotion endpoint handles **eligible certified simulation routes only**. It can seed/promote MT5 Demo, IBKR Paper, and Bybit Testnet/Demo Spot symbols while never bulk-promoting Live Money.
 
 ### 5. Risk/preflight layer
 
@@ -141,7 +141,7 @@ For broad stock/ETF automation, real-time U.S. market-data subscriptions are rec
 
 #### Bybit Testnet
 
-Private API diagnostics, wallet, account and permissions pass. Order submission reaches Bybit but Bybit returns `10024` compliance/product restriction. The route remains `PROVIDER_EXECUTION_NOT_CERTIFIED`; ATLAS will not bypass this provider decision.
+Private API diagnostics, wallet, account permissions, controlled Spot execution, and broker-fill verification pass. Testnet/Demo Spot is a certified simulation route. BUY sizing uses Bybit instrument metadata, and SELL execution is restricted to persisted ATLAS-managed inventory. Before submission, the managed quantity is reconciled to the broker's available base-asset balance and rounded down to the exchange quantity step. Per-symbol execution failures are isolated so one rejected symbol does not fail an entire scan. Bybit Live remains uncertified and gated.
 
 ### 7. Automation/audit layer
 

@@ -1,6 +1,6 @@
 # ATLAS MARKETS — Providers
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
 
 ## Provider matrix
 
@@ -8,7 +8,7 @@ Last updated: 2026-08-30
 |---|---|---|---|
 | Fusion Markets MT5 | FX, metals, commodities | Demo | CERTIFIED |
 | Interactive Brokers | Stocks, ETFs | Paper | CERTIFIED with max 1 share/order |
-| Bybit | Crypto | Testnet | BLOCKED by provider `10024` |
+| Bybit | Crypto Spot | Testnet / Demo | CERTIFIED with managed-inventory and balance-reconciliation safeguards |
 | Twelve Data | Market/historical data | API data service | NEVER execution |
 
 ## Fusion Markets MT5
@@ -47,35 +47,24 @@ The v1.1 bulk AUTO_TRADE operation may promote configured IBKR Paper stock/ETF s
 
 Current environment: Testnet.
 
-Confirmed working:
+Certified simulation behavior:
 
 - authentication;
 - wallet/private API;
 - read/write permissions;
-- ContractTrade Order/Position permissions;
 - unified account status;
 - account balance;
-- order request reaches Bybit.
+- Spot instrument metadata using `qtyStep` with `basePrecision` fallback;
+- controlled Spot BUY/SELL execution and fill verification;
+- persisted ATLAS-managed inventory;
+- SELL quantity reconciliation against the available broker wallet balance;
+- exchange-step rounding before submission;
+- per-symbol failure isolation;
+- read-only operational activity with broker/account context.
 
-Current blocker:
+Automatic SELL orders never liquidate unrelated or manually acquired wallet holdings. If persisted managed inventory exceeds the available broker balance because of fees, rounding, manual activity, or an earlier partial fill, ATLAS caps the SELL to the available balance and rounds down. If no valid quantity remains, execution is blocked safely.
 
-- Bybit rejects the controlled order with error `10024` and a regulatory/product availability message.
-
-ATLAS classification: `PROVIDER_EXECUTION_NOT_CERTIFIED`.
-
-This is not a bad-secret or signature problem. Do not rotate keys simply to try to evade `10024`, do not use a VPN to misrepresent jurisdiction, and do not create false residency/account information.
-
-Resolution path:
-
-1. Log into the same Bybit Testnet account in the browser.
-2. Attempt the same perpetual product manually in Testnet.
-3. If the UI also blocks it, open a Bybit support ticket and provide the account UID, exact `10024` message and that this is Testnet/API product access.
-4. If support changes/approves account product access, rerun ATLAS diagnostics.
-5. Run a controlled test order.
-6. Add/verify controlled reduce-only close lifecycle.
-7. Only then change Bybit automation certification.
-
-Until step 7, crypto strategies may remain WATCH/SIGNALS/AUTO_TRADE-configured for analysis if desired, but the automatic execution layer will still block Bybit.
+Only Bybit Testnet/Demo Spot is certified. Derivatives and Live Money are outside this certification and remain gated.
 
 ## Twelve Data
 

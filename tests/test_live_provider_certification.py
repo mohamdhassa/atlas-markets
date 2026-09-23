@@ -13,10 +13,20 @@ def test_live_execution_providers_are_separately_locked():
     assert status['providers']['MT5']['live_certification'] == 'NOT_CERTIFIED'
     assert status['providers']['IBKR']['simulation_certification'] == 'CERTIFIED_PAPER'
     assert status['providers']['IBKR']['live_certification'] == 'NOT_CERTIFIED'
-    assert status['providers']['BYBIT']['simulation_certification'] == 'PROVIDER_BLOCKED_10024'
-    assert 'BYBIT_PROVIDER_RESTRICTION_10024' in status['providers']['BYBIT']['blockers']
+    assert status['providers']['BYBIT']['simulation_certification'] == 'CERTIFIED_TESTNET_DEMO_SPOT'
+    assert 'BYBIT_PROVIDER_RESTRICTION_10024' not in status['providers']['BYBIT']['blockers']
+    assert 'LIVE_BYBIT_EXECUTION_PATH_NOT_CERTIFIED' in status['providers']['BYBIT']['blockers']
     assert status['providers']['TWELVE_DATA']['live_certification'] == 'NOT_APPLICABLE'
     assert all(not status['providers'][p]['live_execution_allowed'] for p in ('MT5', 'IBKR', 'BYBIT', 'TWELVE_DATA'))
+
+
+def test_bybit_simulation_certification_does_not_unlock_live_money():
+    status = _live_certification_status()
+    bybit = status['providers']['BYBIT']
+    assert bybit['simulation_certification'] == 'CERTIFIED_TESTNET_DEMO_SPOT'
+    assert bybit['live_certification'] == 'NOT_CERTIFIED'
+    assert bybit['live_execution_allowed'] is False
+    assert status['status'] == 'LOCKED'
 
 
 def test_legacy_live_certification_module_is_not_runtime_loaded():

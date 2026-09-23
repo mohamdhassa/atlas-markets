@@ -1,6 +1,6 @@
 # ATLAS MARKETS — Current Status
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
 
 ## Baseline
 
@@ -12,8 +12,8 @@ Last updated: 2026-08-30
 ## v1.1 objectives
 
 1. Promote all eligible certified simulation symbols to AUTO_TRADE.
-2. Use both certified execution brokers during the observation period: Fusion MT5 Demo and IBKR Paper.
-3. Resolve Bybit `10024` through provider support/account-product approval and re-certify before enabling crypto execution.
+2. Use the certified simulation routes during the observation period: Fusion MT5 Demo, IBKR Paper, and Bybit Testnet/Demo Spot.
+3. Monitor Bybit managed-inventory and broker-balance reconciliation during controlled Spot automation.
 4. Run the application, PostgreSQL and Redis continuously on Oracle Cloud.
 5. Keep broker bridges reachable privately from Oracle.
 6. Keep documentation synchronized with the deployed architecture.
@@ -41,10 +41,12 @@ Last updated: 2026-08-30
 
 - Private/API diagnostics: PASS
 - Wallet/account/permissions: PASS
-- Controlled order reaches provider
-- Provider response: `10024` compliance/product restriction
-- Execution certification: BLOCKED
-- Automation: provider gate remains active
+- Spot BUY/SELL and broker-fill verification: PASS
+- Quantity metadata: `qtyStep` with `basePrecision` fallback
+- Managed SELL reconciliation: available broker balance + exchange-step rounding
+- Execution certification: CERTIFIED for Testnet/Demo Spot
+- Automation: ELIGIBLE when account, strategy and risk gates pass
+- Live Money and non-Spot products: NOT CERTIFIED
 
 ### Twelve Data
 
@@ -57,7 +59,7 @@ v1.1 adds ADMIN endpoint:
 
 `POST /strategies/symbols/auto-trade/eligible`
 
-It seeds/promotes starter-universe symbols only on ready certified simulation routes. MT5 Demo and IBKR Paper can be promoted. Bybit is reported as blocked. Live Money is never included.
+It seeds/promotes starter-universe symbols only on ready certified simulation routes. MT5 Demo, IBKR Paper, and Bybit Testnet/Demo Spot can be promoted. Live Money is never included.
 
 ## Oracle deployment
 
@@ -103,7 +105,7 @@ Final handover/roadmap are updated as part of the same rollout before the Oracle
 4. Call bulk eligible AUTO_TRADE endpoint as ADMIN.
 5. Review promoted vs blocked symbols.
 6. Run one monitored automatic scan.
-7. Confirm MT5 + IBKR broker truth.
+7. Confirm MT5, IBKR, and Bybit broker truth.
 8. Prepare Oracle VM secrets/network.
 9. Restore/copy PostgreSQL state to Oracle.
 10. Establish private broker-bridge connectivity.
@@ -112,4 +114,4 @@ Final handover/roadmap are updated as part of the same rollout before the Oracle
 
 ## Safety boundary
 
-Do not remove the Bybit provider gate to make the UI look complete. Do not expose bridge/database ports publicly. Do not enable Live Money as part of the Oracle migration.
+Do not broaden the Bybit certification beyond Testnet/Demo Spot. Do not expose bridge/database ports publicly. Do not enable Live Money as part of the Oracle migration.
