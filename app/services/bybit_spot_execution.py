@@ -118,6 +118,26 @@ def _fill_price(row: dict) -> float | None:
     return None
 
 
+def _base_coin(symbol: str) -> str:
+    symbol = _canonical_symbol(symbol)
+    for quote in ("USDT", "USDC", "USD"):
+        if symbol.endswith(quote) and len(symbol) > len(quote):
+            return symbol[:-len(quote)]
+    raise ValueError(f"UNSUPPORTED_SPOT_QUOTE:{symbol}")
+
+
+def _wallet_coin_quantity(wallet: dict, coin: str) -> float:
+    rows = wallet.get("list") or []
+    coins = (rows[0].get("coin") or []) if rows else []
+    for row in coins:
+        if str(row.get("coin") or "").upper() == str(coin or "").upper():
+            try:
+                return max(0.0, float(row.get("walletBalance") or 0))
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+
+
 async def execute_managed_spot_order(
     db: Session,
     *,
@@ -161,6 +181,38 @@ async def execute_managed_spot_order(
         return {**base, "status": "BLOCK", "reason": "SELL_EXCEEDS_ATLAS_MANAGED_INVENTORY", "managed_quantity": managed_before}
 
     client = _bybit_client(profile)
+    reconciliation = None
+    if side == "SELL":
+        wallet = await client.wallet()
+        broker_quantity = _wallet_coin_quantity(wallet, _base_coin(symbol))
+        if broker_quantity <= 1e-12:
+            inventory.managed_quantity = 0.0
+            inventory.average_entry_price = None
+            db.flush()
+            return {
+                **base,
+                "status": "BLOCK",
+                "reason": "BROKER_SPOT_BALANCE_EMPTY_RECONCILED",
+                "managed_quantity_before": managed_before,
+                "managed_quantity_after": 0.0,
+                "broker_quantity": broker_quantity,
+            }
+        if broker_quantity + 1e-12 < managed_before:
+            inventory.managed_quantity = broker_quantity
+            managed_before = broker_quantity
+            db.flush()
+            reconciliation = "ATLAS_MANAGED_INVENTORY_RECONCILED_TO_BROKER_BALANCE"
+        quantity = min(quantity, managed_before, broker_quantity)
+        base["quantity"] = quantity
+        if quantity <= 1e-12:
+            return {
+                **base,
+                "status": "BLOCK",
+                "reason": "NO_SELLABLE_ATLAS_MANAGED_INVENTORY",
+                "managed_quantity": managed_before,
+                "broker_quantity": broker_quantity,
+            }
+
     order_link_id = f"atlas-auto-{uuid.uuid4().hex[:20]}"
     broker_result = await client.place_test_spot_market_order(
         symbol=symbol,
@@ -213,6 +265,7 @@ async def execute_managed_spot_order(
         "fill_price": fill_price,
         "managed_quantity_before": managed_before,
         "managed_quantity_after": float(inventory.managed_quantity or 0),
+        "reconciliation": reconciliation,
         "broker_result": {**broker_result, "fill": fill},
         "executed_at": datetime.now(timezone.utc).isoformat(),
     }
