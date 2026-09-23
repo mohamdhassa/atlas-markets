@@ -1,6 +1,6 @@
 # ATLAS MARKETS — Testing and Certification
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
 
 ## Release rule
 
@@ -50,21 +50,18 @@ Known operational dependency: real-time market-data entitlement. The bridge can 
 
 ### Bybit Testnet
 
-Connectivity/private API diagnostics: PASS.
-Execution certification: BLOCKED.
+Status: CERTIFIED for Testnet/Demo Spot only.
 
-Controlled order result: Bybit `10024` compliance/product restriction.
+Required safeguards:
 
-Re-certification checklist after Bybit support resolves account/product access:
-
-1. private diagnostics PASS;
-2. manual Testnet product access works;
-3. controlled small order accepted;
-4. position appears;
-5. controlled reduce-only close succeeds;
-6. final position returns flat;
-7. order/history evidence captured;
-8. only then add Bybit to certified automatic routes.
+- private diagnostics and wallet access pass;
+- provider/environment is Testnet or Demo;
+- Spot instrument quantity metadata resolves through `qtyStep` or `basePrecision`;
+- only persisted ATLAS-managed inventory may be sold;
+- managed SELL quantity is capped to available broker balance and rounded down;
+- broker fills are verified and persisted;
+- a per-symbol broker failure does not fail the complete scan;
+- Live Money and non-Spot products remain uncertified.
 
 ## Bulk AUTO_TRADE v1.1
 
@@ -74,7 +71,7 @@ Expected behavior:
 
 - Fusion MT5 Demo symbols -> promoted/created as AUTO_TRADE when route ready.
 - IBKR Paper stocks/ETFs -> promoted/created as AUTO_TRADE when route ready.
-- Bybit crypto -> returned in `blocked` with provider certification reason.
+- Bybit Testnet/Demo Spot crypto -> promoted/created when the route is ready.
 - Live Money -> never bulk-promoted.
 
 After deployment, verify the response counts and then inspect `/strategies/symbols` before allowing the observation period to proceed.
@@ -90,6 +87,8 @@ For each scan confirm:
 - `EXECUTED` has broker evidence;
 - no duplicate symbol positions are opened by repeated scans;
 - the kill switch stops new automatic execution.
+- Bybit SELL quantities never exceed the available base-asset balance;
+- Bybit balance reconciliation markers are visible in the activity log when applied.
 
 ## Performance verification
 

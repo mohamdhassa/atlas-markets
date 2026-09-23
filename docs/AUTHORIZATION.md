@@ -31,7 +31,7 @@ The endpoint may seed/promote symbols only when the assigned BrokerProfile is:
 - connected;
 - credentials-configured.
 
-Current certified routes are Fusion MT5 Demo and IBKR Paper. Bybit is returned as blocked until provider-side execution certification succeeds. Live Money routes are never bulk-promoted.
+Current certified routes are Fusion MT5 Demo, IBKR Paper, and Bybit Testnet/Demo Spot. Live Money routes are never bulk-promoted.
 
 ## USER
 

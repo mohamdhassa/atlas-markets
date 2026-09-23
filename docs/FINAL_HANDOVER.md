@@ -1,6 +1,6 @@
 # ATLAS MARKETS — Final Handover
 
-Last updated: 2026-08-30
+Last updated: 2026-09-23
 
 ## Release checkpoints
 
@@ -10,7 +10,7 @@ Last updated: 2026-08-30
 ## What v1.1 changes
 
 - promotes all eligible certified simulation symbols to `AUTO_TRADE` through an ADMIN-only bulk endpoint;
-- keeps Bybit execution blocked until provider-side `10024` is resolved and re-certified;
+- certifies Bybit Testnet/Demo Spot with managed-inventory, metadata and broker-balance reconciliation safeguards;
 - keeps IBKR Paper enabled under WhatIf, duplicate guards, broker fill verification and max 1 share/order;
 - introduces Oracle production compose/environment assets;
 - moves the always-on app/data tier to Oracle;
@@ -21,12 +21,13 @@ Last updated: 2026-08-30
 
 1. Fusion MT5 Demo — FX, metals, commodities.
 2. IBKR Paper — stocks, ETFs; max 1 share/order.
+3. Bybit Testnet/Demo Spot — crypto; ATLAS-managed inventory only.
 
 Blocked/non-execution:
 
-- Bybit Testnet — provider `10024`.
 - Twelve Data — data only.
 - Live Money — gated.
+- Bybit derivatives — not included in the Spot certification.
 
 ## Bulk AUTO_TRADE
 
@@ -34,7 +35,7 @@ ADMIN endpoint:
 
 `POST /strategies/symbols/auto-trade/eligible`
 
-It may seed missing starter symbols and promote all configured symbols on ready certified simulation routes. It returns `created`, `promoted`, and `blocked` lists. Bybit and Live Money remain blocked by design.
+It may seed missing starter symbols and promote all configured symbols on ready certified simulation routes. It returns `created`, `promoted`, and `blocked` lists. Bybit Testnet/Demo Spot is eligible when ready; Live Money remains blocked by design.
 
 ## Oracle deployment
 
@@ -58,9 +59,9 @@ Requires TWS/IB Gateway Paper session plus `tools/ibkr_bridge.py`. Appropriate r
 
 Oracle should reach bridge nodes via a private VPN. If the execution node is a personal computer, trading stops when that machine sleeps/reboots/goes offline.
 
-## Bybit resolution
+## Bybit operating boundary
 
-Do not modify ATLAS to suppress or ignore `10024`. Use the same Testnet account in Bybit UI, reproduce the product restriction if possible, open support with the account UID and exact error, then re-run diagnostics and a controlled open/close certification after provider approval.
+Bybit automation is certified only for Testnet/Demo Spot. ATLAS sells only persisted managed inventory, caps managed quantities to the broker's available base-asset balance, and rounds down to the exchange step. Manual/pre-existing holdings are not treated as ATLAS inventory. Live Money and derivatives require separate certification.
 
 ## Local v1.1 acceptance
 
@@ -88,7 +89,7 @@ See `ORACLE_DEPLOYMENT.md`. Minimum acceptance:
 - HTTPS works;
 - private bridge connectivity works;
 - one monitored scan completes;
-- MT5/IBKR broker truth matches ATLAS action ledger;
+- MT5/IBKR/Bybit broker truth matches the ATLAS action ledger;
 - backup completes successfully.
 
 ## Backup rule

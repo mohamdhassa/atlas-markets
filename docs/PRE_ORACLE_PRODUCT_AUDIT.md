@@ -23,9 +23,9 @@ The global automation kill switch remains the final system-wide safety control.
 - Management actions must use the certified `/ibkr/...` adapter rather than the obsolete generic IBKR probe.
 
 ### Bybit
-- Testnet market/account connectivity exists.
-- Execution remains blocked by provider error 10024 / provider-side restriction.
-- ATLAS must not bypass or weaken this provider restriction.
+- Historical audit result (2026-08-30): Testnet market/account connectivity existed, while execution was blocked by provider error `10024`.
+- Superseded on 2026-09-22 by v74 certification of Bybit Testnet/Demo Spot after controlled provider execution succeeded.
+- The current certification remains simulation Spot only; Live Money and derivatives are not implied.
 
 ### Twelve Data
 - Data-only integration.
