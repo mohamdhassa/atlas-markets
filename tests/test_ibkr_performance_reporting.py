@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from app.api.routes_phase36_verified import _match_action
+from app.api.routes_broker_native import _execution_time_ms
 
 
 def _action(
@@ -123,3 +124,19 @@ def test_ibkr_exit_action_can_match_closing_execution():
     assert matched is exit_action
     assert method == "BROKER_ORDER_ID"
     assert matched.status == "EXIT_EXECUTED"
+
+
+def test_ibkr_execution_time_preserves_milliseconds():
+    assert _execution_time_ms({"time": 1_790_200_000_123}) == 1_790_200_000_123
+
+
+def test_ibkr_execution_time_normalizes_epoch_seconds():
+    assert _execution_time_ms({"timestamp": 1_790_200_000}) == 1_790_200_000_000
+
+
+def test_ibkr_execution_time_parses_iso_timestamp():
+    assert _execution_time_ms({"executed_at": "2026-09-24T01:02:03Z"}) == 1_790_208_123_000
+
+
+def test_ibkr_execution_time_missing_is_explicitly_unknown():
+    assert _execution_time_ms({"symbol": "SPY"}) == 0
