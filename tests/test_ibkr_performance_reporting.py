@@ -135,7 +135,7 @@ def test_ibkr_execution_time_normalizes_epoch_seconds():
 
 
 def test_ibkr_execution_time_parses_iso_timestamp():
-    assert _execution_time_ms({"executed_at": "2026-09-24T01:02:03Z"}) == 1_790_208_123_000
+    assert _execution_time_ms({"executed_at": "2026-09-24T01:02:03Z"}) == 1_790_211_723_000
 
 
 def test_ibkr_execution_time_missing_is_explicitly_unknown():
