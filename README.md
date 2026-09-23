@@ -1,10 +1,10 @@
 # ATLAS MARKETS
 
-**v2 consolidated-core rebuild — multi-provider simulation + Oracle Cloud**
+**v77 operational build — multi-provider simulation + Oracle Cloud**
 
 ATLAS MARKETS is a multi-market, multi-provider trading analysis, simulation and operations platform for stocks, ETFs, FX, metals, commodities and crypto.
 
-The v1.0.0 Simulation Release remains the rollback/reference baseline. The active rebuild consolidates the frontend and backend around stable provider, automation, portfolio, reporting and administration APIs instead of phase-by-phase browser patches.
+The v1.0.0 Simulation Release remains the rollback/reference baseline. Production `main` is now the v77 operational build, with the frontend and backend consolidated around stable provider, automation, portfolio, reporting and administration APIs.
 
 Live Money remains intentionally gated.
 
@@ -12,9 +12,9 @@ Live Money remains intentionally gated.
 
 | Provider | Purpose | Environment | Current route |
 |---|---|---|---|
-| Fusion Markets MT5 | FX, metals, commodities | Demo | Bridge/readiness supported; runtime terminal authorization must be healthy |
-| Interactive Brokers | Stocks, ETFs | Paper | Certified simulation route; max 1 share/order |
-| Bybit | Crypto Spot | Testnet / Demo | Managed Spot infrastructure with BUY/SELL certification and reconciliation gates |
+| Fusion Markets MT5 | FX, metals, commodities | Demo | Bridge/readiness supported; terminal authorization must be healthy |
+| Interactive Brokers | Stocks, ETFs | Paper | Certified simulation route; max 1 share/order; periodic Gateway authentication remains an operational dependency |
+| Bybit | Crypto Spot | Testnet / Demo | Certified managed Spot simulation route with BUY/SELL execution, managed-inventory reconciliation, and live-money gating |
 | Twelve Data | Market/historical data | Data only | Data provider; never an execution route |
 
 Provider status shown in the application must come from runtime account/readiness APIs. Documentation must not hard-code a temporary broker error as permanent platform state.
