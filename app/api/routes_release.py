@@ -45,11 +45,10 @@ def _live_certification_status() -> dict:
             ],
         },
         "BYBIT": {
-            "simulation_certification": "PROVIDER_BLOCKED_10024",
+            "simulation_certification": "CERTIFIED_TESTNET_DEMO_SPOT",
             "live_certification": "NOT_CERTIFIED",
             "live_execution_allowed": False,
             "blockers": [
-                "BYBIT_PROVIDER_RESTRICTION_10024",
                 "LIVE_BYBIT_EXECUTION_PATH_NOT_CERTIFIED",
             ],
         },
@@ -93,8 +92,13 @@ def release_readiness(current: User = Depends(get_current_user), db: Session = D
             "max_shares_per_order": IBKR_CERTIFIED_MAX_SHARES_PER_ORDER,
         },
         "BYBIT": {
-            "connected": any(_connected(p) for p in by_provider.get("BYBIT", [])),
-            "execution": "PROVIDER_BLOCKED_10024",
+            "connected": any(
+                _connected(p) and p.environment.upper() in {"TESTNET", "DEMO"}
+                for p in by_provider.get("BYBIT", [])
+            ),
+            "execution": "CERTIFIED_TESTNET_DEMO_SPOT",
+            "sell_policy": "ATLAS_MANAGED_INVENTORY_ONLY",
+            "quantity_policy": "BROKER_METADATA_AND_AVAILABLE_BALANCE_RECONCILED",
         },
         "TWELVE_DATA": {
             "connected": any(_connected(p) for p in by_provider.get("TWELVE_DATA", [])),
@@ -146,7 +150,7 @@ def release_readiness(current: User = Depends(get_current_user), db: Session = D
             "live_execution_providers_certified": live_certification["execution_providers_certified"],
             "live_execution_providers_required": live_certification["execution_providers_required"],
             "all_live_execution_providers_certified": live_certification["all_execution_providers_certified"],
-            "bybit_execution": "BLOCKED_BY_PROVIDER_10024",
+            "bybit_execution": "CERTIFIED_TESTNET_DEMO_SPOT",
             "historical_strategy_attribution": "ONLY_BROKER_VERIFIED_ACTIONS",
         },
         "completion": {
