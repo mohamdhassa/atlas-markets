@@ -1,4 +1,5 @@
 from fastapi import APIRouter,Body,Depends,HTTPException,Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.analysis.adaptive_strategy import select_strategy
 from app.analysis.asset_universe import profile_for,universe_profiles,universe_summary
@@ -8,6 +9,7 @@ from app.analysis.technical import analyze_candles
 from app.api.dependencies import get_current_user
 from app.core.config import get_settings
 from app.db.models.auth import User
+from app.db.models.shadow import ShadowObservation
 from app.db.session import get_db
 from app.market_data.bybit import BybitMarketDataError,BybitPublicMarketData
 from app.market_data.fx import FxMarketDataError,TwelveDataFxMarketData
@@ -39,6 +41,21 @@ async def shadow_backtest(payload:dict=Body(...),_:User=Depends(get_current_user
  try:
   return walk_forward_shadow_backtest(candles,symbol=str(payload.get("symbol") or "UNKNOWN"),market=str(payload.get("market") or "STOCK"),timeframe=str(payload.get("timeframe") or "5m"),horizon=int(payload.get("horizon") or 6),cost_bps=float(payload.get("cost_bps") or 8.0))
  except (KeyError,TypeError,ValueError) as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
+@router.get("/shadow/observations")
+async def shadow_observations(limit:int=Query(100,ge=1,le=500),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ rows=list(db.scalars(select(ShadowObservation).where(ShadowObservation.user_id==user.id).order_by(ShadowObservation.created_at.desc()).limit(limit)).all())
+ return [{"id":x.id,"provider":x.provider,"market":x.market,"symbol":x.symbol,"timeframe":x.timeframe,"action":x.action,"confidence":x.confidence,"regime":x.regime,"confirmations":x.confirmations,"contradictions":x.contradictions,"entry_price":x.entry_price,"exit_price":x.exit_price,"net_return_pct":x.net_return_pct,"outcome":x.outcome,"evaluation_due_at":x.evaluation_due_at,"settled_at":x.settled_at,"created_at":x.created_at} for x in rows]
+@router.get("/shadow/performance")
+async def shadow_performance(days:int=Query(30,ge=1,le=366),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ from datetime import datetime,timedelta,timezone
+ since=datetime.now(timezone.utc)-timedelta(days=days);rows=list(db.scalars(select(ShadowObservation).where(ShadowObservation.user_id==user.id,ShadowObservation.created_at>=since).order_by(ShadowObservation.created_at.desc())).all());groups={}
+ for x in rows:
+  key=(x.provider,x.market,x.symbol,x.timeframe);g=groups.setdefault(key,{"provider":x.provider,"market":x.market,"symbol":x.symbol,"timeframe":x.timeframe,"observations":0,"directional":0,"settled":0,"wins":0,"losses":0,"pending":0,"net_return_pct":0.0,"latest_action":x.action,"latest_confidence":x.confidence,"latest_regime":x.regime,"latest_at":x.created_at})
+  g["observations"]+=1;g["directional"]+=int(x.action in {"BUY","SELL"});g["pending"]+=int(x.outcome=="PENDING")
+  if x.settled_at is not None and x.action in {"BUY","SELL"}:g["settled"]+=1;g["wins"]+=int(x.outcome=="WIN");g["losses"]+=int(x.outcome=="LOSS");g["net_return_pct"]+=float(x.net_return_pct or 0)
+ out=[]
+ for g in groups.values():g["win_rate"]=round(g["wins"]/g["settled"]*100,2) if g["settled"] else None;g["net_return_pct"]=round(g["net_return_pct"],4);g["eligible"]=g["settled"]>=30 and g["net_return_pct"]>0 and (g["win_rate"] or 0)>=50;out.append(g)
+ return {"days":days,"mode":"SHADOW","execution_enabled":False,"summary":{"observations":len(rows),"settled":sum(x["settled"] for x in out),"pending":sum(x["pending"] for x in out),"eligible":sum(x["eligible"] for x in out)},"strategies":out,"safety":"Shadow performance cannot enable broker execution."}
 @router.get("/{symbol}/multi")
 async def multi_timeframe_analysis(symbol:str,category:str=Query("linear"),_:User=Depends(get_current_user)):
  try:results=[await _analyze(_client(),symbol,f,category) for f in ("4h","1h","15m","5m")]
