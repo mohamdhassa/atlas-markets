@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.automation import AutomationAction, AutomationScan
@@ -14,6 +13,7 @@ from app.db.models.broker import BrokerProfile
 from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.position_lifecycle import evaluate_mt5_exit_signals
+from app.services.mt5_runtime import mt5_client
 
 
 def _secret(profile):
@@ -98,12 +98,8 @@ async def run_mt5_position_manager():
                         results.append({**item, **result})
                         _persist_exit_action(db, scan, user_id, item, result)
                         continue
-                    creds = _secret(profile)
-                    broker = Mt5BridgeClient(
-                        creds.get('bridge_url') or 'http://host.docker.internal:8765',
-                        creds.get('bridge_token'),
-                        get_settings().market_data_timeout_seconds,
-                    )
+                    _secret(profile)
+                    broker = mt5_client()
                     health = await broker.health()
                     server = str(health.get('server') or '')
                     terminal = health.get('terminal') or {}

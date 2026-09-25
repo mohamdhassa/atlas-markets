@@ -42,10 +42,26 @@ MT5_BRIDGE_URL=http://<private-or-relay-address>:<port>
 MT5_BRIDGE_TOKEN=<same-private-token>
 ```
 
-Existing profiles that still contain legacy `bridge_url` / `bridge_token` values continue to work as a migration fallback, but new profiles no longer store those infrastructure values.
+Application traffic uses only these central settings. Per-profile bridge URLs and tokens are ignored; profiles contain broker-account identity only.
+
+## Readiness checks
+
+All requests require the bridge token:
+
+```powershell
+$headers = @{ "X-ATLAS-BRIDGE-TOKEN" = $env:BRIDGE_TOKEN }
+Invoke-RestMethod http://127.0.0.1:8765/readiness -Headers $headers
+Invoke-RestMethod http://127.0.0.1:8765/account -Headers $headers
+```
+
+`/readiness` reports terminal connectivity, expected login/server, demo status, algorithmic-trading permissions, bridge trading state, uptime and explicit blockers. A listening port alone is not readiness.
+
+ATLAS retries only safe read requests after transient network or 502/503/504 failures. It never automatically retries an order POST because that could duplicate execution.
 
 ## 24/7 deployment
 
 For true PC-independent MT5 operation, run the native Windows terminal and this execution node on an always-on Windows VM/VPS, then connect it privately to Oracle. A Linux/Wine MT5 terminal is not used in the production path.
 
 The bridge can serve Fusion Markets, MetaQuotes-Demo, or another MT5 broker as long as the native Windows terminal is successfully logged into the configured account/server.
+
+Configure Windows Task Scheduler or a service manager to start the terminal first and the single-worker bridge second, restart the bridge on failure, and run both under a dedicated non-administrator account. Keep the port off the public internet and use a private VPN/relay between Windows and Oracle.

@@ -9,7 +9,6 @@ from sqlalchemy import select
 
 from app.analysis.shadow_strategy import evaluate_shadow_strategy
 from app.brokers.ibkr_bridge import IbkrBridgeClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
@@ -18,6 +17,7 @@ from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import SessionLocal
 from app.market_data.bybit import BybitPublicMarketData
 from app.services.news_intelligence import context_for_symbol
+from app.services.mt5_runtime import mt5_client
 
 HORIZON_BARS = 6
 ROUND_TRIP_COST_BPS = 8.0
@@ -68,7 +68,7 @@ async def candles_for(profile: BrokerProfile, symbol: str, timeframe: str, limit
         client = IbkrBridgeClient(credentials.get("bridge_url") or "http://host.docker.internal:8766", credentials.get("bridge_token"), settings.market_data_timeout_seconds)
         return _rows(await client.candles(symbol, timeframe, limit))
     if profile.provider == "MT5":
-        client = Mt5BridgeClient(credentials.get("bridge_url") or "http://host.docker.internal:8765", credentials.get("bridge_token"), settings.market_data_timeout_seconds)
+        client = mt5_client()
         return _rows(await client.candles(symbol, timeframe, limit))
     if profile.provider == "BYBIT":
         client = BybitPublicMarketData(settings.bybit_public_base_url, settings.market_data_timeout_seconds)

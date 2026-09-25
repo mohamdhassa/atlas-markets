@@ -238,7 +238,7 @@ async def sync(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Sessi
             p.open_positions_count=sum(1 for x in deriv if float(x.get('size') or 0)!=0)+len(holdings)
             linear_orders=(await client.open_orders()).get('list') or [];spot_orders=(await client.spot_open_orders()).get('list') or [];p.open_orders_count=len(linear_orders)+len(spot_orders)
         elif p.provider=='MT5':
-            bridge=_mt5_client(p);a=await bridge.account();positions=await bridge.positions();orders=await bridge.orders();p.equity_usd=float(a.get('equity') or 0);p.wallet_balance_usd=float(a.get('balance') or 0);p.available_balance_usd=float(a.get('margin_free') or 0);p.open_positions_count=len(positions);p.open_orders_count=len(orders)
+            bridge=_mt5_client(p);a=await bridge.account();positions=await bridge.positions();orders=await bridge.orders();p.equity_usd=float(a.get('equity') or 0);p.wallet_balance_usd=float(a.get('balance') or 0);p.available_balance_usd=float(a.get('margin_free') or 0);p.open_positions_count=len(positions.get('list') or []);p.open_orders_count=len(orders.get('list') or [])
         elif p.provider=='TWELVE_DATA':
             await _probe(p);p.equity_usd=p.wallet_balance_usd=p.available_balance_usd=0;p.open_positions_count=p.open_orders_count=0
         elif p.provider=='IBKR':raise HTTPException(409,'IBKR account sync is not available until the adapter is complete')

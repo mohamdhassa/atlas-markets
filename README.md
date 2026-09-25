@@ -1,6 +1,6 @@
 # ATLAS MARKETS
 
-**v82 production / v83 documentation — provider-aware multi-market simulation on Oracle Cloud**
+**v82 production / v83 documentation / v84 MT5 readiness — provider-aware multi-market simulation on Oracle Cloud**
 
 ATLAS MARKETS is a multi-market, multi-provider trading analysis, simulation and operations platform for stocks, ETFs, FX, metals, commodities and crypto.
 
@@ -12,7 +12,7 @@ Live Money remains intentionally gated.
 
 | Provider | Purpose | Environment | Current route |
 |---|---|---|---|
-| Fusion Markets MT5 | FX, metals, commodities | Demo | Bridge/readiness supported; runtime terminal authorization must be healthy |
+| Fusion Markets MT5 | FX, metals, commodities | Demo | v84 software complete; native Windows node certification pending |
 | Interactive Brokers | Stocks, ETFs | Paper | Certified simulation route; max 1 share/order |
 | Bybit | Crypto Spot | Testnet / Demo | Managed Spot infrastructure with BUY/SELL certification and reconciliation gates |
 | Twelve Data | Market/historical data | Data only | Data provider; never an execution route |
@@ -163,6 +163,7 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 - `docs/RELEASE_V81.md`
 - `docs/RELEASE_V82.md`
 - `docs/RELEASE_V83.md`
+- `docs/RELEASE_V84.md`
 
 ## Engineering rule
 

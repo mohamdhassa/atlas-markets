@@ -1,13 +1,14 @@
 import os
 import secrets
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from fastapi import FastAPI, Header, HTTPException
 import MetaTrader5 as mt5
 
 app = FastAPI(title="ATLAS MT5 Native Execution Node", version="1.3.0")
+STARTED_AT = datetime.now(timezone.utc)
 
 BRIDGE_TOKEN = os.getenv("BRIDGE_TOKEN", "").strip()
 ALLOW_TRADING = os.getenv("ALLOW_TRADING", "false").strip().lower() == "true"
@@ -156,6 +157,37 @@ def health(x_atlas_bridge_token: str | None = Header(default=None, alias="X-ATLA
             "trading_enabled": ALLOW_TRADING,
             "terminal": {"connected": terminal.connected, "trade_allowed": terminal.trade_allowed},
             "account": {"trade_allowed": account.trade_allowed, "trade_expert": account.trade_expert},
+        }
+
+
+@app.get("/readiness")
+def readiness(x_atlas_bridge_token: str | None = Header(default=None, alias="X-ATLAS-BRIDGE-TOKEN")):
+    _auth(x_atlas_bridge_token)
+    with _session() as account:
+        terminal = mt5.terminal_info()
+        if terminal is None:
+            raise HTTPException(status_code=503, detail="Terminal info unavailable")
+        server = str(account.server or "")
+        demo = "demo" in server.lower()
+        algo = bool(terminal.trade_allowed and account.trade_allowed and account.trade_expert)
+        blockers = []
+        if not terminal.connected: blockers.append("MT5_TERMINAL_DISCONNECTED")
+        if not demo: blockers.append("MT5_DEMO_SERVER_REQUIRED")
+        if not algo: blockers.append("MT5_ALGO_TRADING_DISABLED")
+        if not ALLOW_TRADING: blockers.append("MT5_BRIDGE_TRADING_DISABLED")
+        return {
+            "status": "READY" if not blockers else "BLOCKED",
+            "node_type": "native_windows_mt5",
+            "connected": bool(terminal.connected),
+            "simulation": demo,
+            "trading_enabled": ALLOW_TRADING,
+            "login": account.login,
+            "server": server,
+            "started_at": STARTED_AT.isoformat(),
+            "uptime_seconds": int((datetime.now(timezone.utc) - STARTED_AT).total_seconds()),
+            "terminal": {"connected": terminal.connected, "trade_allowed": terminal.trade_allowed},
+            "account": {"trade_allowed": account.trade_allowed, "trade_expert": account.trade_expert},
+            "blockers": blockers,
         }
 
 

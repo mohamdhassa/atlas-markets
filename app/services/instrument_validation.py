@@ -9,6 +9,7 @@ from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.services.instrument_universe import UniverseItem
+from app.services.mt5_runtime import mt5_client
 
 
 @dataclass(frozen=True)
@@ -94,8 +95,8 @@ async def validate_instrument(profile, item: UniverseItem) -> ValidationResult:
     settings = get_settings()
     try:
         if provider == 'MT5':
-            cfg = _bridge_cfg(profile)
-            client = Mt5BridgeClient(cfg.get('bridge_url') or 'http://host.docker.internal:8765', cfg.get('bridge_token'), settings.market_data_timeout_seconds)
+            _bridge_cfg(profile)
+            client = mt5_client()
             broker_symbol = item.symbol
             try:
                 data = await client.symbol(item.symbol)

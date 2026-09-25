@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.brokers.ibkr_bridge import IbkrBridgeClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.auth import User
@@ -15,6 +14,7 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 from app.market_data.bybit import BybitPublicMarketData
+from app.services.mt5_runtime import mt5_client
 
 router=APIRouter(prefix='/markets',tags=['markets'])
 
@@ -84,7 +84,7 @@ async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),mark
                 rows.append({'market':cfg.market,'symbol':cfg.symbol,'display_symbol':cfg.symbol,'price':price,'bid':bid,'ask':ask,'change':change,'change_percent':pct,'provider':'IBKR','mode':cfg.mode,'timeframe':cfg.timeframe,'history':history})
             except Exception as exc:errors.append({'symbol':cfg.symbol,'error':str(exc)[:180]})
         return _payload(provider,market_set,rows,errors)
-    broker=Mt5BridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8765',creds.get('bridge_token'),settings.market_data_timeout_seconds)
+    broker=mt5_client()
     for cfg in strategies:
         symbol=_canon(cfg.symbol)
         try:

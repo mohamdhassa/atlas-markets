@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import httpx
 
 from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
@@ -17,19 +18,33 @@ class Mt5BridgeClient:
     def _headers(self)->dict[str,str]:
         return {'X-ATLAS-BRIDGE-TOKEN':self.token} if self.token else {}
     async def _request(self,method:str,path:str,json:dict|None=None)->dict:
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                r=await client.request(method,f'{self.base_url}{path}',headers=self._headers(),json=json)
-            r.raise_for_status();return r.json()
-        except Exception as exc:
-            raise Mt5BridgeError(str(exc)) from exc
+        attempts=3 if method=='GET' else 1
+        last_error=None
+        for attempt in range(1,attempts+1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    r=await client.request(method,f'{self.base_url}{path}',headers=self._headers(),json=json)
+                r.raise_for_status();return r.json()
+            except (httpx.TimeoutException,httpx.NetworkError,httpx.RemoteProtocolError) as exc:
+                last_error=exc
+            except httpx.HTTPStatusError as exc:
+                last_error=exc
+                if exc.response.status_code not in {502,503,504}:break
+            except Exception as exc:
+                last_error=exc;break
+            if attempt<attempts:await asyncio.sleep(0.25*attempt)
+        raise Mt5BridgeError(f'{method} {path} failed after {attempts} attempt(s): {last_error}') from last_error
     async def _get(self,path:str)->dict:return await self._request('GET',path)
     async def health(self)->dict:return await self._get('/health')
+    async def readiness(self)->dict:return await self._get('/readiness')
     async def account(self)->dict:return await self._get('/account')
     async def positions(self)->dict:return await self._get('/positions')
     async def orders(self)->dict:return await self._get('/orders')
     async def search_symbols(self,query:str,limit:int=50)->dict:return await self._get(f'/symbols/search?q={str(query).strip()}&limit={max(1,min(limit,200))}')
-    async def symbol(self,symbol:str)->dict:return await self._get(f'/symbol/{self._symbol(symbol)}')
+    async def symbol(self,symbol:str)->dict:
+        payload=await self._get(f'/symbol/{self._symbol(symbol)}')
+        # Keep callers provider-agnostic by exposing symbol and tick fields together.
+        return {**(payload.get('info') or {}),**(payload.get('tick') or {}),'symbol':payload.get('symbol') or self._symbol(symbol)}
     async def candles(self,symbol:str,timeframe:str='5m',limit:int=200)->dict:return await self._get(f'/candles/{self._symbol(symbol)}?timeframe={timeframe}&limit={max(2,min(limit,500))}')
     async def history_deals(self,days:int=30)->dict:return await self._get(f'/history/deals?days={max(1,min(days,366))}')
     async def order_check(self,payload:dict)->dict:

@@ -3,7 +3,6 @@ import asyncio,json,math
 from datetime import datetime,timedelta,timezone
 from sqlalchemy import select
 from app.brokers.bybit_private import BybitPrivateClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.brokers.ibkr_bridge import IbkrBridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
@@ -17,6 +16,7 @@ from app.market_data.bybit import BybitPublicMarketData
 from app.services.historical_intelligence import db_candles,historical_probability
 from app.services.news_intelligence import apply_news_context,context_for_symbol,refresh_news
 from app.services.paper_execution import build_execution_plan
+from app.services.mt5_runtime import mt5_client
 from app.services.signal_risk import GeneratedSignal,evaluate_risk,generate_signal,reasons_json
 
 def get_or_create_state(db):
@@ -54,7 +54,7 @@ def _bridge_creds(a):
  return json.loads(decrypt_secret(a.credential_blob_encrypted))
 def _mt5_simulation_client(a,settings):
  if a.environment!='DEMO':raise RuntimeError('automation refuses MT5 Live Money execution')
- c=_bridge_creds(a);return Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),settings.market_data_timeout_seconds)
+ _bridge_creds(a);return mt5_client()
 def _ibkr_simulation_client(a,settings):
  if a.environment!='PAPER':raise RuntimeError('automation refuses IBKR Live Money execution')
  c=_bridge_creds(a);return IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),settings.market_data_timeout_seconds)

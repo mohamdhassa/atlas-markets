@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from sqlalchemy import select
 
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
+from app.services.mt5_runtime import mt5_client
 
 
 def _secret(profile) -> dict:
@@ -35,12 +35,8 @@ async def inspect_mt5_position(db, *, user_id, market: str, symbol: str) -> dict
     if profile.provider != 'MT5':
         raise RuntimeError('MT5_POSITION_INSPECTION_ONLY')
 
-    c = _secret(profile)
-    broker = Mt5BridgeClient(
-        c.get('bridge_url') or 'http://host.docker.internal:8765',
-        c.get('bridge_token'),
-        get_settings().market_data_timeout_seconds,
-    )
+    _secret(profile)
+    broker = mt5_client()
     raw = await broker.positions()
     rows = raw.get('list', []) if isinstance(raw, dict) else []
     matches = [x for x in rows if str(x.get('symbol') or '').upper() == symbol and float(x.get('volume') or 0) != 0]

@@ -20,6 +20,7 @@ from app.api.routes_bybit_oauth import router as bybit_oauth_router
 from app.api.routes_historical import router as historical_router
 from app.api.routes_ibkr_external import router as ibkr_external_router
 from app.api.routes_markets import router as markets_router
+from app.api.routes_mt5_external import router as mt5_external_router
 from app.api.routes_news import router as news_router
 from app.api.routes_paper import router as legacy_account_router
 from app.api.routes_performance import router as performance_router
@@ -78,7 +79,7 @@ app = FastAPI(title=settings.app_name, version="2.0.0", debug=settings.debug, li
 routers = (
     health_router, auth_router, admin_router, markets_router, workspace_quotes_router,
     bybit_certification_state_router, accounts_router, account_lifecycle_router,
-    bybit_environment_router, bybit_oauth_router, ibkr_external_router,
+    bybit_environment_router, bybit_oauth_router, ibkr_external_router, mt5_external_router,
     provider_certification_router, analysis_router, signals_router,
     legacy_account_router, automation_router, position_lifecycle_router,
     broker_native_router, portfolio_market_router, phase35_router, phase36_router, phase36_verified_router,

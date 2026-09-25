@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.brokers.ibkr_bridge import IbkrBridgeClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.automation import AutomationAction, AutomationScan
@@ -16,6 +15,7 @@ from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.autotrade_preflight import autotrade_preflight
 from app.services.bybit_spot_execution import execute_managed_spot_order
+from app.services.mt5_runtime import mt5_client
 
 CERTIFIED_AUTOMATION_ROUTES = {
     ("MT5", "DEMO"),
@@ -187,8 +187,8 @@ async def _execute_mt5(db, *, user_id, item):
         return {"market": market, "symbol": symbol, "provider": "MT5", "status": "BLOCK", "reason": "INVALID_ORDER_PROPOSAL"}
     if stop_loss is None or take_profit is None:
         return {"market": market, "symbol": symbol, "provider": "MT5", "status": "BLOCK", "reason": "PROTECTION_REQUIRED"}
-    creds = _secret(profile)
-    broker = Mt5BridgeClient(creds.get("bridge_url") or "http://host.docker.internal:8765", creds.get("bridge_token"), get_settings().market_data_timeout_seconds)
+    _secret(profile)
+    broker = mt5_client()
     health = await broker.health()
     terminal = health.get("terminal") or {}
     server = str(health.get("server") or "")
