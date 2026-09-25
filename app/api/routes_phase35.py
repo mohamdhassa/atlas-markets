@@ -11,12 +11,12 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.brokers.bybit_private import BybitPrivateClient
 from app.brokers.ibkr_bridge import IbkrBridgeClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
 from app.db.session import get_db
+from app.services.mt5_runtime import mt5_client
 
 router = APIRouter(tags=["performance", "trade-history"])
 
@@ -45,8 +45,8 @@ def _creds(profile):
 
 
 def _mt5(profile):
-    c = _creds(profile)
-    return Mt5BridgeClient(c.get("bridge_url") or "http://host.docker.internal:8765", c.get("bridge_token"), get_settings().market_data_timeout_seconds)
+    _creds(profile)
+    return mt5_client()
 
 
 def _ibkr(profile):

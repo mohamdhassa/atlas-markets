@@ -6,12 +6,12 @@ from sqlalchemy import select
 
 from app.brokers.bybit_private import BybitPrivateClient
 from app.brokers.ibkr_bridge import IbkrBridgeClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.services.autotrade_readiness import IBKR_CERTIFIED_MAX_SHARES_PER_ORDER, autotrade_readiness
+from app.services.mt5_runtime import mt5_client
 
 
 def _secret(profile) -> dict:
@@ -146,8 +146,8 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
                 volume = float(proposed.get("volume") or 0)
                 if volume <= 0:
                     raise RuntimeError("INVALID_MT5_VOLUME")
-                c = _secret(profile)
-                broker = Mt5BridgeClient(c.get("bridge_url") or "http://host.docker.internal:8765", c.get("bridge_token"), settings.market_data_timeout_seconds)
+                _secret(profile)
+                broker = mt5_client()
                 result = await broker.order_check({
                     "symbol": row["symbol"],
                     "side": proposed["side"],

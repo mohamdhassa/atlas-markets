@@ -6,7 +6,8 @@ Last updated: 2026-09-25
 
 - v1.0.0 Simulation Release: COMPLETE and tagged.
 - v82 provider-aware shadow analytics: DEPLOYED on Oracle.
-- v83 documentation and architecture closeout: IN PROGRESS.
+- v83 documentation and architecture closeout: COMPLETE.
+- v84 MT5 runtime-readiness software: COMPLETE; native Windows certification pending.
 - Database: `20260925_0019 (head)`.
 - Live Money remains gated.
 
@@ -23,8 +24,8 @@ Last updated: 2026-09-25
 
 ### Fusion MT5 Demo
 
-- Application adapter and bridge support: PRESENT
-- Dedicated execution-node completion/recovery certification: NEXT PHASE
+- Application adapter, centralized runtime, readiness and bridge support: COMPLETE
+- Dedicated native Windows installation/recovery certification: PENDING EXTERNAL NODE
 - Automatic unattended production route: not claimed until the terminal, authorization, bridge and recovery tests pass together
 - Intended markets: FX, metals, commodities
 
@@ -99,12 +100,11 @@ v83 adds a canonical documentation index, production ERD, API reference, user/ad
 
 ## Next ordered work
 
-1. Merge/deploy the v83 documentation release.
-2. Complete the MT5 execution node and recovery certification.
-3. Refine/consolidate frontend behavior and responsive accessibility.
-4. Accumulate and analyze settled provider-specific shadow evidence.
-5. Calibrate strategies without contaminating the forward-validation window.
-6. Begin separately specified development only after acceptance criteria are documented.
+1. Install and certify the native Windows MT5 execution node using the v84 runbook.
+2. Refine/consolidate frontend behavior and responsive accessibility.
+3. Accumulate and analyze settled provider-specific shadow evidence.
+4. Calibrate strategies without contaminating the forward-validation window.
+5. Begin separately specified development only after acceptance criteria are documented.
 
 ## Safety boundary
 

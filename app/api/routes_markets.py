@@ -3,7 +3,6 @@ import json
 from fastapi import APIRouter,Depends,HTTPException,Query
 from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.auth import User
@@ -12,16 +11,17 @@ from app.market_data.bybit import BybitMarketDataError,BybitPublicMarketData,DEF
 from app.market_data.fx import FX_WATCHLIST,FxMarketDataError,TwelveDataFxMarketData
 from app.schemas.market import MarketCandle,MarketSnapshot
 from app.services.provider_credentials import active_provider_profile,active_twelve_data_key
+from app.services.mt5_runtime import mt5_client
 router=APIRouter(prefix='/markets',tags=['markets'])
 def _provider()->BybitPublicMarketData:
  s=get_settings();return BybitPublicMarketData(s.bybit_public_base_url,s.market_data_timeout_seconds)
 def _fx_provider(db:Session,user:User)->TwelveDataFxMarketData:
  s=get_settings();key=active_twelve_data_key(db,user.id) or s.fx_market_data_api_key
  return TwelveDataFxMarketData(s.fx_market_data_base_url,key,s.market_data_timeout_seconds)
-def _mt5_fx(db:Session,user:User)->Mt5BridgeClient|None:
+def _mt5_fx(db:Session,user:User):
  p=active_provider_profile(db,user.id,'MT5')
  if not p or p.environment!='DEMO' or p.last_connection_status!='CONNECTED' or not p.credential_blob_encrypted:return None
- c=json.loads(decrypt_secret(p.credential_blob_encrypted));return Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),get_settings().market_data_timeout_seconds)
+ json.loads(decrypt_secret(p.credential_blob_encrypted));return mt5_client()
 @router.get('/tickers',response_model=MarketSnapshot)
 async def market_tickers(category:str=Query(default='linear',pattern='^(linear|spot)$'),_:User=Depends(get_current_user))->MarketSnapshot:
  try:return await _provider().get_tickers(category=category,symbols=DEFAULT_WATCHLIST)

@@ -8,6 +8,7 @@ Last updated: 2026-09-25
 - `main` — v1.1 deployment candidate for multi-broker observation and Oracle Cloud hosting.
 - `cdbacec` — deployed v82 provider-aware shadow analytics.
 - v83 — documentation/architecture closeout; no execution-policy change.
+- v84 — centralized MT5 runtime readiness and certification tooling; native Windows certification still pending.
 
 ## Deployed v82 evidence
 
@@ -29,7 +30,7 @@ Last updated: 2026-09-25
 
 ## Current certified execution routes
 
-1. Fusion MT5 Demo — FX, metals, commodities.
+1. Fusion MT5 Demo — FX, metals, commodities; software ready, native Windows route not certified until the v84 runbook passes.
 2. IBKR Paper — stocks, ETFs; max 1 share/order.
 3. Bybit Testnet/Demo Spot — crypto; ATLAS-managed inventory only.
 

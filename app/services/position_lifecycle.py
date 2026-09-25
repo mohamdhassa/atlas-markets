@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.brokers.ibkr_bridge import IbkrBridgeClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.automation import AutomationAction
@@ -13,6 +12,7 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.strategy import StrategyProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.services.signal_risk import generate_signal
+from app.services.mt5_runtime import mt5_client
 
 
 def _canonical(value):
@@ -84,7 +84,7 @@ async def inspect_position_lifecycle(db, *, user_id):
         try:
             creds = _secret(profile)
             if provider == 'MT5':
-                broker = Mt5BridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8765', creds.get('bridge_token'), settings.market_data_timeout_seconds)
+                broker = mt5_client()
                 positions = (await broker.positions()).get('list', [])
                 for p in positions:
                     symbol = _canonical(p.get('symbol'))
@@ -152,7 +152,7 @@ async def evaluate_mt5_exit_signals(db, *, user_id):
             continue
         try:
             creds = _secret(profile)
-            broker = Mt5BridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8765', creds.get('bridge_token'), settings.market_data_timeout_seconds)
+            broker = mt5_client()
             positions = (await broker.positions()).get('list', [])
             for p in positions:
                 symbol = _canonical(p.get('symbol'))

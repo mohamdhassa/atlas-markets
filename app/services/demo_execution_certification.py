@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from sqlalchemy import select
 
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.services.autotrade_preflight import autotrade_preflight
+from app.services.mt5_runtime import mt5_client
 
 
 def _secret(profile) -> dict:
@@ -61,12 +61,8 @@ async def certify_single_mt5_demo_order(db, *, user_id, market: str, symbol: str
     if volume <= 0:
         raise RuntimeError('INVALID_MT5_VOLUME')
 
-    c = _secret(profile)
-    broker = Mt5BridgeClient(
-        c.get('bridge_url') or 'http://host.docker.internal:8765',
-        c.get('bridge_token'),
-        get_settings().market_data_timeout_seconds,
-    )
+    _secret(profile)
+    broker = mt5_client()
     result = await broker.place_demo_order(
         symbol=symbol,
         side=request.get('side'),

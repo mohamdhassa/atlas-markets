@@ -4,13 +4,13 @@ import json
 from sqlalchemy import select
 
 from app.brokers.ibkr_bridge import IbkrBridgeClient
-from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.market_data.bybit import BybitPublicMarketData
 from app.services.signal_risk import generate_signal
+from app.services.mt5_runtime import mt5_client
 
 SAFE_SCAN_MODES = {'WATCH', 'SIGNALS'}
 
@@ -48,8 +48,8 @@ async def scan_user_universe(db, *, user_id, include_watch: bool = False) -> dic
                 candles = await bybit_market.get_candles(symbol=cfg.symbol, interval=timeframe, category='spot', limit=200)
                 raw = [c.model_dump() for c in candles]
             elif profile.provider == 'MT5':
-                c = _bridge_cfg(profile)
-                broker = Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765', c.get('bridge_token'), settings.market_data_timeout_seconds)
+                _bridge_cfg(profile)
+                broker = mt5_client()
                 raw = (await broker.candles(cfg.symbol, timeframe, 200)).get('list', [])
             elif profile.provider == 'IBKR':
                 c = _bridge_cfg(profile)

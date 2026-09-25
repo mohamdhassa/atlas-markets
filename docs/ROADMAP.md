@@ -137,7 +137,7 @@ Live Money is outside this rebuild. It requires a separate provider-specific rel
 
 # Ordered next phases
 
-1. Complete and certify the MT5 execution node and recovery behavior.
+1. Install and certify the v84 MT5 native Windows node and recovery behavior (application software complete).
 2. Consolidate and refine responsive frontend/navigation/accessibility.
 3. Calibrate strategies from settled provider-specific forward evidence.
 4. Start new feature development only from documented requirements and acceptance criteria.
