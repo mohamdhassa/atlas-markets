@@ -9,6 +9,7 @@ Last updated: 2026-09-25
 - v83 documentation and architecture closeout: COMPLETE.
 - v84 MT5 runtime-readiness software: COMPLETE; native Windows certification pending.
 - v85 consolidated responsive frontend: COMPLETE.
+- v86 IBKR half-open session recovery: COMPLETE; production deployment pending.
 - Database: `20260925_0019 (head)`.
 - Live Money remains gated.
 
