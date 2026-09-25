@@ -1,11 +1,10 @@
-# ATLAS MARKETS — ERD
+# ATLAS MARKETS — Production ERD
 
-Last updated: 2026-08-30
-Release line: v1.1 simulation / Oracle deployment preparation
+Last updated: 2026-09-25
+Database head: `20260925_0019`
+Release: v82 provider-aware shadow analytics
 
-This document describes the active PostgreSQL persistence model. Legacy ATLAS Paper tables remain for compatibility/history, but normal execution uses external provider accounts.
-
-## Logical ERD
+## Ownership and operational relationships
 
 ```mermaid
 erDiagram
@@ -13,207 +12,118 @@ erDiagram
     USERS ||--o{ AUTH_AUDIT_LOG : produces
     USERS ||--o{ BROKER_PROFILES : owns
     USERS ||--o{ SYMBOL_STRATEGIES : configures
-    USERS ||--o{ AUTOMATION_ACTIONS : produces
     USERS ||--o{ SIGNALS : receives
     USERS ||--o{ RISK_EVENTS : receives
-    USERS ||--o{ PAPER_WALLETS : legacy_owns
-    USERS ||--o{ PAPER_POSITIONS : legacy_owns
-    USERS ||--o{ PAPER_ORDERS : legacy_owns
+    USERS ||--o{ AUTOMATION_ACTIONS : owns
+    USERS ||--o{ SHADOW_OBSERVATIONS : owns
+    USERS ||--o{ SHADOW_SCAN_EVENTS : owns
 
     BROKER_PROFILES ||--o{ SYMBOL_STRATEGIES : routes
     BROKER_PROFILES ||--o{ AUTOMATION_ACTIONS : executes
     BROKER_PROFILES ||--o{ DAILY_ACCOUNT_REPORTS : reports
+    BROKER_PROFILES ||--o{ BYBIT_MANAGED_INVENTORY : reconciles
+    BROKER_PROFILES ||--o{ SHADOW_OBSERVATIONS : sources
+    BROKER_PROFILES ||--o{ SHADOW_SCAN_EVENTS : audits
 
+    SYMBOL_STRATEGIES ||--o{ SHADOW_OBSERVATIONS : generates
+    SYMBOL_STRATEGIES ||--o{ SHADOW_SCAN_EVENTS : scanned_as
     AUTOMATION_SCANS ||--o{ AUTOMATION_ACTIONS : contains
+```
 
-    STRATEGY_PROFILES ||--o{ SYMBOL_STRATEGIES : defaults_for
+## Primary entities
 
-    USERS {
+| Entity | Purpose | Important relationships |
+|---|---|---|
+| `users` | Authentication and ownership root; roles are `ADMIN` and `USER` only | Owns profiles, strategies, observations and audit records |
+| `user_sessions` | Revocable authenticated sessions | Belongs to user |
+| `auth_audit_log` | Login and security activity | Belongs to user when identity is known |
+| `broker_profiles` | Provider account, environment, encrypted credentials, certification and synchronized balances | Belongs to user; routes strategies |
+| `symbol_strategies` | Per-provider, per-market, per-symbol control plane | Belongs to user and broker profile |
+| `automation_state` | Global engine, kill switch and scan interval | Singleton operational state |
+| `automation_scans` | One record per automation cycle | Parent of actions |
+| `automation_actions` | Durable decision, block, order and execution lineage | Links scan, user and broker profile |
+| `signals` | BUY/SELL/HOLD analytical output | Belongs to user |
+| `risk_profiles` | Global risk limits and default sizing | Referenced by risk services |
+| `risk_events` | Durable risk blocks and warnings | Belongs to user |
+| `historical_candles` | Normalized OHLCV history | Scoped by provider, market, symbol and timeframe |
+| `historical_backtest_runs` | Parameters and results for historical tests | Scoped by instrument |
+| `news_articles` | News evidence and sentiment | Matched to symbol context by services |
+| `daily_account_reports` | Equity and P&L snapshots | Belongs to broker profile |
+| `bybit_managed_inventory` | ATLAS-owned Bybit Spot inventory and reconciliation state | Belongs to broker profile |
+| `shadow_observations` | Forward-only, non-executable strategy decisions and settled outcomes | Links user, broker profile and symbol strategy |
+| `shadow_scan_events` | Provider-attributed observed/skip/error diagnostics | Links user, broker profile and symbol strategy |
+
+## Shadow analytics entities
+
+```mermaid
+erDiagram
+    BROKER_PROFILES ||--o{ SHADOW_OBSERVATIONS : supplies_market_data
+    SYMBOL_STRATEGIES ||--o{ SHADOW_OBSERVATIONS : evaluates
+    SYMBOL_STRATEGIES ||--o{ SHADOW_SCAN_EVENTS : records
+
+    SHADOW_OBSERVATIONS {
       uuid id PK
-      string username
-      string email
-      string password_hash
-      enum role
-      bool is_active
-      datetime created_at
-      datetime updated_at
-    }
-
-    BROKER_PROFILES {
-      uuid id PK
-      uuid user_id FK
-      string provider
-      string account_label
-      string environment
-      string external_account_ref
-      bool is_enabled
-      bool is_active
-      bool live_execution_enabled
-      datetime live_execution_armed_at
-      string last_connection_status
-      bool credentials_configured
-      text encrypted_credentials
-      float equity_usd
-      float wallet_balance_usd
-      float available_balance_usd
-      int open_positions_count
-      int open_orders_count
-      datetime last_sync_at
-    }
-
-    SYMBOL_STRATEGIES {
-      uuid id PK
-      uuid user_id FK
-      uuid profile_id FK
-      string market
-      string symbol
-      string mode
-      bool enabled
-      string timeframe
-      float minimum_signal_strength
-      float risk_per_trade_pct
-      float stop_atr_multiplier
-      float take_profit_rr
-      float max_position_notional_pct
-    }
-
-    AUTOMATION_STATE {
-      int id PK
-      bool enabled
-      bool killed
-      bool auto_execute_paper
-      int interval_seconds
-      text symbols_csv
-      datetime last_scan_at
-      datetime next_scan_at
-    }
-
-    AUTOMATION_SCANS {
-      uuid id PK
-      string status
-      int symbols_count
-      int accounts_count
-      int signals_count
-      int approved_count
-      int executed_count
-      text error_message
-      datetime started_at
-      datetime finished_at
-    }
-
-    AUTOMATION_ACTIONS {
-      uuid id PK
-      uuid scan_id FK
       uuid user_id FK
       uuid broker_profile_id FK
+      uuid strategy_id FK
       string provider
-      string environment
       string market
       string symbol
-      string side
+      string timeframe
+      string action
+      float confidence
+      string regime
+      int confirmations
+      int contradictions
+      float entry_price
+      bigint source_timestamp_ms
+      int horizon_bars
+      datetime evaluation_due_at
+      float news_score
+      float exit_price
+      float gross_return_pct
+      float net_return_pct
+      float max_favorable_excursion_pct
+      float max_adverse_excursion_pct
+      float round_trip_cost_bps
+      string outcome
+      datetime settled_at
+      text details_json
+      datetime created_at
+    }
+
+    SHADOW_SCAN_EVENTS {
+      uuid id PK
+      uuid user_id FK
+      uuid broker_profile_id FK
+      uuid strategy_id FK
+      string provider
+      string market
+      string symbol
       string status
       string reason
-      float quantity
-      string sizing_policy
-      string broker_order_id
-      string broker_position_id
-      text raw_json
+      text details_json
       datetime created_at
-    }
-
-    SIGNALS {
-      uuid id PK
-      uuid user_id FK
-      string market
-      string symbol
-      string side
-      float confidence
-      text reason
-      datetime created_at
-    }
-
-    RISK_PROFILES {
-      uuid id PK
-      string name
-      float risk_per_trade_pct
-      int max_open_positions
-      float max_daily_loss_pct
-      float max_drawdown_pct
-    }
-
-    RISK_EVENTS {
-      uuid id PK
-      uuid user_id FK
-      string event_type
-      string severity
-      text detail
-      datetime created_at
-    }
-
-    HISTORICAL_CANDLES {
-      uuid id PK
-      string provider
-      string market
-      string symbol
-      string timeframe
-      datetime candle_time
-      float open
-      float high
-      float low
-      float close
-      float volume
-    }
-
-    HISTORICAL_BACKTEST_RUNS {
-      uuid id PK
-      string market
-      string symbol
-      string timeframe
-      text parameters_json
-      text result_json
-      datetime created_at
-    }
-
-    NEWS_ARTICLES {
-      uuid id PK
-      string source
-      string title
-      string url
-      datetime published_at
-      float sentiment
-      text raw_json
-    }
-
-    DAILY_ACCOUNT_REPORTS {
-      uuid id PK
-      uuid broker_profile_id FK
-      date report_date
-      float equity
-      float realized_pnl
-      float unrealized_pnl
-      int trades
-      text raw_json
     }
 ```
 
-## Core ownership model
+The unique constraint `(strategy_id, source_timestamp_ms)` prevents duplicate observations for the same strategy and source candle. Scan events explain meaningful observations, skips and provider/analysis errors. Repeated checks of an already-observed candle are not persisted, preventing unnecessary audit growth.
 
-- `users` is the security/ownership root.
-- `broker_profiles` stores provider/account configuration, encrypted credentials and synchronized account summary data.
-- `symbol_strategies` maps each market/symbol to a broker profile and an operating mode: `WATCH`, `SIGNALS`, or `AUTO_TRADE`.
-- `automation_scans` is the scan/cycle header.
-- `automation_actions` is the persistent execution/safety ledger and carries broker order/position references plus raw evidence.
+## Broker truth and attribution
 
-## Broker truth vs ATLAS truth
+Provider-native fills, positions, balances and P&L are authoritative broker truth. ATLAS calls an execution strategy-verified only when persistent action lineage matches the broker evidence. Historical broker activity without that lineage remains unverified rather than being attributed retroactively.
 
-Provider-native fills, positions and P&L remain the authoritative broker truth. ATLAS persists the action lineage required to attribute future fills without inventing historical strategy ownership. Historical broker activity that predates verifiable action lineage is intentionally kept unverified.
+## Legacy compatibility
 
-## Legacy Paper entities
+`paper_wallets`, `paper_positions` and `paper_orders` remain for migration compatibility. They are not substitutes for IBKR Paper, Bybit Testnet/Demo or MT5 Demo broker truth.
 
-`paper_wallets`, `paper_positions`, and `paper_orders` remain in the database for migration/history compatibility. The active account model is `EXTERNAL_PROVIDERS_ONLY`; they must not be mistaken for Fusion Demo, IBKR Paper or Bybit Testnet activity.
+## Deletion behavior and retention
 
-## Oracle persistence
+- User-owned operational rows use cascading foreign keys where deletion is supported.
+- Production user deletion is an administrative, audited operation and should follow retention policy.
+- Broker activity needed for financial/audit retention should be exported before removing a profile.
+- Database backups must be tested before destructive lifecycle changes.
 
-Oracle deployment continues to use PostgreSQL 17 in a private Docker network with a persistent Docker volume. PostgreSQL port 5432 and Redis port 6379 are not published publicly. Backups are custom-format `pg_dump` files stored outside Git.
+## Storage boundary
 
-See `ORACLE_DEPLOYMENT.md` for backup/restore and hosting topology.
+PostgreSQL 17 is durable storage. Redis is transient coordination/cache state and is not a financial system of record. PostgreSQL and Redis remain on the private Docker network; their ports are not published publicly.
