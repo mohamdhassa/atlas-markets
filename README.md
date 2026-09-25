@@ -1,6 +1,6 @@
 # ATLAS MARKETS
 
-**v78 production — consolidated-core multi-provider simulation on Oracle Cloud**
+**v82 production / v83 documentation — provider-aware multi-market simulation on Oracle Cloud**
 
 ATLAS MARKETS is a multi-market, multi-provider trading analysis, simulation and operations platform for stocks, ETFs, FX, metals, commodities and crypto.
 
@@ -83,6 +83,9 @@ The public server should expose only HTTPS. PostgreSQL, Redis, FastAPI's interna
 - conservative verified attribution
 - responsive Dashboard / Operations workspace
 - release readiness and operational status
+- provider-attributed forward shadow observations
+- cost-aware expectancy, profit factor, drawdown and excursion analytics
+- frontend provider coverage and skipped-symbol diagnostics
 
 ## Local development/runtime
 
@@ -131,9 +134,13 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 - `GET /strategies/performance?days=30`
 - `GET /strategies/performance/diagnostics?days=30`
 - `GET /strategies/performance/verified?days=30`
+- `GET /analysis/shadow/coverage?days=7`
+- `GET /analysis/shadow/observations`
+- `GET /analysis/shadow/performance?days=30`
 
 ## Documentation
 
+- `docs/DOCUMENTATION_INDEX.md`
 - `docs/FINAL_HANDOVER.md`
 - `docs/CURRENT_STATUS.md`
 - `docs/ARCHITECTURE.md`
@@ -147,6 +154,15 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 - `docs/PRODUCTION_DEPLOYMENT_V78.md`
 - `docs/ROADMAP_V79.md`
 - `docs/RELEASE_V79.md`
+- `docs/API_REFERENCE.md`
+- `docs/USER_ADMIN_GUIDE.md`
+- `docs/OPERATIONS_RUNBOOK.md`
+- `docs/BACKUP_AND_RECOVERY.md`
+- `docs/SECURITY_OPERATIONS.md`
+- `docs/RELEASE_V80.md`
+- `docs/RELEASE_V81.md`
+- `docs/RELEASE_V82.md`
+- `docs/RELEASE_V83.md`
 
 ## Engineering rule
 

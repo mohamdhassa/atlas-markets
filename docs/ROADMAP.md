@@ -128,3 +128,16 @@ Live Money is outside this rebuild. It requires a separate provider-specific rel
 - Delivered exact-horizon settlement, cost-aware expectancy, profit factor, drawdown, and excursion analytics.
 - Delivered frontend provider coverage and readiness diagnostics.
 - Next gate: accumulate statistically meaningful forward samples before any separately reviewed paper-execution promotion.
+
+# v83 documentation and architecture closeout
+
+- Update production ERD and component architecture.
+- Add canonical API, user/admin, operations, recovery and security guides.
+- Align README, handover, current status and release index with deployed v82.
+
+# Ordered next phases
+
+1. Complete and certify the MT5 execution node and recovery behavior.
+2. Consolidate and refine responsive frontend/navigation/accessibility.
+3. Calibrate strategies from settled provider-specific forward evidence.
+4. Start new feature development only from documented requirements and acceptance criteria.
