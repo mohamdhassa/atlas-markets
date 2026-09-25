@@ -1,11 +1,21 @@
 # ATLAS MARKETS — Final Handover
 
-Last updated: 2026-09-23
+Last updated: 2026-09-25
 
 ## Release checkpoints
 
 - `v1.0.0` — completed Simulation Release and permanent rollback/reference tag.
 - `main` — v1.1 deployment candidate for multi-broker observation and Oracle Cloud hosting.
+- `cdbacec` — deployed v82 provider-aware shadow analytics.
+- v83 — documentation/architecture closeout; no execution-policy change.
+
+## Deployed v82 evidence
+
+- Production image: `sha256:798306df1a4d4381e03d2931491aec7e53a247dd2d2f9a05c03177914d46127f`.
+- Rollback image: v81 `sha256:1dc025b01543611cdaa244506f644dd40e6d89703b621da10bb5ab8753403b18`.
+- Database head: `20260925_0019`.
+- Acceptance: 239 tests passed and four external integration skips.
+- First v82 scan: Bybit 5/5 observed with 5 settled; IBKR 9/9 observed; zero skips/errors.
 
 ## What v1.1 changes
 
