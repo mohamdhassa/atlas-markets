@@ -1,0 +1,68 @@
+.data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #101f30;
+}
+
+.nav-button:focus-visible,
+.primary-button:focus-visible,
+.ghost-button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(77, 181, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.nav-button,
+.primary-button,
+.ghost-button {
+  min-height: 42px;
+}
+
+.metric-card strong,
+.status-item strong {
+  overflow-wrap: anywhere;
+}
+
+.panel h3 {
+  margin-top: 0;
+}
+
+.atlas-provider-tabs .active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: #102f5f;
+}
+
+@media (max-width: 760px) {
+  .page-intro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-intro > .badge,
+  .page-intro > .atlas-status-row {
+    align-self: stretch;
+  }
+
+  .table-wrap,
+  .atlas-table {
+    margin-inline: -4px;
+  }
+
+  .topbar h2 {
+    max-width: 52vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

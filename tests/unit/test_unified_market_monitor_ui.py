@@ -1,11 +1,11 @@
 from pathlib import Path
 
 
-def test_v711_is_loaded_after_stable_v66():
+def test_legacy_market_layers_are_retired_from_runtime():
     html=Path('app/static/index.html').read_text()
-    assert 'live-position-charts-v66.js?v=66.0' in html
-    assert 'unified-market-monitor-v71-1.js?v=71.1' in html
-    assert html.index('live-position-charts-v66.js?v=66.0') < html.index('unified-market-monitor-v71-1.js?v=71.1')
+    assert 'live-position-charts-v66.js' not in html
+    assert 'unified-market-monitor-v71-1.js' not in html
+    assert 'atlas-production.js?v=85.0' in html
 
 
 def test_v711_only_rebuilds_market_monitor_and_uses_unified_endpoint():
