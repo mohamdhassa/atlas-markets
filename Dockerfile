@@ -9,6 +9,7 @@ COPY pyproject.toml /app/
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir ".[dev]"
 
+COPY Dockerfile /app/Dockerfile
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 COPY app /app/app
