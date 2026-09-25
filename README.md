@@ -1,6 +1,6 @@
 # ATLAS MARKETS
 
-**v82 production / v83 documentation / v84 MT5 readiness — provider-aware multi-market simulation on Oracle Cloud**
+**v82 production / v83 documentation / v84 MT5 readiness / v85 consolidated frontend — provider-aware multi-market simulation on Oracle Cloud**
 
 ATLAS MARKETS is a multi-market, multi-provider trading analysis, simulation and operations platform for stocks, ETFs, FX, metals, commodities and crypto.
 
@@ -164,6 +164,7 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 - `docs/RELEASE_V82.md`
 - `docs/RELEASE_V83.md`
 - `docs/RELEASE_V84.md`
+- `docs/RELEASE_V85.md`
 
 ## Engineering rule
 
