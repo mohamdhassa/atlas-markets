@@ -1,7 +1,7 @@
 # ATLAS MARKETS — Architecture
 
-Last updated: 2026-09-23
-Target: v1.1 multi-broker simulation on Oracle Cloud
+Last updated: 2026-09-25
+Target: v82 deployed multi-provider simulation plus v83 documentation closeout
 
 ## Product boundary
 
@@ -21,41 +21,16 @@ ATLAS MARKETS is a multi-market automated trading platform with a strict separat
 
 ## High-level topology
 
-```text
-                       Public Internet
-                             |
-                         HTTPS 443
-                             |
-                    +----------------+
-                    | Oracle Cloud   |
-                    | reverse proxy  |
-                    +--------+-------+
-                             |
-                      127.0.0.1:8000
-                             |
-                    +--------v-------+
-                    | ATLAS FastAPI  |
-                    | automation     |
-                    | analysis/risk  |
-                    | reporting      |
-                    +---+---------+--+
-                        |         |
-              +---------+         +----------------+
-              |                                    |
-      +-------v--------+                   +-------v-------+
-      | PostgreSQL 17 |                   | Redis 7       |
-      | private       |                   | private       |
-      +----------------+                   +---------------+
-                        \
-                         \ HTTPS APIs
-                          +--> Twelve Data
-                          +--> Bybit Testnet
-
-Oracle private VPN
-      |
-      +--> Windows execution node: Fusion MT5 + ATLAS MT5 bridge
-      |
-      `--> IBKR execution node: TWS/IB Gateway + ATLAS IBKR bridge
+```mermaid
+flowchart TB
+    U[Browser] -->|HTTPS 443| P[Reverse proxy]
+    P -->|localhost 8100| A[ATLAS FastAPI]
+    A --> DB[(PostgreSQL 17)]
+    A --> R[(Redis 7)]
+    A -->|HTTPS| B[Bybit Testnet]
+    A -->|private bridge 8766| I[IBKR Gateway Paper]
+    A -.->|future private bridge 8765| M[MT5 Demo node]
+    A -->|data API| T[Twelve Data]
 ```
 
 The broker bridges are not public web services. They must be reachable only through a trusted private network/VPN and should use bridge tokens plus host firewall rules.
@@ -156,6 +131,10 @@ Execution policy is `CERTIFIED_ROUTES_ONLY`.
 
 Unified performance reads broker-native history and account state. Strategy attribution is conservative: only activity with sufficiently verified ATLAS-to-broker lineage is called ATLAS-verified strategy performance.
 
+### 9. Shadow intelligence layer
+
+The non-executable shadow worker evaluates every enabled symbol strategy against its configured provider. It persists provider-attributed observations, meaningful skips and errors. Outcomes settle on the first available candle at or after the configured horizon and include costs, favorable/adverse excursion, expectancy, profit factor and path drawdown. Analytical eligibility never authorizes paper or live execution.
+
 ## Database
 
 PostgreSQL 17 is the durable state store. Redis is the transient/cache coordination service. See `ERD.md` for logical persistence relationships.
@@ -171,7 +150,7 @@ The Oracle profile is `docker-compose.oracle.yml`:
 - `.env.oracle` is private and never committed.
 - public access should terminate at HTTPS 443 through a reverse proxy/load balancer.
 
-See `ORACLE_DEPLOYMENT.md`.
+Production currently uses `docker-compose.oracle.prod.yml` as the host-specific deployment asset; the tracked `docker-compose.oracle.yml` remains the canonical template. See `ORACLE_DEPLOYMENT.md` and `OPERATIONS_RUNBOOK.md`.
 
 ## Security boundary
 
