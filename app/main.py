@@ -42,6 +42,7 @@ from app.services.mt5_position_manager import mt5_position_manager_loop
 from app.services.news_intelligence import news_intelligence_loop
 from app.services.reporting import reporting_loop
 from app.services.safe_automation import safe_automation_loop
+from app.services.shadow_monitor import shadow_monitor_loop
 
 settings = get_settings()
 static_dir = Path(__file__).resolve().parent / "static"
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(reporting_loop(stop)),
         asyncio.create_task(historical_loop(stop)),
         asyncio.create_task(news_intelligence_loop(stop)),
+        asyncio.create_task(shadow_monitor_loop(stop)),
     ]
     app.state.automation_stop = stop
     app.state.background_tasks = tasks
