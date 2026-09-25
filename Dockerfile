@@ -13,6 +13,9 @@ COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 COPY app /app/app
 COPY tests /app/tests
+COPY README.md /app/README.md
+COPY docs /app/docs
+COPY ops /app/ops
 COPY docker-compose.oracle.yml /app/docker-compose.oracle.yml
 COPY .env.oracle.example /app/.env.oracle.example
 
