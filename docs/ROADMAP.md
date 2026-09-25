@@ -72,6 +72,8 @@ The objective is not another phase layer. It is one maintainable application cor
 - [x] Add v80 paper-only shadow decisions with regime, multi-timeframe, news and bounded vision confirmation.
 - [x] Separate chronological training and unseen validation metrics with trading-cost deductions.
 - [ ] Collect at least 30 days of forward shadow observations before considering paper execution promotion.
+- [x] Persist scheduled v81 forward observations and settle them against later provider prices.
+- [x] Display per-symbol shadow samples, win rate, net return and readiness in Strategy.
 
 - [x] Technical analysis foundation.
 - [x] Historical candle/backtest persistence.
