@@ -165,6 +165,7 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 - `docs/RELEASE_V83.md`
 - `docs/RELEASE_V84.md`
 - `docs/RELEASE_V85.md`
+- `docs/RELEASE_V86.md`
 
 ## Engineering rule
 

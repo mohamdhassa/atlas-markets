@@ -3,6 +3,7 @@ set -euo pipefail
 
 BRIDGE_CONTAINER="${IBKR_BRIDGE_CONTAINER:-atlas-markets-ibkr-bridge}"
 BRIDGE_HEALTH_URL="${IBKR_BRIDGE_HEALTH_URL:-http://127.0.0.1:8766/health}"
+BRIDGE_ACCOUNT_URL="${IBKR_BRIDGE_ACCOUNT_URL:-http://127.0.0.1:8766/account}"
 GATEWAY_HOST="${IBKR_GATEWAY_HOST:-127.0.0.1}"
 GATEWAY_PORT="${IBKR_GATEWAY_PORT:-4002}"
 WATCHDOG_LOG="${IBKR_WATCHDOG_LOG:-/var/log/atlas/ibkr-watchdog.log}"
@@ -25,8 +26,17 @@ if ! timeout 2 bash -c "</dev/tcp/${GATEWAY_HOST}/${GATEWAY_PORT}" 2>/dev/null; 
 fi
 
 health="$(curl --silent --show-error --max-time 4 "${BRIDGE_HEALTH_URL}" 2>/dev/null || true)"
+health_connected=false
 if printf '%s' "${health}" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("connected") is True else 1)' 2>/dev/null; then
-  log_event "IBKR_HEALTHY"
+  health_connected=true
+fi
+
+# A connected socket is not sufficient: IB Gateway can remain half-open after
+# its daily reset while account callbacks no longer arrive. Require a complete
+# account-summary round trip before declaring the provider healthy.
+account="$(curl --fail --silent --show-error --max-time 15 "${BRIDGE_ACCOUNT_URL}" 2>/dev/null || true)"
+if [[ "${health_connected}" == "true" ]] && printf '%s' "${account}" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("account_id") and d.get("simulation") is True else 1)' 2>/dev/null; then
+  log_event "IBKR_HEALTHY account_probe=passed"
   exit 0
 fi
 
@@ -42,8 +52,10 @@ docker restart "${BRIDGE_CONTAINER}" >/dev/null
 sleep 5
 
 health="$(curl --silent --show-error --max-time 4 "${BRIDGE_HEALTH_URL}" 2>/dev/null || true)"
-if printf '%s' "${health}" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("connected") is True else 1)' 2>/dev/null; then
-  log_event "IBKR_RECOVERED"
+account="$(curl --fail --silent --show-error --max-time 15 "${BRIDGE_ACCOUNT_URL}" 2>/dev/null || true)"
+if printf '%s' "${health}" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("connected") is True else 1)' 2>/dev/null \
+  && printf '%s' "${account}" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("account_id") and d.get("simulation") is True else 1)' 2>/dev/null; then
+  log_event "IBKR_RECOVERED account_probe=passed"
   exit 0
 fi
 

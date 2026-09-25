@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import httpx
 
 from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
@@ -9,7 +10,23 @@ class IbkrBridgeClient:
         self.base_url=base_url.rstrip('/');self.token=token;self.timeout=timeout
     def _headers(self):return {'X-ATLAS-Bridge-Token':self.token} if self.token else {}
     async def _get(self,path:str,params:dict|None=None):
-        async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.get(self.base_url+path,params=params,headers=self._headers());r.raise_for_status();return r.json()
+        last_error=None
+        for attempt in range(1,4):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as c:
+                    r=await c.get(self.base_url+path,params=params,headers=self._headers())
+                r.raise_for_status();return r.json()
+            except (httpx.TimeoutException,httpx.NetworkError,httpx.RemoteProtocolError) as exc:
+                last_error=exc
+            except httpx.HTTPStatusError as exc:
+                last_error=exc
+                if exc.response.status_code not in {502,503,504}:break
+            except Exception as exc:
+                last_error=exc;break
+            if attempt<3:await asyncio.sleep(0.35*attempt)
+        # Preserve the httpx exception type so provider-unavailable handling can
+        # distinguish an outage from a strategy or validation rejection.
+        raise last_error
     async def _post(self,path:str,payload:dict):
         async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.post(self.base_url+path,json=payload,headers=self._headers());r.raise_for_status();return r.json()
     async def health(self):return await self._get('/health')
