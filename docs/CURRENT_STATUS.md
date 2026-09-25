@@ -1,12 +1,13 @@
 # ATLAS MARKETS — Current Status
 
-Last updated: 2026-09-23
+Last updated: 2026-09-25
 
 ## Baseline
 
 - v1.0.0 Simulation Release: COMPLETE and tagged.
-- v1.1: active deployment/expansion candidate.
-- Database baseline verified at Alembic head before v1.1 work.
+- v82 provider-aware shadow analytics: DEPLOYED on Oracle.
+- v83 documentation and architecture closeout: IN PROGRESS.
+- Database: `20260925_0019 (head)`.
 - Live Money remains gated.
 
 ## v1.1 objectives
@@ -22,10 +23,10 @@ Last updated: 2026-09-23
 
 ### Fusion MT5 Demo
 
-- Connectivity: CERTIFIED
-- Execution: CERTIFIED
-- Automatic route: ENABLED when account/strategy/risk gates pass
-- Markets: FX, metals, commodities
+- Application adapter and bridge support: PRESENT
+- Dedicated execution-node completion/recovery certification: NEXT PHASE
+- Automatic unattended production route: not claimed until the terminal, authorization, bridge and recovery tests pass together
+- Intended markets: FX, metals, commodities
 
 ### IBKR Paper
 
@@ -36,6 +37,7 @@ Last updated: 2026-09-23
 - Hard cap: 1 share/order
 - WhatIf + broker fill verification required
 - Real-time API market-data subscriptions strongly recommended for broad unattended U.S. equity automation
+- v82 shadow coverage: 9 configured strategies observed with zero scan errors at deployment acceptance
 
 ### Bybit Testnet
 
@@ -47,6 +49,15 @@ Last updated: 2026-09-23
 - Execution certification: CERTIFIED for Testnet/Demo Spot
 - Automation: ELIGIBLE when account, strategy and risk gates pass
 - Live Money and non-Spot products: NOT CERTIFIED
+- v82 shadow coverage: 5 configured strategies observed and 5 outcomes settled with zero scan errors at deployment acceptance
+
+## v82 production evidence
+
+- Application image: `sha256:798306df1a4d4381e03d2931491aec7e53a247dd2d2f9a05c03177914d46127f`.
+- v81 rollback image: `sha256:1dc025b01543611cdaa244506f644dd40e6d89703b621da10bb5ab8753403b18`.
+- Full acceptance suite: 239 passed, four expected external integration skips.
+- Health: application, PostgreSQL and Redis healthy.
+- GitHub main: `cdbacec`.
 
 ### Twelve Data
 
@@ -84,33 +95,16 @@ A fully online website does not guarantee broker execution. Fusion MT5 requires 
 
 ## Documentation state
 
-Updated for v1.1:
+v83 adds a canonical documentation index, production ERD, API reference, user/admin guide, operations runbook, backup/recovery guide and security-operations guide. Architecture, README, current status, roadmap and final handover are aligned to v82 production evidence.
 
-- README
-- Architecture
-- ERD
-- Authorization
-- Providers
-- Testing & Certification
-- Oracle Deployment
-- Current Status
+## Next ordered work
 
-Final handover/roadmap are updated as part of the same rollout before the Oracle cutover is considered complete.
-
-## Immediate acceptance sequence
-
-1. Pull v1.1 changes locally.
-2. Rebuild app.
-3. Run full pytest.
-4. Call bulk eligible AUTO_TRADE endpoint as ADMIN.
-5. Review promoted vs blocked symbols.
-6. Run one monitored automatic scan.
-7. Confirm MT5, IBKR, and Bybit broker truth.
-8. Prepare Oracle VM secrets/network.
-9. Restore/copy PostgreSQL state to Oracle.
-10. Establish private broker-bridge connectivity.
-11. Run Oracle acceptance suite.
-12. Begin multi-week observation.
+1. Merge/deploy the v83 documentation release.
+2. Complete the MT5 execution node and recovery certification.
+3. Refine/consolidate frontend behavior and responsive accessibility.
+4. Accumulate and analyze settled provider-specific shadow evidence.
+5. Calibrate strategies without contaminating the forward-validation window.
+6. Begin separately specified development only after acceptance criteria are documented.
 
 ## Safety boundary
 
