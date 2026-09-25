@@ -122,3 +122,9 @@ After the consolidated rebuild is stable, run a multi-week simulation observatio
 ## Live Money
 
 Live Money is outside this rebuild. It requires a separate provider-specific release/certification process, smaller initial limits, monitoring, backup/recovery validation, legal/provider eligibility checks and explicit rollback/kill procedures.
+# v82 provider-aware shadow analytics
+
+- Delivered provider-attributed coverage and persistent skipped/error reasons.
+- Delivered exact-horizon settlement, cost-aware expectancy, profit factor, drawdown, and excursion analytics.
+- Delivered frontend provider coverage and readiness diagnostics.
+- Next gate: accumulate statistically meaningful forward samples before any separately reviewed paper-execution promotion.

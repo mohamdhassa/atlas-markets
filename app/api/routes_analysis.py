@@ -1,3 +1,5 @@
+import json
+from datetime import datetime,timedelta,timezone
 from fastapi import APIRouter,Body,Depends,HTTPException,Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -9,7 +11,9 @@ from app.analysis.technical import analyze_candles
 from app.api.dependencies import get_current_user
 from app.core.config import get_settings
 from app.db.models.auth import User
-from app.db.models.shadow import ShadowObservation
+from app.db.models.broker import BrokerProfile
+from app.db.models.shadow import ShadowObservation,ShadowScanEvent
+from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 from app.market_data.bybit import BybitMarketDataError,BybitPublicMarketData
 from app.market_data.fx import FxMarketDataError,TwelveDataFxMarketData
@@ -44,17 +48,38 @@ async def shadow_backtest(payload:dict=Body(...),_:User=Depends(get_current_user
 @router.get("/shadow/observations")
 async def shadow_observations(limit:int=Query(100,ge=1,le=500),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  rows=list(db.scalars(select(ShadowObservation).where(ShadowObservation.user_id==user.id).order_by(ShadowObservation.created_at.desc()).limit(limit)).all())
- return [{"id":x.id,"provider":x.provider,"market":x.market,"symbol":x.symbol,"timeframe":x.timeframe,"action":x.action,"confidence":x.confidence,"regime":x.regime,"confirmations":x.confirmations,"contradictions":x.contradictions,"entry_price":x.entry_price,"exit_price":x.exit_price,"net_return_pct":x.net_return_pct,"outcome":x.outcome,"evaluation_due_at":x.evaluation_due_at,"settled_at":x.settled_at,"created_at":x.created_at} for x in rows]
+ return [{"id":x.id,"provider":x.provider,"market":x.market,"symbol":x.symbol,"timeframe":x.timeframe,"action":x.action,"confidence":x.confidence,"regime":x.regime,"confirmations":x.confirmations,"contradictions":x.contradictions,"entry_price":x.entry_price,"exit_price":x.exit_price,"gross_return_pct":x.gross_return_pct,"net_return_pct":x.net_return_pct,"max_favorable_excursion_pct":x.max_favorable_excursion_pct,"max_adverse_excursion_pct":x.max_adverse_excursion_pct,"round_trip_cost_bps":x.round_trip_cost_bps,"outcome":x.outcome,"evaluation_due_at":x.evaluation_due_at,"settled_at":x.settled_at,"created_at":x.created_at} for x in rows]
+
+@router.get("/shadow/coverage")
+async def shadow_coverage(days:int=Query(7,ge=1,le=90),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ since=datetime.now(timezone.utc)-timedelta(days=days)
+ strategies=list(db.scalars(select(SymbolStrategy).where(SymbolStrategy.user_id==user.id,SymbolStrategy.enabled.is_(True))).all())
+ profiles={x.id:x for x in db.scalars(select(BrokerProfile).where(BrokerProfile.user_id==user.id)).all()}
+ events=list(db.scalars(select(ShadowScanEvent).where(ShadowScanEvent.user_id==user.id,ShadowScanEvent.created_at>=since).order_by(ShadowScanEvent.created_at.desc())).all())
+ latest={}
+ for event in events:latest.setdefault(event.strategy_id,event)
+ providers={}
+ for strategy in strategies:
+  profile=profiles.get(strategy.profile_id);provider=profile.provider if profile else "UNKNOWN";item=providers.setdefault(provider,{"provider":provider,"configured":0,"active":0,"observed":0,"skipped":0,"errors":0,"symbols":[]})
+  event=latest.get(strategy.id);status=event.status if event else "WAITING";reason=event.reason if event else "NO_SCAN_RECORDED"
+  item["configured"]+=1;item["active"]+=int(bool(profile and profile.is_enabled and profile.is_active));item["observed"]+=int(status=="OBSERVED");item["skipped"]+=int(status=="SKIP");item["errors"]+=int(status=="ERROR")
+  item["symbols"].append({"symbol":strategy.symbol,"market":strategy.market,"timeframe":strategy.timeframe or "5m","status":status,"reason":reason,"last_scan_at":event.created_at if event else None})
+ return {"days":days,"mode":"SHADOW","execution_enabled":False,"providers":sorted(providers.values(),key=lambda x:x["provider"]),"safety":"Coverage reports observation only and cannot enable execution."}
 @router.get("/shadow/performance")
 async def shadow_performance(days:int=Query(30,ge=1,le=366),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
- from datetime import datetime,timedelta,timezone
  since=datetime.now(timezone.utc)-timedelta(days=days);rows=list(db.scalars(select(ShadowObservation).where(ShadowObservation.user_id==user.id,ShadowObservation.created_at>=since).order_by(ShadowObservation.created_at.desc())).all());groups={}
  for x in rows:
-  key=(x.provider,x.market,x.symbol,x.timeframe);g=groups.setdefault(key,{"provider":x.provider,"market":x.market,"symbol":x.symbol,"timeframe":x.timeframe,"observations":0,"directional":0,"settled":0,"wins":0,"losses":0,"pending":0,"net_return_pct":0.0,"latest_action":x.action,"latest_confidence":x.confidence,"latest_regime":x.regime,"latest_at":x.created_at})
+  key=(x.provider,x.market,x.symbol,x.timeframe);g=groups.setdefault(key,{"provider":x.provider,"market":x.market,"symbol":x.symbol,"timeframe":x.timeframe,"observations":0,"directional":0,"settled":0,"wins":0,"losses":0,"pending":0,"net_return_pct":0.0,"gross_profit_pct":0.0,"gross_loss_pct":0.0,"max_drawdown_pct":0.0,"avg_favorable_excursion_pct":0.0,"avg_adverse_excursion_pct":0.0,"latest_action":x.action,"latest_confidence":x.confidence,"latest_regime":x.regime,"latest_at":x.created_at})
   g["observations"]+=1;g["directional"]+=int(x.action in {"BUY","SELL"});g["pending"]+=int(x.outcome=="PENDING")
-  if x.settled_at is not None and x.action in {"BUY","SELL"}:g["settled"]+=1;g["wins"]+=int(x.outcome=="WIN");g["losses"]+=int(x.outcome=="LOSS");g["net_return_pct"]+=float(x.net_return_pct or 0)
+  if x.settled_at is not None and x.action in {"BUY","SELL"}:
+   value=float(x.net_return_pct or 0);g["settled"]+=1;g["wins"]+=int(x.outcome=="WIN");g["losses"]+=int(x.outcome=="LOSS");g["net_return_pct"]+=value;g["gross_profit_pct"]+=max(0,value);g["gross_loss_pct"]+=min(0,value);g["avg_favorable_excursion_pct"]+=float(x.max_favorable_excursion_pct or 0);g["avg_adverse_excursion_pct"]+=float(x.max_adverse_excursion_pct or 0)
+   g.setdefault("returns",[]).append(value)
  out=[]
- for g in groups.values():g["win_rate"]=round(g["wins"]/g["settled"]*100,2) if g["settled"] else None;g["net_return_pct"]=round(g["net_return_pct"],4);g["eligible"]=g["settled"]>=30 and g["net_return_pct"]>0 and (g["win_rate"] or 0)>=50;out.append(g)
+ for g in groups.values():
+  equity=peak=1.0;drawdown=0.0
+  for value in reversed(g.pop("returns",[])):equity*=1+value/100;peak=max(peak,equity);drawdown=max(drawdown,(peak-equity)/peak*100 if peak else 0)
+  g["win_rate"]=round(g["wins"]/g["settled"]*100,2) if g["settled"] else None;g["net_return_pct"]=round(g["net_return_pct"],4);g["expectancy_pct"]=round(g["net_return_pct"]/g["settled"],4) if g["settled"] else None;g["profit_factor"]=round(g["gross_profit_pct"]/abs(g["gross_loss_pct"]),3) if g["gross_loss_pct"] else None;g["max_drawdown_pct"]=round(drawdown,4);g["avg_favorable_excursion_pct"]=round(g["avg_favorable_excursion_pct"]/g["settled"],4) if g["settled"] else None;g["avg_adverse_excursion_pct"]=round(g["avg_adverse_excursion_pct"]/g["settled"],4) if g["settled"] else None
+  g["eligible"]=g["settled"]>=30 and (g["expectancy_pct"] or 0)>0 and (g["profit_factor"] or 0)>=1.2 and g["max_drawdown_pct"]<=10;g["readiness_reasons"]=[] if g["eligible"] else [label for ok,label in ((g["settled"]>=30,"NEEDS_30_SETTLED_TRADES"),(g["expectancy_pct"] is not None and g["expectancy_pct"]>0,"EXPECTANCY_NOT_POSITIVE"),(g["profit_factor"] is not None and g["profit_factor"]>=1.2,"PROFIT_FACTOR_BELOW_1_2"),(g["max_drawdown_pct"]<=10,"DRAWDOWN_ABOVE_10_PERCENT")) if not ok];out.append(g)
  return {"days":days,"mode":"SHADOW","execution_enabled":False,"summary":{"observations":len(rows),"settled":sum(x["settled"] for x in out),"pending":sum(x["pending"] for x in out),"eligible":sum(x["eligible"] for x in out)},"strategies":out,"safety":"Shadow performance cannot enable broker execution."}
 @router.get("/{symbol}/multi")
 async def multi_timeframe_analysis(symbol:str,category:str=Query("linear"),_:User=Depends(get_current_user)):

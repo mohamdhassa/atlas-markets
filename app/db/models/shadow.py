@@ -31,7 +31,25 @@ class ShadowObservation(Base):
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     gross_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     net_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_favorable_excursion_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_adverse_excursion_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    round_trip_cost_bps: Mapped[float] = mapped_column(Float, default=8.0)
     outcome: Mapped[str] = mapped_column(String(16), default="PENDING", index=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    details_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class ShadowScanEvent(Base):
+    __tablename__ = "shadow_scan_events"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    broker_profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("broker_profiles.id", ondelete="CASCADE"), index=True)
+    strategy_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("symbol_strategies.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    market: Mapped[str] = mapped_column(String(16), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str] = mapped_column(String(64), index=True)
     details_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
