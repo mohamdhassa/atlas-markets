@@ -5,7 +5,7 @@ def test_production_market_layers_are_active_in_v87_runtime():
     html=Path('app/static/index.html').read_text(encoding='utf-8')
     assert 'live-position-charts-v66.js' in html
     assert 'unified-market-monitor-v71-1.js' in html
-    assert 'atlas-responsive-v87.js?v=87.0' in html
+    assert 'atlas-responsive-v87.js?v=87.1' in html
 
 
 def test_v711_only_rebuilds_market_monitor_and_uses_unified_endpoint():
