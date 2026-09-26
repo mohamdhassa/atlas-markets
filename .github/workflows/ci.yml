@@ -10,17 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-      - name: Install project
-        run: pip install -e .
-      - name: Run test suite
-        env:
-          DATABASE_URL: postgresql+psycopg://atlas:atlas@localhost:5432/atlas_markets
-          REDIS_URL: redis://localhost:6379/0
-        run: pytest -q
+      - name: Build production-compatible test image
+        run: docker build --tag atlas-markets-ci .
+      - name: Run complete test suite
+        run: >-
+          docker run --rm
+          --network host
+          -e DATABASE_URL=postgresql+psycopg://atlas:atlas@127.0.0.1:5432/atlas_markets
+          -e REDIS_URL=redis://127.0.0.1:6379/0
+          atlas-markets-ci
+          python -m pytest -q
     services:
       postgres:
         image: postgres:17-alpine
