@@ -45,4 +45,29 @@
   }))).observe(content,{childList:true,subtree:true});
   enhance(document);
   sync();
+
+  /* Compatible page modules can replace the same workspace more than once.
+     Hold those intermediate DOM states behind one loading surface. */
+  const previousRender=window.renderPage||renderPage;
+  const delay=ms=>new Promise(resolve=>window.setTimeout(resolve,ms));
+  let routeGeneration=0;
+  window.renderPage=renderPage=async function(page){
+    const generation=++routeGeneration;
+    content.classList.add('atlas-route-rendering');
+    try{
+      const result=await previousRender(page);
+      await delay(page==='Portfolio'?760:140);
+      return result;
+    }finally{
+      if(generation===routeGeneration){
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          if(generation===routeGeneration)content.classList.remove('atlas-route-rendering');
+        }));
+      }
+    }
+  };
+
+  const revealBoot=()=>document.body.classList.remove('atlas-booting');
+  if(document.readyState==='complete')revealBoot();
+  else window.addEventListener('load',revealBoot,{once:true});
 })();
