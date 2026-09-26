@@ -19,8 +19,8 @@ def test_v87_supersedes_rejected_v85_asset_consolidation():
     )
     for asset in required_production_assets:
         assert asset in html
-    assert "atlas-responsive-v87.css?v=87.0" in html
-    assert "atlas-responsive-v87.js?v=87.0" in html
+    assert "atlas-responsive-v87.css?v=87.1" in html
+    assert "atlas-responsive-v87.js?v=87.1" in html
 
 
 def test_production_shell_preserves_existing_router_and_adds_mobile_navigation():
