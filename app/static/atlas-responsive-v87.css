@@ -1,105 +1,48 @@
-/* ATLAS MARKETS v87 responsive compatibility layer.
-   Loaded last to normalize the production UI without replacing page renderers. */
-:root{--atlas-touch:44px}
+/* ATLAS MARKETS v87.1 compatibility layer.
+   Keep established component sizing intact; fix viewport safety, navigation,
+   and atomic rendering only. */
+:root{--atlas-touch:42px}
 html{overflow-x:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{overflow-x:hidden}
 body.atlas-nav-open{overflow:hidden;touch-action:none}
 img,svg,canvas{max-width:100%}
-button,input,select,textarea{max-width:100%}
-button,.nav-button,.primary-button,.secondary-button,.ghost-button,.account-secondary{min-height:var(--atlas-touch)}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px solid rgba(77,181,255,.55);outline-offset:2px}
 .main-area,.content,.panel,.metric-card,.analysis-card,.account-card{min-width:0}
-.content{width:100%}
-.panel,.metric-card,.analysis-card,.account-card{overflow-wrap:anywhere}
-.page-intro>*,.action-row>*,.topbar>*,.v61-section-head>*{min-width:0}
-.page-intro h1,.page-intro h2,.page-intro h3,.topbar h2{overflow-wrap:anywhere}
-.table-wrap,.responsive-table,.v61-table,.p44-table-wrap{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
+.table-wrap,.responsive-table,.v61-table,.p44-table-wrap{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
 .table-wrap:focus-visible,.responsive-table:focus-visible,.v61-table:focus-visible,.p44-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.data-table th{white-space:nowrap}
-.data-table td{vertical-align:top}
-.placeholder-chart,.analytics-chart,.p21-chart,.p21-mini-chart,.v61-chart,.v63-chartbox{max-width:100%;overflow:hidden}
-.form-grid,.account-add-form,.polish-form,.p21-form-grid,.p21-cred-grid{min-width:0}
-.form-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px solid rgba(77,181,255,.55);outline-offset:2px}
 .atlas-sidebar-backdrop{display:none}
 
-@media(max-width:1200px){
-  .content{padding:22px}
-  .metric-grid,.polish-metrics,.p21-status-strip,.p44-grid,.v61-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .provider-grid,.analysis-grid,.account-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .two-col,.chart-grid,.p21-chart-grid,.p21-mini-grid{grid-template-columns:1fr}
-}
+/* Never expose intermediate layouts while the script stack is initializing. */
+body.atlas-booting #loginView,body.atlas-booting #appView{visibility:hidden}
+body.atlas-booting::before{content:"ATLAS MARKETS";position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:#08111c;color:#8fa5bc;font-size:.78rem;font-weight:800;letter-spacing:.16em}
+.content.atlas-route-rendering{position:relative;min-height:220px}
+.content.atlas-route-rendering>*{visibility:hidden!important}
+.content.atlas-route-rendering::after{content:"Loading workspace...";position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:.82rem;letter-spacing:.04em}
 
-@media(max-width:900px){
-  .content{padding:18px}
-  .page-intro,.accounts-hero,.polish-hero,.v61-hero{align-items:flex-start;flex-direction:column}
-  .page-intro>.action-row,.page-intro>.chart-controls,.page-intro>.p21-toolbar{width:100%}
-  .chart-controls,.p21-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-  .v63-layout{grid-template-columns:1fr}
-  .v63-watch{max-height:260px}
+@media(max-width:1200px){
+  /* Existing page-specific styles own the desktop and tablet grids. */
 }
 
 @media(max-width:760px){
   .app-shell{display:block;min-height:100dvh}
-  .sidebar{position:fixed;inset:0 auto 0 0;left:calc(-1 * min(86vw,320px) - 20px);width:min(86vw,320px);height:100dvh;padding:16px 12px max(16px,env(safe-area-inset-bottom));z-index:60;transition:left .22s ease;box-shadow:0 22px 60px rgba(0,0,0,.55);overflow:hidden}
+  .sidebar{position:fixed;inset:0 auto 0 0;left:calc(-1 * min(86vw,300px) - 20px);width:min(86vw,300px);height:100dvh;padding-bottom:max(16px,env(safe-area-inset-bottom));z-index:60;transition:left .2s ease;box-shadow:0 22px 60px rgba(0,0,0,.55);overflow:hidden}
   .sidebar.open{left:0}
-  .sidebar .nav-list{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:14px}
-  .atlas-sidebar-backdrop{display:block;position:fixed;inset:0;z-index:55;border:0;border-radius:0;background:rgba(0,0,0,.62);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s ease,visibility .2s ease}
+  .sidebar .nav-list{min-height:0;overflow-y:auto;overscroll-behavior:contain}
+  .atlas-sidebar-backdrop{display:block;position:fixed;inset:0;z-index:55;border:0;border-radius:0;background:rgba(0,0,0,.62);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s ease,visibility .18s ease}
   .atlas-sidebar-backdrop.open{opacity:1;visibility:visible;pointer-events:auto}
-  .menu-button{display:grid;place-items:center;flex:0 0 var(--atlas-touch);width:var(--atlas-touch);height:var(--atlas-touch);border:1px solid var(--line);border-radius:11px;background:rgba(19,34,53,.8)}
-  .topbar{height:auto;min-height:68px;padding:max(8px,env(safe-area-inset-top)) 12px 8px;gap:10px}
-  .topbar>div:nth-child(2){min-width:0}
-  .topbar .eyebrow{display:none}
-  .topbar h2{font-size:clamp(1rem,5vw,1.2rem);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .topbar-status{margin-left:auto;max-width:38vw;font-size:.72rem;text-align:right}
-  .topbar-status span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .content{padding:12px;padding-bottom:max(18px,env(safe-area-inset-bottom))}
-  .panel{padding:15px;border-radius:14px}
-  .metric-grid,.polish-metrics,.p21-status-strip,.p44-grid,.v61-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-  .provider-grid,.analysis-grid,.account-grid,.signal-polish-grid,.v61-holdings,.v61-activity{grid-template-columns:1fr}
-  .automation-banner{grid-template-columns:auto minmax(0,1fr);padding:15px}
-  .automation-stats{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr));border-left:0;border-top:1px solid var(--line);padding:14px 0 0}
-  .account-bottom-grid,.polish-grid.users-layout{grid-template-columns:1fr}
-  .form-grid,.account-add-form,.polish-form,.p21-form-grid,.p21-cred-grid{grid-template-columns:1fr}
-  .page-intro{gap:12px;margin-bottom:14px}
-  .page-intro>.badge,.accounts-count{align-self:flex-start}
-  .page-intro .action-row{justify-content:flex-start}
-  .chart-controls,.p21-toolbar{grid-template-columns:1fr 1fr}
-  .chart-controls select,.p21-toolbar label{width:100%}
-  .action-row{align-items:stretch}
-  .action-row button{flex:1 1 auto}
-  .provider-actions,.p21-actions,.p44-actions{align-items:stretch;flex-direction:column}
-  .provider-actions button,.p21-actions button,.p44-actions button{width:100%}
-  .data-table{min-width:620px}
-  .data-table th,.data-table td{padding:11px 12px}
-  .v61-table table,.p44-table-wrap table{min-width:720px}
-  .v61-price-row,.v63-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .v61-chart,.v63-chartbox{min-height:210px}
-  .login-shell{padding:16px}
-  .login-panel{padding:24px 20px;border-radius:18px}
+  .menu-button{display:grid;place-items:center;flex:0 0 var(--atlas-touch);width:var(--atlas-touch);height:var(--atlas-touch)}
+  .topbar{padding-top:max(0px,env(safe-area-inset-top))}
+  .content{padding-bottom:max(18px,env(safe-area-inset-bottom))}
+  .page-intro>*,.action-row>*,.topbar>*{min-width:0}
+  .data-table th{white-space:nowrap}
 }
 
 @media(max-width:480px){
-  .content{padding:9px}
-  .topbar-status span:last-child{display:none}
-  .metric-grid,.polish-metrics,.p21-status-strip,.p44-grid,.v61-kpis{grid-template-columns:1fr}
-  .automation-banner{grid-template-columns:1fr}
-  .automation-icon{width:48px;height:48px;font-size:1.5rem}
-  .automation-stats{grid-template-columns:1fr}
-  .chart-controls,.p21-toolbar{grid-template-columns:1fr}
-  .provider-card,.signal-polish-card,.polish-card,.account-add-card,.account-info-card{padding:14px}
-  .provider-head,.v61-holding-head,.v61-section-head{align-items:flex-start;flex-direction:column}
-  .provider-facts div{grid-template-columns:1fr}
-  .provider-facts dd{text-align:left}
-  .form-actions{align-items:stretch;flex-direction:column}
-  .form-actions button{width:100%}
-  .v61-toolbar,.v61-tabs{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
-  .v61-toolbar>*,.v61-tabs>*{width:100%;text-align:center}
-  .v61-price-row,.v63-stats{grid-template-columns:1fr 1fr}
-  .empty-state{padding:28px 14px}
+  button,input,select,textarea{max-width:100%}
 }
 
 @media(hover:none) and (pointer:coarse){
-  .nav-button,.market-tab,.v61-tab,.v63-tf,.v63-symbol{min-height:48px}
+  .nav-button,.menu-button{min-height:44px}
   button{-webkit-tap-highlight-color:transparent}
 }
 
