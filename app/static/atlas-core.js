@@ -20,19 +20,28 @@ async function operations(){
  const root=document.getElementById('content'); if(!root)return;
  root.innerHTML='<div class="panel empty-state">Loading live operations…</div>';
  try{
-  const [accounts,auto,actions]=await Promise.all([api('/accounts'),api('/automation/state'),api('/automation/actions?limit=100')]);
+  const [accounts,auto,actions,mt5]=await Promise.all([
+   api('/accounts'),api('/automation/state'),api('/automation/actions?limit=100'),
+   api('/mt5/readiness').catch(e=>({provider:'MT5',status:'UNAVAILABLE',execution_ready:false,blockers:[e.message]}))
+  ]);
   const bybit=accounts.filter(a=>String(a.provider).toUpperCase()==='BYBIT');
   const ibkr=accounts.filter(a=>String(a.provider).toUpperCase()==='IBKR');
   const cards=[];
   for(const a of bybit){let spot=null;try{spot=await api(`/accounts/${a.id}/bybit-spot-state`)}catch(e){spot={error:e.message}}cards.push(bybitCard(a,spot,actions.filter(x=>String(x.provider).toUpperCase()==='BYBIT')))}
   let portfolio={positions:[],errors:[]};try{portfolio=await api('/portfolio')}catch(_){ }
   for(const a of ibkr){cards.push(ibkrCard(a,actions.filter(x=>String(x.provider).toUpperCase()==='IBKR'),(portfolio.positions||[]).filter(x=>String(x.profile_id)===String(a.id))))}
+  cards.push(mt5Card(mt5,accounts.filter(a=>String(a.provider).toUpperCase()==='MT5')));
   root.innerHTML=`<div class="page-intro"><div><p class="eyebrow">OPERATIONS</p><h3>Execution control center</h3><p class="muted">Provider readiness, automation state, certification and recent decisions.</p></div>${badge(auto.killed?'KILLED':auto.enabled?'RUNNING':'STOPPED',auto.enabled&&!auto.killed)}</div>
   <div class="metric-grid"><div class="metric-card"><span>Automation</span><strong>${auto.enabled&&!auto.killed?'RUNNING':'STOPPED'}</strong></div><div class="metric-card"><span>Interval</span><strong>${Number(auto.interval_seconds||0)}s</strong></div><div class="metric-card"><span>Accounts</span><strong>${accounts.length}</strong></div><div class="metric-card"><span>Recent actions</span><strong>${actions.length}</strong></div></div>
   ${cards.join('')||'<section class="panel"><h3>Execution providers</h3><p class="muted">No Bybit or IBKR execution profile configured.</p></section>'}
   <section class="panel atlas-section"><h3>All provider accounts</h3><div class="table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Account</th><th>Environment</th><th>Connection</th><th>Equity</th><th>Execution</th></tr></thead><tbody>${accounts.map(a=>`<tr><td><strong>${esc(a.provider)}</strong></td><td>${esc(a.account_label)}</td><td>${esc(a.environment)}</td><td>${badge(a.last_connection_status||'UNKNOWN',a.last_connection_status==='CONNECTED')}</td><td>${a.equity_usd==null?'—':Number(a.equity_usd).toFixed(2)}</td><td>${a.execution_certified?badge('CERTIFIED',true):badge('GATED')}</td></tr>`).join('')}</tbody></table></div></section>`;
   bindOperations();
  }catch(e){root.innerHTML=`<div class="panel"><h3>Operations unavailable</h3><p class="error-text">${esc(e.message)}</p></div>`}
+}
+function mt5Card(readiness,profiles){
+ const ready=readiness.execution_ready===true;
+ const blockers=readiness.blockers||[];
+ return `<section class="panel atlas-section"><div class="page-intro"><div><p class="eyebrow">MT5 EXECUTION NODE</p><h3>Fusion Markets runtime</h3><p class="muted">Native Windows terminal and centrally secured bridge readiness.</p></div>${badge(readiness.status||'UNKNOWN',ready)}</div><div class="metric-grid"><div class="metric-card"><span>Configured</span><strong>${readiness.configured?'YES':'NO'}</strong></div><div class="metric-card"><span>Reachable</span><strong>${readiness.reachable?'YES':'NO'}</strong></div><div class="metric-card"><span>Simulation</span><strong>${readiness.simulation_ready?'READY':'BLOCKED'}</strong></div><div class="metric-card"><span>Execution</span><strong>${ready?'READY':'GATED'}</strong></div></div><div class="status-list"><div class="status-item"><span>Profiles</span><strong>${profiles.length}</strong></div><div class="status-item"><span>Server</span><strong>${esc(readiness.server||'—')}</strong></div><div class="status-item"><span>Blockers</span><strong>${esc(blockers.join(' · ')||'NONE')}</strong></div><div class="status-item"><span>Live Money</span><strong>DISABLED</strong></div></div></section>`;
 }
 function bybitCard(a,s,actions){
  if(s?.error)return `<section class="panel atlas-section"><h3>Bybit Spot · ${esc(a.account_label)}</h3><p class="error-text">${esc(s.error)}</p></section>`;
