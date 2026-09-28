@@ -1,7 +1,8 @@
-# ATLAS MARKETS — Architecture
+# ATLAS MARKETS v1 — Architecture
 
-Last updated: 2026-09-23
-Target: v1.1 multi-broker simulation on Oracle Cloud
+Canonical baseline: `v1.0.0` at `5ef08db6426876be6019541c45c0b3b3851f85eb`
+
+Runtime: multi-provider simulation on Oracle Cloud
 
 ## Product boundary
 
@@ -21,41 +22,15 @@ ATLAS MARKETS is a multi-market automated trading platform with a strict separat
 
 ## High-level topology
 
-```text
-                       Public Internet
-                             |
-                         HTTPS 443
-                             |
-                    +----------------+
-                    | Oracle Cloud   |
-                    | reverse proxy  |
-                    +--------+-------+
-                             |
-                      127.0.0.1:8000
-                             |
-                    +--------v-------+
-                    | ATLAS FastAPI  |
-                    | automation     |
-                    | analysis/risk  |
-                    | reporting      |
-                    +---+---------+--+
-                        |         |
-              +---------+         +----------------+
-              |                                    |
-      +-------v--------+                   +-------v-------+
-      | PostgreSQL 17 |                   | Redis 7       |
-      | private       |                   | private       |
-      +----------------+                   +---------------+
-                        \
-                         \ HTTPS APIs
-                          +--> Twelve Data
-                          +--> Bybit Testnet
-
-Oracle private VPN
-      |
-      +--> Windows execution node: Fusion MT5 + ATLAS MT5 bridge
-      |
-      `--> IBKR execution node: TWS/IB Gateway + ATLAS IBKR bridge
+```mermaid
+flowchart TD
+    U[Browser] -->|HTTPS 443| P[Reverse proxy]
+    P --> A[FastAPI and frontend]
+    A --> DB[(PostgreSQL 17)]
+    A --> R[(Redis 7)]
+    A -->|HTTPS| B[Bybit Testnet and Twelve Data]
+    A -->|Private bridge| I[IB Gateway Paper]
+    A -->|Private bridge| M[MT5 Demo node]
 ```
 
 The broker bridges are not public web services. They must be reachable only through a trusted private network/VPN and should use bridge tokens plus host firewall rules.
@@ -171,7 +146,8 @@ The Oracle profile is `docker-compose.oracle.yml`:
 - `.env.oracle` is private and never committed.
 - public access should terminate at HTTPS 443 through a reverse proxy/load balancer.
 
-See `ORACLE_DEPLOYMENT.md`.
+The active server uses `docker-compose.oracle.prod.yml`; verify the target filename before
+running Compose. See `ORACLE_DEPLOYMENT.md` and `OPERATIONS_RUNBOOK.md`.
 
 ## Security boundary
 

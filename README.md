@@ -1,10 +1,13 @@
 # ATLAS MARKETS
 
-**v78 production — consolidated-core multi-provider simulation on Oracle Cloud**
+**v1.0.0 canonical production baseline — multi-provider simulation on Oracle Cloud**
 
 ATLAS MARKETS is a multi-market, multi-provider trading analysis, simulation and operations platform for stocks, ETFs, FX, metals, commodities and crypto.
 
-The v1.0.0 Simulation Release remains the rollback/reference baseline. The active rebuild consolidates the frontend and backend around stable provider, automation, portfolio, reporting and administration APIs instead of phase-by-phase browser patches.
+The canonical application, database, frontend, Bybit Testnet integration, IBKR Paper
+integration, portfolio/activity/P&L surfaces, shadow analytics, authentication and
+administration are pinned by tag `v1.0.0` at commit
+`5ef08db6426876be6019541c45c0b3b3851f85eb`. All changes build forward from this baseline.
 
 Live Money remains intentionally gated.
 
@@ -89,8 +92,8 @@ The public server should expose only HTTPS. PostgreSQL, Redis, FastAPI's interna
 ```powershell
 cd "C:\Users\USER\Downloads\altas-markets"
 git fetch origin
-git checkout feature/frontend-core-rebuild
-git pull origin feature/frontend-core-rebuild
+git switch main
+git pull --ff-only origin main
 docker compose stop app
 docker compose rm -f app
 docker compose build --no-cache app
@@ -134,22 +137,13 @@ Do not replace or restart the legacy ATLAS Trader containers while validating AT
 
 ## Documentation
 
-- `docs/FINAL_HANDOVER.md`
-- `docs/CURRENT_STATUS.md`
-- `docs/ARCHITECTURE.md`
-- `docs/ERD.md`
-- `docs/AUTHORIZATION.md`
-- `docs/PROVIDERS.md`
-- `docs/TESTING_AND_CERTIFICATION.md`
-- `docs/ORACLE_DEPLOYMENT.md`
-- `docs/ROADMAP.md`
-- `docs/RELEASE_V78.md`
-- `docs/PRODUCTION_DEPLOYMENT_V78.md`
-- `docs/ROADMAP_V79.md`
-- `docs/RELEASE_V79.md`
+Start with `docs/DOCUMENTATION_INDEX.md`. It links the architecture, production ERD,
+ERP-style operating model, API reference, user/admin guide, provider documentation,
+operations, IBKR continuity, security, backup/recovery, testing, status and handover.
 
 ## Engineering rule
 
-`DESIGN → BUILD → TEST → COMMIT → DEPLOY → BROKER/APP SMOKE TEST → DOCUMENT`
+`DESIGN → BUILD → TEST → COMMIT → REVIEW → DEPLOY → BROKER/APP SMOKE TEST → DOCUMENT → RELEASE`
 
-A provider environment must be validated independently. The v1.0.0 Git tag remains the rollback/reference checkpoint while the consolidated-core rebuild is tested.
+A provider environment must be validated independently. The `v1.0.0` tag is the canonical
+production and rollback checkpoint. Live Money remains separately gated.
