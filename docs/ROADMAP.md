@@ -1,12 +1,15 @@
-# ATLAS MARKETS — Consolidated Core Roadmap
+# ATLAS MARKETS v1 — Forward Roadmap
 
-Last updated: 2026-09-23
+Last updated: 2026-09-28
 
 ## Baseline
 
-v1.0.0 remains the rollback/reference Simulation Release. The active work is the `feature/frontend-core-rebuild` branch and PR #34.
+`v1.0.0` at `5ef08db6426876be6019541c45c0b3b3851f85eb` is the canonical production
+baseline. New work branches from v1 and preserves its application, data, frontend, Bybit,
+IBKR, portfolio/activity/P&L, analytics, authentication and administration.
 
-The objective is not another phase layer. It is one maintainable application core with provider integrations, analysis, strategy/risk, portfolio/reporting, administration and a responsive frontend using stable APIs.
+Priority order: documentation/operations → MT5 execution node → scoped frontend work →
+strategy observation and development. Reverted experimental versions are not baselines.
 
 ## 1. Frontend consolidation
 

@@ -1,105 +1,52 @@
-# ATLAS MARKETS — Final Handover
+# ATLAS MARKETS v1 — Final Handover
 
-Last updated: 2026-09-23
+## Release identity
 
-## Release checkpoints
+- Canonical tag: `v1.0.0`
+- Canonical commit: `5ef08db6426876be6019541c45c0b3b3851f85eb`
+- Repository: `mohamdhassa/atlas-markets`
+- Production model: Oracle-hosted core with private broker bridges
 
-- `v1.0.0` — completed Simulation Release and permanent rollback/reference tag.
-- `main` — v1.1 deployment candidate for multi-broker observation and Oracle Cloud hosting.
+## Included system
 
-## What v1.1 changes
+- current frontend and navigation;
+- PostgreSQL data and Redis coordination;
+- Bybit Testnet and IBKR Paper integrations;
+- portfolio, decisions, actions, executions, fills and P&L surfaces;
+- shadow strategy observations and provider-aware analytics;
+- ADMIN/USER authentication and administration;
+- risk gates, kill switch, certification and audit history.
 
-- promotes all eligible certified simulation symbols to `AUTO_TRADE` through an ADMIN-only bulk endpoint;
-- certifies Bybit Testnet/Demo Spot with managed-inventory, metadata and broker-balance reconciliation safeguards;
-- keeps IBKR Paper enabled under WhatIf, duplicate guards, broker fill verification and max 1 share/order;
-- introduces Oracle production compose/environment assets;
-- moves the always-on app/data tier to Oracle;
-- keeps MT5/IBKR broker bridges on private execution nodes;
-- refreshes all operational documentation.
+## Operating ownership
 
-## Current certified execution routes
+| Area | Source of truth | Primary runbook |
+|---|---|---|
+| Application/dependencies | Docker health and application logs | `OPERATIONS_RUNBOOK.md` |
+| Database/schema | PostgreSQL and Alembic | `BACKUP_AND_RECOVERY.md` |
+| Provider positions/fills | Broker-native provider | `PROVIDERS.md` |
+| IBKR availability | Gateway, bridge and watchdog | `IBKR_CONTINUITY.md` |
+| Authorization/secrets | Auth audit and protected configuration | `SECURITY_OPERATIONS.md` |
+| Data model | migrations and SQLAlchemy models | `ERD.md` |
 
-1. Fusion MT5 Demo — FX, metals, commodities.
-2. IBKR Paper — stocks, ETFs; max 1 share/order.
-3. Bybit Testnet/Demo Spot — crypto; ATLAS-managed inventory only.
+## Deployment rule
 
-Blocked/non-execution:
+Create and validate a candidate image, preserve a rollback image, recreate only the app when
+appropriate, then verify health, migration, logs, providers and one monitored scan. Never
+replace the frontend or canonical baseline implicitly. Database, Redis and broker bridges are
+changed only when the release explicitly requires it.
 
-- Twelve Data — data only.
-- Live Money — gated.
-- Bybit derivatives — not included in the Spot certification.
+## Recovery rule
 
-## Bulk AUTO_TRADE
+When execution integrity is uncertain, kill new automation, preserve evidence, verify broker
+truth, recover the smallest failed component and reconcile before resuming. Backups are not
+certified until a restore drill succeeds.
 
-ADMIN endpoint:
+## Forward work
 
-`POST /strategies/symbols/auto-trade/eligible`
+1. Keep the v1 baseline stable during documentation and operational hardening.
+2. Add/authorize the MT5 execution node through a separately tested change.
+3. Improve frontend behavior only through scoped, approved, regression-tested updates.
+4. Continue forward shadow observation before strategy promotion.
+5. Develop additional functionality from v1 without reviving reverted baselines.
 
-It may seed missing starter symbols and promote all configured symbols on ready certified simulation routes. It returns `created`, `promoted`, and `blocked` lists. Bybit Testnet/Demo Spot is eligible when ready; Live Money remains blocked by design.
-
-## Oracle deployment
-
-Use:
-
-- `docker-compose.oracle.yml`
-- `.env.oracle.example`
-- `docs/ORACLE_DEPLOYMENT.md`
-
-Oracle hosts FastAPI, PostgreSQL and Redis. Public ingress should terminate at HTTPS 443. Do not expose PostgreSQL, Redis, FastAPI internal port or broker bridge ports publicly.
-
-## Broker execution nodes
-
-### MT5
-
-Requires always-on Windows MT5 Demo terminal with Algo Trading enabled and `tools/mt5_bridge.py` running.
-
-### IBKR
-
-Requires TWS/IB Gateway Paper session plus `tools/ibkr_bridge.py`. Appropriate real-time U.S. market-data subscriptions are recommended before broad unattended stock/ETF automation.
-
-Oracle should reach bridge nodes via a private VPN. If the execution node is a personal computer, trading stops when that machine sleeps/reboots/goes offline.
-
-## Bybit operating boundary
-
-Bybit automation is certified only for Testnet/Demo Spot. ATLAS sells only persisted managed inventory, caps managed quantities to the broker's available base-asset balance, and rounds down to the exchange step. Manual/pre-existing holdings are not treated as ATLAS inventory. Live Money and derivatives require separate certification.
-
-## Local v1.1 acceptance
-
-```powershell
-cd "C:\Users\USER\Downloads\altas-markets"
-git pull origin main
-docker compose stop app
-docker compose rm -f app
-docker compose build --no-cache app
-docker compose up -d app
-docker compose exec app python -m pytest -q
-docker compose ps
-```
-
-Then authenticate as ADMIN and call the bulk AUTO_TRADE endpoint. Review its blocked list before starting the observation run.
-
-## Oracle acceptance
-
-See `ORACLE_DEPLOYMENT.md`. Minimum acceptance:
-
-- app/PostgreSQL/Redis healthy;
-- migration at head;
-- tests pass;
-- `/api/system` healthy;
-- HTTPS works;
-- private bridge connectivity works;
-- one monitored scan completes;
-- MT5/IBKR/Bybit broker truth matches the ATLAS action ledger;
-- backup completes successfully.
-
-## Backup rule
-
-Database dumps, `.env`, `.env.oracle`, broker secrets and private keys never go into Git. The repository now ignores `backups/` and database dump extensions.
-
-## Observation period
-
-Run the v1.1 simulation continuously for several weeks without repeatedly changing strategy logic. Track P&L, drawdown, profit factor, broker cancellations, risk blocks, action lineage, automation uptime and broker/ATLAS consistency.
-
-## Live Money
-
-Live Money remains a separate future certification. Oracle hosting and broad AUTO_TRADE simulation do not change that boundary.
+Live Money requires a separate certification and approval release.
