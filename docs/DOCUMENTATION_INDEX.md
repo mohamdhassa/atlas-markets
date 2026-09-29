@@ -14,12 +14,14 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 ## Use and administration
 
 - [User and administrator guide](USER_ADMIN_GUIDE.md) — daily use and interpretation.
+- [Developer onboarding](DEVELOPER_ONBOARDING.md) — repository map, workflow and definition of done.
 - [API reference](API_REFERENCE.md) — operational endpoint families and roles.
 - [Current status](CURRENT_STATUS.md) — deployed baseline and known limitations.
 - [Roadmap](ROADMAP.md) — work after the v1 baseline.
 
 ## Production operations
 
+- [Database operations](DATABASE_OPERATIONS.md) — production identity, pgAdmin SSH access and schema changes.
 - [Operations runbook](OPERATIONS_RUNBOOK.md) — health, deployment, incident and rollback procedures.
 - [IBKR continuity runbook](IBKR_CONTINUITY.md) — Gateway, bridge, watchdog and VNC recovery.
 - [Oracle deployment](ORACLE_DEPLOYMENT.md) — production topology and deployment.
@@ -34,3 +36,5 @@ Broker-native positions, orders, fills, balances and P&L are authoritative for b
 PostgreSQL is authoritative for ATLAS configuration, audit and attribution. The running
 OpenAPI document at `/docs` is authoritative for exact request and response schemas.
 
+Repository contributors also follow root `CONTRIBUTING.md`; automated coding and AI tools
+follow root `AGENTS.md` before making changes.
