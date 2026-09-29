@@ -13,6 +13,10 @@ def _service():
     return data["services"]["ib-gateway"]
 
 
+def _compose():
+    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+
+
 def test_ibc_gateway_is_pinned_paper_and_localhost_only():
     service = _service()
     assert service["image"] == "ghcr.io/gnzsnz/ib-gateway:10.50.1e"
@@ -36,3 +40,12 @@ def test_ibc_stages_on_nonproduction_ports():
     example = ENV_EXAMPLE.read_text(encoding="utf-8")
     assert "IBKR_PAPER_HOST_PORT=14002" in example
     assert "IBKR_VNC_HOST_PORT=15902" in example
+
+
+def test_ibc_initializes_persistent_settings_permissions_before_gateway():
+    services = _compose()["services"]
+    init = services["settings-init"]
+    gateway = services["ib-gateway"]
+    assert init["user"] == "0:0"
+    assert "chown -R 1000:1000" in init["command"][0]
+    assert gateway["depends_on"]["settings-init"]["condition"] == "service_completed_successfully"
