@@ -13,9 +13,10 @@ to perform a fresh Paper login after the process exits.
 
 ## Selected design
 
-Use the maintained `ghcr.io/gnzsnz/ib-gateway:10.50.1e` image, which combines ARM64 IB Gateway
-10.50.1e, IBC 3.24.2, Xvfb, VNC and a localhost API relay. It is pinned to a versioned stable
-tag and must be evaluated beside the current service before cutover.
+Production uses the maintained `ghcr.io/gnzsnz/ib-gateway:10.50.1e` image, which combines ARM64
+IB Gateway 10.50.1e, IBC 3.24.2, Xvfb, VNC and a localhost API relay. It is pinned to a
+versioned stable tag. The controlled cutover completed on 2026-09-29 and the bridge recovered
+after a deliberate container restart without manual username/password entry.
 
 Security properties:
 
@@ -50,8 +51,10 @@ read -rsp 'IBC VNC password: ' IBKR_SECRET_VALUE; echo
 printf '%s' "${IBKR_SECRET_VALUE}" > /home/ubuntu/.config/atlas/ibkr-ibc-secrets/vnc_password
 unset IBKR_SECRET_VALUE
 
-chmod 600 /home/ubuntu/.config/atlas/ibkr-ibc-secrets/* \
-  /home/ubuntu/.config/atlas/ibkr-ibc.env
+chmod 600 /home/ubuntu/.config/atlas/ibkr-ibc.env
+# The parent directory is mode 700. Compose bind-mounts local secrets, so the container UID
+# needs read permission on the two files while other host users remain unable to traverse it.
+chmod 644 /home/ubuntu/.config/atlas/ibkr-ibc-secrets/*
 ```
 
 Pull and start on staging ports `14002` and `15902`:
@@ -79,26 +82,40 @@ the correct Paper account, settings persistence after container recreation and a
 scheduled restart without manual username/password entry. Observe for at least one full daily
 restart before cutover.
 
+The Compose `settings-init` one-shot service assigns the persistent settings volume to Gateway
+UID/GID `1000:1000` before the main container starts. This prevents the `jts.ini: Permission
+denied` restart loop observed during the first production activation.
+
 ## Controlled cutover
 
 Cutover is a separately approved maintenance action:
 
 1. Kill new ATLAS automation and record broker-native positions/orders.
 2. Back up current systemd units and `/home/ubuntu/Jts/jts.ini`.
-3. Stop and disable `atlas-ibgateway.service`; do not remove it.
+3. Stop the legacy `atlas-ibgateway.service`, preserve its unit, and mask it. Merely disabling
+   it is insufficient because the historical watchdog unit can start it through `Wants=`.
 4. Stop staging IBC, change `IBKR_PAPER_HOST_PORT=4002`, and start IBC.
 5. Keep IBC VNC on `15902`; the existing VNC service remains available for rollback.
 6. Confirm local port `4002`, start the existing watchdog, and verify `/health` plus `/account`.
 7. Reconcile the Paper account before automation resumes.
 
-Do not perform cutover merely because the first login succeeds; the daily-restart observation
-is the acceptance criterion.
+Production acceptance requires the correct Paper account, bridge `connected=true`, container
+health, a successful deliberate container restart and the next scheduled daily restart.
+
+The production legacy mask is a `/dev/null` symlink at
+`/etc/systemd/system/atlas-ibgateway.service`; the preserved unit is
+`/etc/systemd/system/atlas-ibgateway.service.legacy-disabled`. The legacy service must remain
+`masked` and `inactive` while IBC owns host port `4002`.
 
 ## Rollback
 
 ```bash
 docker compose --env-file /home/ubuntu/.config/atlas/ibkr-ibc.env \
   -f /home/ubuntu/atlas-markets/ops/ibkr-ibc/compose.yml down
+sudo rm /etc/systemd/system/atlas-ibgateway.service
+sudo mv /etc/systemd/system/atlas-ibgateway.service.legacy-disabled \
+  /etc/systemd/system/atlas-ibgateway.service
+sudo systemctl daemon-reload
 sudo systemctl enable --now atlas-ibgateway.service
 ```
 
