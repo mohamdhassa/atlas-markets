@@ -2,17 +2,23 @@
 html{overflow-x:hidden;text-size-adjust:100%;-webkit-text-size-adjust:100%}
 body{overflow-x:hidden}
 img,svg,canvas{max-width:100%}
-.app-shell,.main-area,.content,.content>*{min-width:0}
+.app-shell,.main-area,.content,.content>*,.panel,.page-intro>*,.action-row>*,.provider-card,.analysis-card,.metric-card,.polish-card,.signal-polish-card,.v61-shell>*,.v61-holding,.v63-terminal,.v67-card,.mg-page>*{min-width:0}
+.content{overflow-wrap:break-word}
+.content pre,.content code{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
 .sidebar-backdrop{display:none}
-.table-wrap,.responsive-table,.atlas-table,.v64-table-wrap{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}
+.table-wrap,.responsive-table,.atlas-table,.v61-table,.v64-table-wrap{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain;touch-action:pan-x pan-y}
 .data-table th,.data-table td{white-space:nowrap}
 .data-table td.v75-reason,.data-table td.v726-reason{white-space:normal}
-input,select,textarea,button{max-width:100%}
+input,select,textarea,button{max-width:100%;min-width:0}
+label{min-width:0}
+.muted,.provider-facts dd,.account-meta strong,.status-item strong,.v641-reason,.v64-reason,.v67-headlines strong,.v75-reason,.v726-reason{overflow-wrap:anywhere}
 
 @media(max-width:1100px){
   .content{padding:20px}
   .provider-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .portfolio-chart-grid{grid-template-columns:1fr}
+  .v722-grid,.v722-status,.v722-provider-grid,.v726-summary,.v721-status{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .p21-provider-grid,.p21-chart-grid,.p21-form{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 @media(max-width:760px){
@@ -31,8 +37,8 @@ input,select,textarea,button{max-width:100%}
   .topbar-status{margin-left:auto;min-width:0;max-width:42%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .content{width:100%;padding:12px;padding-bottom:max(18px,env(safe-area-inset-bottom))}
   .panel,.account-add-card,.account-info-card,.provider-card,.polish-card,.signal-polish-card{padding:15px;border-radius:14px}
-  .page-intro,.accounts-hero,.polish-hero,.v61-hero,.v61-section-head,.v64-head,.v641-head{align-items:flex-start;flex-direction:column}
-  .page-intro>*,.accounts-hero>*,.polish-hero>*,.v61-hero>*{max-width:100%}
+  .page-intro,.accounts-hero,.polish-hero,.v61-hero,.v61-section-head,.v64-head,.v641-head,.v722-hero,.v721-hero,.v726-head,.v75-head,.p21-section-head{align-items:flex-start!important;flex-direction:column!important}
+  .page-intro>*,.accounts-hero>*,.polish-hero>*,.v61-hero>*,.v722-hero>*,.v721-hero>*,.v726-head>*,.v75-head>*{max-width:100%;width:auto}
   .page-intro h1,.page-intro h2,.page-intro h3,.accounts-hero h1,.polish-hero h1{overflow-wrap:anywhere}
   .metric-grid,.polish-metrics,.provider-grid,.account-grid,.analysis-grid,.two-col,.account-bottom-grid,.signal-polish-grid,.portfolio-chart-grid{grid-template-columns:1fr 1fr;gap:10px}
   .automation-banner{grid-template-columns:auto minmax(0,1fr);padding:16px}
@@ -41,9 +47,12 @@ input,select,textarea,button{max-width:100%}
   .form-grid .span-2,.form-actions{grid-column:1}
   .form-actions{align-items:stretch;flex-direction:column}
   .form-actions button{width:100%}
-  .action-row,.chart-controls,.v72-toolbar,.v726-toolbar,.v75-tools{max-width:100%}
+  .action-row,.chart-controls,.v61-toolbar,.v65-controls,.v72-toolbar,.v726-toolbar,.v75-tools,.market-tabs,.atlas-actions,.p21-actions,.p21-toolbar{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
   .chart-controls select,.v72-toolbar>*,.v726-toolbar>*,.v75-tools>*{flex:1 1 145px;min-width:0;width:auto}
-  .v721-providers,.v72-market-grid{grid-template-columns:1fr}
+  .v722-grid,.v722-status,.v722-provider-grid,.v726-summary,.v721-status,.v721-providers,.v72-market-grid,.atlas-grid,.atlas-live-grid,.p21-provider-grid,.p21-chart-grid,.p21-status-strip,.p21-mini-grid{grid-template-columns:1fr!important}
+  .v722-mini,.v722-provider,.v721-provider,.v726-summary>*,.v75-log{min-width:0}
+  .v722-table,.v726-table,.v75-log{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
+  .v75-id{max-width:18ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .v721-facts{grid-template-columns:1fr 1fr}
   .v72-chart,.v72-chart svg{min-height:240px;height:240px}
   .v61-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -56,6 +65,12 @@ input,select,textarea,button{max-width:100%}
   .v67-grid{grid-template-columns:1fr}
   .mg-page>.analysis-grid{grid-template-columns:1fr}
   .mg-page #mgEditor .login-form{grid-template-columns:1fr}
+  .mg-page>.analysis-grid .analysis-card>.action-row:last-child{grid-template-columns:1fr 1fr}
+  .polish-grid.users-layout{grid-template-columns:1fr}
+  .provider-head,.provider-actions,.signal-card-head,.v61-holding-head,.v62-symbol-top,.v641-top,.v67-top{min-width:0}
+  .p21-form,.p21-cred-grid{grid-template-columns:1fr}
+  .p21-dynamic-creds{grid-column:1}
+  .p21-toast-stack{top:78px;right:10px;width:calc(100vw - 20px)}
   button,.nav-button,.primary-button,.secondary-button,.ghost-button,.account-secondary{min-height:44px}
 }
 
@@ -71,6 +86,7 @@ input,select,textarea,button{max-width:100%}
   .page-intro>div:last-child,.chart-controls,.action-row{width:100%}
   .action-row>button,.action-row>.primary-button,.action-row>.secondary-button{flex:1 1 100%;width:100%}
   .v721-facts,.v61-price-row,.v63-stats,.mg-page>.metric-grid{grid-template-columns:1fr 1fr}
+  .v722-grid,.v722-status,.v722-provider-grid,.v726-summary,.v721-status{grid-template-columns:1fr!important}
   .v63-terminal{padding:12px}
   .v63-head{align-items:flex-start;flex-direction:column}
   .v63-chartbox{height:260px}
@@ -78,13 +94,22 @@ input,select,textarea,button{max-width:100%}
   .v641-grid,.v631-compact-universe .v62-universe-grid{grid-template-columns:1fr}
   .v67-headlines li{grid-template-columns:1fr}
   .v67-headlines span{margin-bottom:2px}
+  .mg-page>.analysis-grid .analysis-card>.action-row:last-child{grid-template-columns:1fr}
+  .mg-page .account-meta{grid-template-columns:1fr}
+  .mg-page .account-meta span{margin-top:4px}
+  .provider-actions{align-items:stretch;flex-direction:column}
+  .provider-actions button,.p21-actions button{width:100%;min-width:0}
+  .v61-toolbar,.v61-tabs,.v65-controls,.market-tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+  .v61-pill,.v61-tab,.v65-tf,.market-tab{flex:0 0 auto;white-space:nowrap}
+  .v64-summary{width:100%}
+  .v75-id{max-width:12ch}
   .login-shell{padding:10px;align-items:start}
   .login-panel{margin-top:3vh;padding:18px;border-radius:18px}
   .empty-state{padding:28px 14px}
 }
 
 @media(hover:none) and (pointer:coarse){
-  button,.nav-button,select,input{min-height:44px}
+  button,.nav-button,select,input,textarea{min-height:44px}
   .table-wrap{scrollbar-width:thin}
 }
 

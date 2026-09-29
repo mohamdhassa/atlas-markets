@@ -36,3 +36,35 @@ def test_responsive_layer_preserves_horizontal_data_access_and_touch_targets():
     assert "env(safe-area-inset-top)" in css
     assert "prefers-reduced-motion" in css
     assert ":root" not in css
+
+
+def test_every_active_page_family_has_final_responsive_coverage():
+    css = (STATIC / "responsive-v1.css").read_text(encoding="utf-8")
+    page_families = {
+        "dashboard": (".v722-hero", ".v722-grid", ".v722-provider-grid"),
+        "markets_charts": (".v726-head", ".v726-toolbar", ".v72-chart"),
+        "operations": (".v721-hero", ".v721-providers", ".v721-facts"),
+        "portfolio": (".v61-hero", ".v61-kpis", ".v63-layout", ".v67-grid"),
+        "accounts": (".accounts-hero", ".provider-grid", ".account-bottom-grid"),
+        "users_signals": (".polish-hero", ".polish-grid.users-layout", ".signal-polish-grid"),
+        "strategy_integrations": (".mg-page", ".account-meta", "#mgEditor"),
+        "orders_performance_risk_system": (".metric-grid", ".two-col", ".table-wrap"),
+        "legacy_management": (".p21-provider-grid", ".p21-form", ".p21-chart-grid"),
+        "activity": (".v75-head", ".v75-tools", ".v75-id"),
+    }
+    missing = {
+        family: [selector for selector in selectors if selector not in css]
+        for family, selectors in page_families.items()
+        if any(selector not in css for selector in selectors)
+    }
+    assert not missing, missing
+
+
+def test_mobile_layout_protects_long_content_and_scrollable_controls():
+    css = (STATIC / "responsive-v1.css").read_text(encoding="utf-8")
+    assert "overflow-wrap:anywhere" in css
+    assert "-webkit-overflow-scrolling:touch" in css
+    assert "overscroll-behavior-inline:contain" in css
+    assert ".v61-toolbar" in css
+    assert ".mg-page .account-meta" in css
+    assert ".provider-actions" in css

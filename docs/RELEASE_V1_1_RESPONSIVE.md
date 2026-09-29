@@ -18,6 +18,25 @@ backend behavior are preserved.
   legacy layouts from flashing before the final page renderer.
 - Safe-area padding and 44-pixel touch targets support modern mobile devices.
 
+## Page-by-page responsive audit
+
+The final rendered page families were audited after all decorators and compatibility scripts load:
+
+| Page family | Mobile behavior verified |
+| --- | --- |
+| Dashboard | Hero, runtime status, provider cards, metrics, alerts, and activity tables collapse without clipping. |
+| Markets and Charts | Summaries collapse, toolbars remain touch-scrollable, and charts resize inside the viewport. |
+| Signals and News | Signal cards, facts, headlines, and long decision text wrap safely. |
+| Portfolio | KPIs, holdings, charts, timeframes, terminal, universe, and news context adapt without hiding broker data. |
+| Orders and Performance | Broker tables retain every column through horizontal touch scrolling. |
+| Accounts | Provider cards, facts, actions, account forms, and safety steps fit phone widths. |
+| Operations | Health summaries, provider state, facts, actions, and activity logs stack predictably. |
+| Users | User creation and the user table move to one column with full-size controls. |
+| Strategy and Integrations | Editors, credentials, result output, provider actions, and wide management tables remain usable. |
+| Risk and System | Metrics, policy panels, statuses, and dependency details collapse cleanly. |
+
+Wide data tables intentionally scroll horizontally on phones instead of dropping columns or altering their meaning.
+
 ## Non-goals
 
 - No brand or style redesign.
