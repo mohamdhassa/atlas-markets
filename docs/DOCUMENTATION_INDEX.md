@@ -24,6 +24,7 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [Database operations](DATABASE_OPERATIONS.md) — production identity, pgAdmin SSH access and schema changes.
 - [Operations runbook](OPERATIONS_RUNBOOK.md) — health, deployment, incident and rollback procedures.
 - [IBKR continuity runbook](IBKR_CONTINUITY.md) — Gateway, bridge, watchdog and VNC recovery.
+- [IBKR IBC reliability](IBKR_IBC_RELIABILITY.md) — staged automated login/restart candidate and rollback.
 - [Oracle deployment](ORACLE_DEPLOYMENT.md) — production topology and deployment.
 - [Backup and recovery](BACKUP_AND_RECOVERY.md) — protected assets, backup and restore drills.
 - [Security operations](SECURITY_OPERATIONS.md) — secrets, network boundaries and response.

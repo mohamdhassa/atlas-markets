@@ -1,0 +1,50 @@
+name: atlas-ibkr-ibc
+
+services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:10.50.1e
+    container_name: atlas-ibkr-ibc-gateway
+    restart: unless-stopped
+    environment:
+      TWS_USERID: ${TWS_USERID:?Set TWS_USERID in the protected environment file}
+      TWS_PASSWORD_FILE: /run/secrets/tws_password
+      TRADING_MODE: paper
+      READ_ONLY_API: ${READ_ONLY_API:-yes}
+      TWS_ACCEPT_INCOMING: ${TWS_ACCEPT_INCOMING:-yes}
+      TWS_SETTINGS_PATH: /home/ibgateway/tws_settings
+      VNC_SERVER_PASSWORD_FILE: /run/secrets/vnc_password
+      TWOFA_TIMEOUT_ACTION: restart
+      RELOGIN_AFTER_TWOFA_TIMEOUT: "yes"
+      EXISTING_SESSION_DETECTED_ACTION: primary
+      ALLOW_BLIND_TRADING: "no"
+      AUTO_RESTART_TIME: ${AUTO_RESTART_TIME:-11:45 PM}
+      TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+      TZ: ${TIME_ZONE:-Etc/UTC}
+    ports:
+      - "127.0.0.1:${IBKR_PAPER_HOST_PORT:-14002}:4004"
+      - "127.0.0.1:${IBKR_VNC_HOST_PORT:-15902}:5900"
+    secrets:
+      - tws_password
+      - vnc_password
+    volumes:
+      - ibkr_ibc_settings:/home/ibgateway/tws_settings
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/4002'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+secrets:
+  tws_password:
+    file: ${IBKR_SECRET_DIR:?Set IBKR_SECRET_DIR}/tws_password
+  vnc_password:
+    file: ${IBKR_SECRET_DIR:?Set IBKR_SECRET_DIR}/vnc_password
+
+volumes:
+  ibkr_ibc_settings:

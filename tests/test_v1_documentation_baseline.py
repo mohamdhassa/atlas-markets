@@ -16,6 +16,7 @@ def test_v1_documentation_package_exists():
         "USER_ADMIN_GUIDE.md",
         "OPERATIONS_RUNBOOK.md",
         "IBKR_CONTINUITY.md",
+        "IBKR_IBC_RELIABILITY.md",
         "BACKUP_AND_RECOVERY.md",
         "SECURITY_OPERATIONS.md",
         "CURRENT_STATUS.md",

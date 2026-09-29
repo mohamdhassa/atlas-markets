@@ -63,3 +63,10 @@ returns. Credentials and 2FA secrets must not be stored in PostgreSQL or Git.
 - Gateway port unavailable: log `IBKR_AUTH_REQUIRED`; do not loop-restart the login screen.
 - Gateway available and bridge stale: restart only the bridge container.
 - Healthy connection: log `IBKR_HEALTHY`.
+
+## IBC reliability candidate
+
+The 2026-09-29 incident proved that the bare systemd Gateway exits during its daily restart and
+returns to an unauthenticated login screen. `IBKR_IBC_RELIABILITY.md` defines the staged ARM64
+IBC candidate, security boundaries, daily-restart acceptance test, cutover and rollback. It is
+not production until that observation and explicit cutover are completed.
