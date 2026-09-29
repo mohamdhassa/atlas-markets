@@ -6,12 +6,16 @@
 |---|---|---|
 | Virtual display | `atlas-ibkr-xvfb.service` | systemd restart |
 | Window manager | `atlas-ibkr-fluxbox.service` | systemd restart |
-| IB Gateway 10.50 | `atlas-ibgateway.service` | `Restart=always` |
-| Local VNC | `atlas-x11vnc.service`, remote port `5902` | systemd restart |
+| IB Gateway + IBC 10.50 | `atlas-ibkr-ibc-gateway`, host API `4002` | Docker `unless-stopped` + IBC login |
+| IBC VNC | localhost port `15902` | Docker restart |
 | Bridge | `atlas-markets-ibkr-bridge`, host port `8766` | Docker `unless-stopped` |
 | Watchdog | `atlas-ibkr-bridge-watchdog.timer` | every 60 seconds |
 
-## Daily restart correction
+The former `atlas-ibgateway.service` is preserved for rollback but must remain masked and
+inactive. Starting it alongside IBC creates two Gateway processes competing for API port
+`4002`.
+
+## Historical daily restart correction
 
 IB Gateway stores settings per internal user directory. Both stored profiles must contain
 `AutoRestart=1`; otherwise the active paper profile can report `Daily auto-restart is not
@@ -49,12 +53,12 @@ Expected result: the configured paper account, simulation `true`, connected `tru
 Periodic IBKR security authentication cannot be bypassed. From Windows PowerShell:
 
 ```powershell
-ssh -N -L 5901:127.0.0.1:5902 `
+ssh -N -L 15901:127.0.0.1:15902 `
   -i "<SSH_KEY_PATH>" `
   ubuntu@<ORACLE_PUBLIC_IP>
 ```
 
-Keep the tunnel open, connect TigerVNC to `127.0.0.1:5901`, authenticate the Paper account,
+Keep the tunnel open, connect TigerVNC to `127.0.0.1:15901`, authenticate the Paper account,
 and wait for the Gateway main screen. The watchdog restarts the bridge after port `4002`
 returns. Credentials and 2FA secrets must not be stored in PostgreSQL or Git.
 
@@ -64,9 +68,9 @@ returns. Credentials and 2FA secrets must not be stored in PostgreSQL or Git.
 - Gateway available and bridge stale: restart only the bridge container.
 - Healthy connection: log `IBKR_HEALTHY`.
 
-## IBC reliability candidate
+## IBC production reliability
 
 The 2026-09-29 incident proved that the bare systemd Gateway exits during its daily restart and
-returns to an unauthenticated login screen. `IBKR_IBC_RELIABILITY.md` defines the staged ARM64
-IBC candidate, security boundaries, daily-restart acceptance test, cutover and rollback. It is
-not production until that observation and explicit cutover are completed.
+returns to an unauthenticated login screen. Production now uses the ARM64 IBC deployment in
+`IBKR_IBC_RELIABILITY.md`. Weekly token invalidation and exceptional IBKR security challenges
+still require operator approval.
