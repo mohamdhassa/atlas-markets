@@ -4,6 +4,9 @@ Canonical baseline: `v1.0.0` at `5ef08db6426876be6019541c45c0b3b3851f85eb`
 
 Database head: `20260925_0019`
 
+Production database: `atlas_markets` (23 tables including `alembic_version`). The separate
+`atlas` database on the Oracle host belongs to the earlier project and is not part of this ERD.
+
 ## Ownership and execution lineage
 
 ```mermaid
@@ -197,3 +200,7 @@ bar. Shadow records are analytical evidence and never broker orders.
 - Redis is transient coordination/cache state, not a financial system of record.
 - `paper_*` tables remain for compatibility and are not substitutes for Bybit Testnet, IBKR
   Paper or MT5 Demo broker state.
+- Logical table families are not separate projects; declared foreign keys connect identity,
+  provider, strategy, automation, reporting and shadow evidence.
+- Verify `current_database()` and `alembic_version` before inspection or migration. See
+  `DATABASE_OPERATIONS.md` for the canonical procedure.

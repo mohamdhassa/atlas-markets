@@ -6,6 +6,7 @@
 - Git commit: `5ef08db6426876be6019541c45c0b3b3851f85eb`
 - Application health: `http://127.0.0.1:8100/health`
 - IBKR bridge: `http://127.0.0.1:8766`
+- Production database: `atlas_markets`, Alembic `20260925_0019`
 
 ## Routine checks
 
@@ -19,6 +20,13 @@ docker compose --env-file .env.oracle -f docker-compose.oracle.prod.yml logs --t
 
 Provider health is checked independently. Application health does not prove that a broker
 session is authenticated.
+
+## Administrative database access
+
+Use pgAdmin's built-in SSH tunnel and the private PostgreSQL container address as documented in
+`DATABASE_OPERATIONS.md`. Do not publish port `5432`. Before analysis, verify
+`current_database() = 'atlas_markets'`; the older `atlas` database is a separate project.
+pgAdmin connectivity is administrative only—closing it does not affect the application.
 
 ## Safe app-only deployment
 
@@ -55,4 +63,3 @@ that may contain data written by a newer schema.
 - Code `2176`: fractional-size compatibility warning.
 
 These notices do not by themselves mean the Gateway or account is disconnected.
-

@@ -22,11 +22,15 @@
 | Area | Source of truth | Primary runbook |
 |---|---|---|
 | Application/dependencies | Docker health and application logs | `OPERATIONS_RUNBOOK.md` |
-| Database/schema | PostgreSQL and Alembic | `BACKUP_AND_RECOVERY.md` |
+| Database/schema | `atlas_markets`, PostgreSQL and Alembic | `DATABASE_OPERATIONS.md`, `BACKUP_AND_RECOVERY.md` |
 | Provider positions/fills | Broker-native provider | `PROVIDERS.md` |
 | IBKR availability | Gateway, bridge and watchdog | `IBKR_CONTINUITY.md` |
 | Authorization/secrets | Auth audit and protected configuration | `SECURITY_OPERATIONS.md` |
 | Data model | migrations and SQLAlchemy models | `ERD.md` |
+
+Developer and automated-tool handoff begins with `DEVELOPER_ONBOARDING.md`, root
+`CONTRIBUTING.md` and root `AGENTS.md`. The separate `atlas` database is historical and must
+not be mistaken for the canonical `atlas_markets` production database.
 
 ## Deployment rule
 

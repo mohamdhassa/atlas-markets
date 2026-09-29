@@ -13,6 +13,11 @@ MT5 bridge `8765`, IBKR bridge `8766` or VNC. VNC is reached only through an SSH
 - Provider credentials are encrypted at rest.
 - `.env.oracle`, SSH keys, bridge tokens, OAuth secrets, IBKR credentials and dumps stay out
   of Git, logs, screenshots and tickets.
+- pgAdmin uses its built-in SSH tunnel with an operator-held identity file. Store the database
+  password only in the protected environment and pgAdmin password store; never publish
+  PostgreSQL to simplify administration.
+- Verify the target is `atlas_markets` before any database operation. The older `atlas`
+  database is not a v1 migration or cleanup target.
 
 ## Trading safety
 
@@ -33,4 +38,3 @@ MT5 bridge `8765`, IBKR bridge `8766` or VNC. VNC is reached only through an SSH
 
 Ubuntu 20.04 is beyond standard support. Upgrade to a supported LTS only through a separately
 tested migration with verified database/configuration backups and broker GUI compatibility.
-

@@ -22,6 +22,8 @@ def test_v1_documentation_package_exists():
         "FINAL_HANDOVER.md",
         "ROADMAP.md",
         "RELEASE_V1_DOCUMENTATION.md",
+        "DATABASE_OPERATIONS.md",
+        "DEVELOPER_ONBOARDING.md",
     }
     assert required <= {path.name for path in DOCS.glob("*.md")}
 
@@ -62,3 +64,19 @@ def test_ibkr_continuity_records_verified_autorestart_fix():
     assert "Daily auto-restart is enabled." in content
     assert "atlas-ibkr-bridge-watchdog.timer" in content
     assert "<ORACLE_PUBLIC_IP>" in content
+
+
+def test_database_operations_identifies_canonical_database_safely():
+    content = (DOCS / "DATABASE_OPERATIONS.md").read_text(encoding="utf-8")
+    assert "atlas_markets" in content
+    assert "20260925_0019" in content
+    assert "built-in SSH tunnel" in content
+    assert "POSTGRES_PASSWORD=" not in content
+
+
+def test_human_and_agent_onboarding_exists():
+    assert (ROOT / "CONTRIBUTING.md").is_file()
+    agent_instructions = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "atlas_markets" in agent_instructions
+    assert "Live Money" in agent_instructions
+    assert "full suite" in agent_instructions
