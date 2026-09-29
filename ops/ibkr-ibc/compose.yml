@@ -1,10 +1,23 @@
 name: atlas-ibkr-ibc
 
 services:
+  settings-init:
+    image: ghcr.io/gnzsnz/ib-gateway:10.50.1e
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - chown -R 1000:1000 /home/ibgateway/tws_settings && chmod 700 /home/ibgateway/tws_settings
+    volumes:
+      - ibkr_ibc_settings:/home/ibgateway/tws_settings
+    restart: "no"
+
   ib-gateway:
     image: ghcr.io/gnzsnz/ib-gateway:10.50.1e
     container_name: atlas-ibkr-ibc-gateway
     restart: unless-stopped
+    depends_on:
+      settings-init:
+        condition: service_completed_successfully
     environment:
       TWS_USERID: ${TWS_USERID:?Set TWS_USERID in the protected environment file}
       TWS_PASSWORD_FILE: /run/secrets/tws_password
