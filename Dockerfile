@@ -13,6 +13,12 @@ COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 COPY app /app/app
 COPY tests /app/tests
+
+# Operational tests validate the canonical documentation and deployment assets.
+COPY README.md CONTRIBUTING.md AGENTS.md /app/
+COPY docs /app/docs
+COPY ops /app/ops
+
 COPY docker-compose.oracle.yml /app/docker-compose.oracle.yml
 COPY .env.oracle.example /app/.env.oracle.example
 
