@@ -51,4 +51,4 @@ def test_strategy_workspace_exposes_history_and_rollback_controls():
     assert "revision history" in workspace
     assert "strategy-rollback:" in workspace
     assert "Manual rollback from Strategy workspace" in workspace
-    assert "management-workspaces.js?v=82.0" in index
+    assert "management-workspaces.js?v=83.0" in index

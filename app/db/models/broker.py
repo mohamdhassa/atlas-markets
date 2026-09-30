@@ -22,6 +22,8 @@ class BrokerProfile(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     live_execution_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     live_execution_armed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    live_execution_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    live_execution_last_disarm_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     execution_certified: Mapped[bool] = mapped_column(Boolean, default=False)
     execution_certified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     execution_certification_buy_passed: Mapped[bool] = mapped_column(Boolean, default=False)

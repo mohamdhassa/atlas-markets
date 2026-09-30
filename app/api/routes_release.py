@@ -11,6 +11,7 @@ from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 from app.services.automation import get_or_create_state
 from app.services.safe_automation import IBKR_CERTIFIED_MAX_SHARES_PER_ORDER
+from app.services.live_execution import live_execution_is_armed
 
 router = APIRouter(prefix="/release", tags=["release"])
 
@@ -121,7 +122,7 @@ def release_readiness(current: User = Depends(get_current_user), db: Session = D
     live_profiles_armed = [
         p
         for p in profiles
-        if p.environment.upper() == "LIVE" and p.live_execution_enabled
+        if p.environment.upper() == "LIVE" and live_execution_is_armed(p)
     ]
     live_certification = _live_certification_status()
 

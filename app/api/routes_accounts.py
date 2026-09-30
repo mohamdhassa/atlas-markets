@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json, uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -12,8 +12,10 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
+from app.db.models.live_execution import LiveExecutionEvent
 from app.db.session import get_db
 from app.market_data.fx import TwelveDataFxMarketData
+from app.services.live_execution import disarm_live_execution, live_execution_blockers, live_execution_is_armed
 from app.schemas.broker_profile import BrokerConnectRequest, BrokerConnectResult, BrokerCredentialsUpdate, BrokerProfileCreate, BrokerProfilePublic, BrokerValidateRequest, BrokerValidationResult, LiveExecutionUpdate
 
 router=APIRouter(prefix='/accounts',tags=['accounts'])
@@ -208,14 +210,38 @@ def live_execution(profile_id:uuid.UUID,payload:LiveExecutionUpdate,user:User=De
     if not _is_admin(user):raise HTTPException(403,'admin role required')
     p=_authorized_profile(db,user,profile_id)
     if p.provider not in TRADING_PROVIDERS:raise HTTPException(400,'market-data-only providers do not support execution mode')
-    if p.environment!='LIVE' and payload.enabled:raise HTTPException(400,'simulation accounts cannot enable live execution')
+    now=datetime.now(timezone.utc)
     if payload.enabled:
-        s=get_settings()
-        if not s.allow_live_trading:raise HTTPException(409,'server policy blocks live trading')
-        if not payload.confirmation or payload.confirmation.strip()!=f'ENABLE LIVE {p.provider} {p.account_label}':raise HTTPException(400,'exact live-trading confirmation phrase required')
-        p.live_execution_enabled=True;p.live_execution_armed_at=datetime.now(timezone.utc)
-    else:p.live_execution_enabled=False;p.live_execution_armed_at=None
+        settings=get_settings()
+        if not settings.allow_live_trading:raise HTTPException(409,'server policy blocks live trading')
+        blockers=live_execution_blockers(p,now)
+        if blockers:raise HTTPException(409,{'message':'live execution safety requirements are not satisfied','blockers':blockers})
+        phrase=f'ENABLE LIVE {p.provider} {p.account_label}'
+        if not payload.confirmation or payload.confirmation.strip()!=phrase:raise HTTPException(400,f'exact confirmation required: {phrase}')
+        p.live_execution_enabled=True
+        p.live_execution_armed_at=now
+        p.live_execution_expires_at=now+timedelta(minutes=payload.duration_minutes)
+        p.live_execution_last_disarm_reason=None
+        action='ARMED'
+        reason=(payload.reason or '').strip() or 'Explicit administrator arming'
+    else:
+        reason=(payload.reason or '').strip() or 'Explicit administrator disarm'
+        disarm_live_execution(p,reason)
+        action='DISARMED'
+    db.add(LiveExecutionEvent(profile_id=p.id,owner_user_id=p.user_id,actor_user_id=user.id,action=action,reason=reason,armed_until=p.live_execution_expires_at))
     db.commit();db.refresh(p);return p
+
+@router.get('/{profile_id}/live-execution')
+def live_execution_status(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    p=_authorized_profile(db,user,profile_id)
+    now=datetime.now(timezone.utc)
+    if p.live_execution_enabled and p.live_execution_expires_at and p.live_execution_expires_at<=now:
+        disarm_live_execution(p,'Automatic disarm: arming window expired')
+        db.add(LiveExecutionEvent(profile_id=p.id,owner_user_id=p.user_id,actor_user_id=user.id,action='AUTO_DISARMED',reason=p.live_execution_last_disarm_reason,armed_until=None))
+        db.commit();db.refresh(p)
+    blockers=live_execution_blockers(p,now)
+    events=list(db.scalars(select(LiveExecutionEvent).where(LiveExecutionEvent.profile_id==p.id).order_by(LiveExecutionEvent.created_at.desc()).limit(50)).all())
+    return {'profile_id':str(p.id),'provider':p.provider,'environment':p.environment,'armed':live_execution_is_armed(p,now),'armed_at':p.live_execution_armed_at,'expires_at':p.live_execution_expires_at,'last_disarm_reason':p.live_execution_last_disarm_reason,'blockers':blockers,'required_confirmation':f'ENABLE LIVE {p.provider} {p.account_label}','events':[{'id':str(x.id),'action':x.action,'reason':x.reason,'actor_user_id':str(x.actor_user_id),'armed_until':x.armed_until,'created_at':x.created_at} for x in events]}
 
 @router.post('/{profile_id}/test',response_model=BrokerConnectResult)
 async def test_connection(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
