@@ -8,8 +8,9 @@ Last updated: 2026-09-28
 baseline. New work branches from v1 and preserves its application, data, frontend, Bybit,
 IBKR, portfolio/activity/P&L, analytics, authentication and administration.
 
-Priority order: documentation/operations → MT5 execution node → scoped frontend work →
-strategy observation and development. Reverted experimental versions are not baselines.
+Priority order: responsive frontend → multi-user isolation → strategy administration and
+observation → provider-specific Live Money certification. MT5 is a separate future execution
+node and does not block this roadmap. Reverted experimental versions are not baselines.
 
 ## 1. Frontend consolidation
 

@@ -12,7 +12,7 @@ function clearSession(){state.token=null;state.user=null;localStorage.removeItem
 function stopMarketTimer(){if(state.marketTimer){clearInterval(state.marketTimer);state.marketTimer=null}}
 loginForm.addEventListener('submit',async e=>{e.preventDefault();loginError.hidden=true;const button=$('loginButton');button.disabled=true;button.textContent='Signing in…';try{const data=await api('/auth/login',{method:'POST',body:JSON.stringify({username:$('username').value,password:$('password').value})});state.token=data.access_token;state.user=data.user;localStorage.setItem('atlas_token',state.token);showApp()}catch(err){loginError.textContent=err.message;loginError.hidden=false}finally{button.disabled=false;button.textContent='Sign in'}});
 $('logoutButton').addEventListener('click',async()=>{try{await api('/auth/logout',{method:'POST'})}catch{}clearSession();showLogin()});
-$('menuButton').addEventListener('click',()=>sidebar.classList.toggle('open'));
+// Mobile menu behavior is coordinated by responsive-v1.js after all assets load.
 async function checkSystem(){try{const h=await api('/health');systemDot.className='status-dot good';systemText.textContent=`${h.service||'ATLAS MARKETS'} online`}catch{systemDot.className='status-dot bad';systemText.textContent='System unavailable'}}
 function buildNav(){nav.innerHTML='';addGroup(state.user?.role==='ADMIN'?'OPERATIONS':'MY WORKSPACE',userPages);if(state.user?.role==='ADMIN')addGroup('ADMINISTRATION',adminPages)}
 function addGroup(label,pages){const sep=document.createElement('div');sep.className='nav-separator';sep.textContent=label;nav.appendChild(sep);pages.forEach(page=>{const b=document.createElement('button');b.className='nav-button';b.textContent=page;b.onclick=()=>renderPage(page);b.dataset.page=page;nav.appendChild(b)})}
@@ -43,4 +43,6 @@ function num(v,d=2){return v===null||v===undefined||Number.isNaN(Number(v))?'—
 function pct(v){if(v===null||v===undefined||Number.isNaN(Number(v)))return '—';const n=Number(v);return `${n>=0?'+':''}${n.toFixed(2)}%`}
 function compact(v){if(v===null||v===undefined||Number.isNaN(Number(v)))return '—';return Intl.NumberFormat(undefined,{notation:'compact',maximumFractionDigits:2}).format(Number(v))}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-boot();
+// The final entrypoint calls boot after every page decorator has registered.
+// This prevents the legacy renderer from painting before the final renderer is ready.
+window.AtlasBoot=boot;
