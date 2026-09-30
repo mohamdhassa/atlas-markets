@@ -14,8 +14,9 @@ label{min-width:0}
 .muted,.provider-facts dd,.account-meta strong,.status-item strong,.v641-reason,.v64-reason,.v67-headlines strong,.v75-reason,.v726-reason{overflow-wrap:anywhere}
 
 @media(min-width:761px){
-  .app-shell{align-items:start}
-  .sidebar{height:100dvh;max-height:100dvh;overflow:hidden}
+  .app-shell{display:block;min-height:100dvh}
+  .sidebar{position:fixed;inset:0 auto 0 0;width:260px;height:100dvh;max-height:100dvh;overflow:hidden}
+  .main-area{margin-left:260px;width:calc(100% - 260px);min-height:100dvh}
   .nav-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:4px;scrollbar-width:thin;scrollbar-color:#31506e transparent}
   .nav-list::-webkit-scrollbar{width:7px}
   .nav-list::-webkit-scrollbar-track{background:transparent}
