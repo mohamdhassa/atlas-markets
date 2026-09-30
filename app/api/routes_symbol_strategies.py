@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from pydantic import BaseModel,Field
 from fastapi import APIRouter,Depends,HTTPException,status
-from sqlalchemy import select
+from sqlalchemy import func,select
 from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.db.models.auth import User
@@ -10,6 +10,7 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.signal import RiskProfile
 from app.db.models.strategy import StrategyProfile
 from app.db.models.symbol_strategy import SymbolStrategy
+from app.db.models.strategy_revision import SymbolStrategyRevision
 from app.db.session import get_db
 from app.services.instrument_universe import STARTER_UNIVERSE,build_universe,starter_symbols
 from app.services.provider_routing import MARKETS,PROVIDER_MARKETS,normalize_market,normalize_symbol,provider_supports_market,providers_for_market,route_candidates,select_execution_route
@@ -29,6 +30,8 @@ class UniverseSeedRequest(BaseModel):
 class BulkAutoTradeRequest(BaseModel):
     seed_missing:bool=True
     markets:list[str]|None=None
+class StrategyRevisionRequest(BaseModel):
+    reason:str|None=Field(default=None,max_length=500)
 
 def _admin(u):return u.role=='ADMIN'
 def _profile(db,u,pid):
@@ -54,6 +57,21 @@ def _validate(db,p,payload):
  risk=db.scalar(select(RiskProfile).where(RiskProfile.name=='Default'))
  if risk and payload.risk_per_trade_pct is not None and payload.risk_per_trade_pct>risk.risk_per_trade_pct:raise HTTPException(409,f'risk per trade exceeds Admin safety limit of {risk.risk_per_trade_pct}%')
  return market,mode,symbol
+EDITABLE_FIELDS=('mode','enabled','timeframe','minimum_signal_strength','risk_per_trade_pct','stop_atr_multiplier','take_profit_rr','max_position_notional_pct')
+
+def _strategy_snapshot(row):
+ return {'id':str(row.id),'user_id':str(row.user_id),'profile_id':str(row.profile_id),'market':row.market,'symbol':row.symbol,**{field:getattr(row,field) for field in EDITABLE_FIELDS}}
+def _record_revision(db,row,actor,event,reason=None,restored_from=None):
+ number=(db.scalar(select(func.max(SymbolStrategyRevision.revision_number)).where(SymbolStrategyRevision.strategy_id==row.id)) or 0)+1
+ revision=SymbolStrategyRevision(strategy_id=row.id,revision_number=number,user_id=row.user_id,actor_user_id=actor.id,profile_id=row.profile_id,event=event,reason=(reason or '').strip() or None,snapshot=_strategy_snapshot(row),restored_from_revision=restored_from)
+ db.add(revision)
+ return revision
+def _strategy(db,user,row_id):
+ row=db.get(SymbolStrategy,row_id)
+ if not row:raise HTTPException(404,'symbol strategy not found')
+ if not _admin(user) and row.user_id!=user.id:raise HTTPException(403,'strategy access denied')
+ return row
+
 def _route_ready(p):
  return bool(p and p.is_enabled and p.is_active and p.credentials_configured and p.last_connection_status=='CONNECTED')
 def _route_certified(p):
@@ -162,12 +180,10 @@ def list_symbol_strategies(user:User=Depends(get_current_user),db:Session=Depend
 def create_symbol_strategy(payload:SymbolStrategyIn,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  p=_profile(db,user,payload.profile_id);market,mode,symbol=_validate(db,p,payload)
  if db.scalar(select(SymbolStrategy).where(SymbolStrategy.user_id==p.user_id,SymbolStrategy.profile_id==p.id,SymbolStrategy.market==market,SymbolStrategy.symbol==symbol)):raise HTTPException(409,'symbol already exists for this account')
- row=SymbolStrategy(user_id=p.user_id,profile_id=p.id,market=market,symbol=symbol,mode=mode,enabled=payload.enabled,timeframe=payload.timeframe,minimum_signal_strength=payload.minimum_signal_strength,risk_per_trade_pct=payload.risk_per_trade_pct,stop_atr_multiplier=payload.stop_atr_multiplier,take_profit_rr=payload.take_profit_rr,max_position_notional_pct=payload.max_position_notional_pct);db.add(row);db.commit();db.refresh(row);return row
+ row=SymbolStrategy(user_id=p.user_id,profile_id=p.id,market=market,symbol=symbol,mode=mode,enabled=payload.enabled,timeframe=payload.timeframe,minimum_signal_strength=payload.minimum_signal_strength,risk_per_trade_pct=payload.risk_per_trade_pct,stop_atr_multiplier=payload.stop_atr_multiplier,take_profit_rr=payload.take_profit_rr,max_position_notional_pct=payload.max_position_notional_pct);db.add(row);db.flush();_record_revision(db,row,user,'CREATE');db.commit();db.refresh(row);return row
 @router.patch('/{row_id}')
 def update_symbol_strategy(row_id:uuid.UUID,payload:SymbolStrategyPatch,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
- row=db.get(SymbolStrategy,row_id)
- if not row:raise HTTPException(404,'symbol strategy not found')
- if not _admin(user) and row.user_id!=user.id:raise HTTPException(403,'strategy access denied')
+ row=_strategy(db,user,row_id)
  p=_profile(db,user,row.profile_id);_validate_provider_market(p,row.market)
  data=payload.model_dump(exclude_unset=True)
  if 'mode' in data:
@@ -176,10 +192,34 @@ def update_symbol_strategy(row_id:uuid.UUID,payload:SymbolStrategyPatch,user:Use
  risk=db.scalar(select(RiskProfile).where(RiskProfile.name=='Default'))
  if risk and data.get('risk_per_trade_pct') is not None and data['risk_per_trade_pct']>risk.risk_per_trade_pct:raise HTTPException(409,f'risk per trade exceeds Admin safety limit of {risk.risk_per_trade_pct}%')
  for k,v in data.items():setattr(row,k,v)
- row.symbol=_normalize_symbol(row.market,row.symbol);db.commit();db.refresh(row);return row
+ row.symbol=_normalize_symbol(row.market,row.symbol);_record_revision(db,row,user,'UPDATE');db.commit();db.refresh(row);return row
 @router.delete('/{row_id}',status_code=status.HTTP_204_NO_CONTENT)
 def delete_symbol_strategy(row_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
- row=db.get(SymbolStrategy,row_id)
- if not row:raise HTTPException(404,'symbol strategy not found')
- if not _admin(user) and row.user_id!=user.id:raise HTTPException(403,'strategy access denied')
- db.delete(row);db.commit()
+ row=_strategy(db,user,row_id)
+ _record_revision(db,row,user,'DELETE');db.flush();db.delete(row);db.commit()
+
+
+@router.get('/{row_id}/revisions')
+def list_strategy_revisions(row_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ _strategy(db,user,row_id)
+ rows=list(db.scalars(select(SymbolStrategyRevision).where(SymbolStrategyRevision.strategy_id==row_id).order_by(SymbolStrategyRevision.revision_number.desc())).all())
+ return [{'id':str(x.id),'strategy_id':str(x.strategy_id),'revision_number':x.revision_number,'event':x.event,'reason':x.reason,'snapshot':x.snapshot,'restored_from_revision':x.restored_from_revision,'actor_user_id':str(x.actor_user_id),'created_at':x.created_at} for x in rows]
+
+@router.post('/{row_id}/rollback/{revision_number}')
+def rollback_symbol_strategy(row_id:uuid.UUID,revision_number:int,payload:StrategyRevisionRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ row=_strategy(db,user,row_id)
+ revision=db.scalar(select(SymbolStrategyRevision).where(SymbolStrategyRevision.strategy_id==row_id,SymbolStrategyRevision.revision_number==revision_number))
+ if not revision:raise HTTPException(404,'strategy revision not found')
+ snapshot=revision.snapshot or {}
+ mode=str(snapshot.get('mode') or '').upper()
+ if mode not in MODES:raise HTTPException(409,'stored revision has an invalid strategy mode')
+ p=_profile(db,user,row.profile_id);_validate_provider_market(p,row.market)
+ risk=db.scalar(select(RiskProfile).where(RiskProfile.name=='Default'))
+ restored_risk=snapshot.get('risk_per_trade_pct')
+ if risk and restored_risk is not None and restored_risk>risk.risk_per_trade_pct:raise HTTPException(409,f'stored revision exceeds current Admin safety limit of {risk.risk_per_trade_pct}%')
+ for field in EDITABLE_FIELDS:
+  if field in snapshot:setattr(row,field,snapshot[field])
+ row.mode=mode
+ _record_revision(db,row,user,'ROLLBACK',payload.reason,revision_number)
+ db.commit();db.refresh(row)
+ return {'strategy':row,'restored_from_revision':revision_number,'current_revision':db.scalar(select(func.max(SymbolStrategyRevision.revision_number)).where(SymbolStrategyRevision.strategy_id==row.id))}

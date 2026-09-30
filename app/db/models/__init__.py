@@ -9,5 +9,6 @@ from app.db.models.reporting import DailyAccountReport
 from app.db.models.signal import RiskEvent, RiskProfile, Signal
 from app.db.models.strategy import StrategyProfile
 from app.db.models.symbol_strategy import SymbolStrategy
+from app.db.models.strategy_revision import SymbolStrategyRevision
 from app.db.models.shadow import ShadowObservation, ShadowScanEvent
-__all__=['AuthAuditLog','User','UserRole','UserSession','AutomationState','AutomationScan','AutomationAction','BrokerProfile','BybitManagedInventory','HistoricalCandle','HistoricalBacktestRun','NewsArticle','DailyAccountReport','Signal','RiskProfile','RiskEvent','PaperWallet','PaperPosition','PaperOrder','StrategyProfile','SymbolStrategy','ShadowObservation','ShadowScanEvent']
+__all__=['AuthAuditLog','User','UserRole','UserSession','AutomationState','AutomationScan','AutomationAction','BrokerProfile','BybitManagedInventory','HistoricalCandle','HistoricalBacktestRun','NewsArticle','DailyAccountReport','Signal','RiskProfile','RiskEvent','PaperWallet','PaperPosition','PaperOrder','StrategyProfile','SymbolStrategy','SymbolStrategyRevision','ShadowObservation','ShadowScanEvent']
