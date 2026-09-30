@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.signal import RiskEvent, RiskProfile, Signal
 from app.db.session import get_db
 from app.market_data.bybit import BybitMarketDataError, BybitPublicMarketData
+from app.services.access_scope import authorized_broker_profile, scope_broker_profiles
 from app.services.signal_risk import evaluate_risk, generate_signal, reasons_json
 
 router = APIRouter(tags=["signals", "risk"])
@@ -37,24 +38,24 @@ def _default_risk_profile(db: Session) -> RiskProfile:
     return profile
 
 
-def _authorized_profile(db: Session, user: User, profile_id: uuid.UUID) -> BrokerProfile:
-    profile = db.get(BrokerProfile, profile_id)
-    if profile is None:
-        raise HTTPException(status_code=404, detail="account not found")
-    if user.role != "ADMIN" and profile.user_id != user.id:
-        raise HTTPException(status_code=403, detail="account access denied")
-    return profile
-
-
 @router.get("/signals")
 def list_signals(
     limit: int = Query(50, ge=1, le=200),
+    owner_user_id: uuid.UUID | None = Query(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Signal).join(BrokerProfile, BrokerProfile.id == Signal.profile_id).order_by(Signal.created_at.desc()).limit(limit)
-    if user.role != "ADMIN":
-        stmt = stmt.where(BrokerProfile.user_id == user.id)
+    profile_scope = scope_broker_profiles(
+        select(BrokerProfile.id),
+        user,
+        owner_user_id,
+    )
+    stmt = (
+        select(Signal)
+        .where(Signal.profile_id.in_(profile_scope))
+        .order_by(Signal.created_at.desc())
+        .limit(limit)
+    )
     rows = db.scalars(stmt).all()
     return [
         {
@@ -81,13 +82,15 @@ async def create_signal(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    account = _authorized_profile(db, user, profile_id)
+    account = authorized_broker_profile(db, user, profile_id)
     settings = get_settings()
     market = BybitPublicMarketData(settings.bybit_public_base_url, settings.market_data_timeout_seconds)
     try:
         candles = await market.get_candles(symbol=symbol, interval=interval, category="linear", limit=200)
         generated = generate_signal([c.model_dump() for c in candles])
     except (BybitMarketDataError, ValueError) as exc:
+        from fastapi import HTTPException
+
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     risk_profile = _default_risk_profile(db)
