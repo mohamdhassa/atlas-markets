@@ -7,7 +7,7 @@ STATIC = Path("app/static")
 def test_responsive_assets_load_last_and_boot_once_after_decorators():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     app = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert '/static/responsive-v1.css?v=1.2' in html
+    assert '/static/responsive-v1.css?v=1.3' in html
     assert html.rindex('/static/responsive-v1.js?v=1.1') > html.rindex('/static/live-activity-v75.js?v=79.0')
     assert "window.AtlasBoot=boot" in app
     assert "\nboot();" not in app
