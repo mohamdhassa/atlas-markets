@@ -41,3 +41,14 @@ def test_strategy_rollback_never_restores_account_or_symbol_identity():
     assert "user_id" not in editable
     assert "market" not in editable
     assert "symbol" not in editable
+
+
+def test_strategy_workspace_exposes_history_and_rollback_controls():
+    workspace = Path("app/static/management-workspaces.js").read_text()
+    index = Path("app/static/index.html").read_text()
+
+    assert "strategy-history:" in workspace
+    assert "revision history" in workspace
+    assert "strategy-rollback:" in workspace
+    assert "Manual rollback from Strategy workspace" in workspace
+    assert "management-workspaces.js?v=82.0" in index
