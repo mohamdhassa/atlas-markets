@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
+from app.db.models.live_execution import LiveExecutionEvent
 from app.db.session import get_db
+from app.services.live_execution import disarm_live_execution
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -44,8 +46,8 @@ def _replacement(db: Session, profile: BrokerProfile) -> BrokerProfile | None:
 @router.post("/{profile_id}/disconnect")
 def disconnect_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     profile = _profile(db, user, profile_id)
-    profile.live_execution_enabled = False
-    profile.live_execution_armed_at = None
+    disarm_live_execution(profile, "Account disconnected")
+    db.add(LiveExecutionEvent(profile_id=profile.id,owner_user_id=profile.user_id,actor_user_id=user.id,action="AUTO_DISARMED",reason="Account disconnected",armed_until=None))
     profile.is_enabled = False
     profile.is_active = False
     profile.api_key_encrypted = None
@@ -70,7 +72,8 @@ def disconnect_account(profile_id: uuid.UUID,user: User = Depends(get_current_us
 def toggle_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     profile = _profile(db,user,profile_id);profile.is_enabled = not profile.is_enabled
     if not profile.is_enabled:
-        profile.is_active=False;profile.live_execution_enabled=False;profile.live_execution_armed_at=None
+        profile.is_active=False;disarm_live_execution(profile,'Account disabled')
+        db.add(LiveExecutionEvent(profile_id=profile.id,owner_user_id=profile.user_id,actor_user_id=user.id,action='AUTO_DISARMED',reason='Account disabled',armed_until=None))
         replacement=_replacement(db,profile)
         if replacement is not None:replacement.is_active=True
     db.commit();db.refresh(profile);return profile
