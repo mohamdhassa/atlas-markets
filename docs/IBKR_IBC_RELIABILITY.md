@@ -124,6 +124,16 @@ the bridge. Preserve IBC logs and the pulled image digest for incident analysis.
 
 ## Authentication boundary
 
+The production watchdog validates Docker health for `atlas-ibkr-ibc-gateway`, not merely the
+published port. This distinction is required because the image exposes Gateway through a
+long-lived `socat` proxy: the host port can accept TCP while the internal Gateway API refuses
+connections. An unhealthy Gateway is restarted before the bridge, with a ten-minute default
+cooldown to protect an in-progress login or second-factor flow from restart loops.
+
+Controlled overrides are `IBKR_GATEWAY_CONTAINER`,
+`IBKR_GATEWAY_RECOVERY_WAIT_SECONDS`, `IBKR_GATEWAY_RECOVERY_COOLDOWN_SECONDS` and
+`IBKR_GATEWAY_RECOVERY_STAMP`. The watchdog cannot bypass IBKR authentication or 2FA.
+
 IBC can automate routine login and weekday restarts, but it cannot bypass IBKR Mobile, passkey,
 weekly token invalidation or exceptional security challenges. These events require an operator.
 An authentication-required alert remains necessary even after successful cutover.

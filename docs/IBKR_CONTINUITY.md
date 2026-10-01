@@ -64,6 +64,23 @@ returns. Credentials and 2FA secrets must not be stored in PostgreSQL or Git.
 
 ## Watchdog behavior
 
+The watchdog treats the IBC Gateway container health check as authoritative. The published
+host API port is proxied by `socat` and can remain open even when the Gateway process inside the
+container is refusing API connections; a TCP probe alone is not Gateway readiness.
+
+Recovery order is Gateway first, bridge second:
+
+1. If Gateway health is `starting`, wait without restarting it.
+2. If Gateway is stopped or unhealthy, restart it once and wait for container health.
+3. Apply a recovery cooldown so an IBKR authentication/2FA prompt is not destroyed by a
+   restart every minute.
+4. Only after Gateway is healthy, verify the host endpoint and recover a stale bridge.
+5. Never restart ATLAS, PostgreSQL or Redis for an IBKR provider incident.
+
+`IBKR_AUTH_REQUIRED` after the wait means automated login did not complete and VNC/mobile
+approval may be required. `IBKR_GATEWAY_RECOVERY_COOLDOWN` means a recent recovery already ran
+and the watchdog is intentionally preserving the current authentication session.
+
 - Gateway port unavailable: log `IBKR_AUTH_REQUIRED`; do not loop-restart the login screen.
 - Gateway available and bridge stale: restart only the bridge container.
 - Healthy connection: log `IBKR_HEALTHY`.
