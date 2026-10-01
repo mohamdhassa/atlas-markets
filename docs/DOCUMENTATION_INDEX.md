@@ -13,6 +13,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [Adaptive strategy router](ADAPTIVE_STRATEGY_ROUTER.md) — regime selection, Darvas Box and shadow-only safety.
 - [Adaptive router release](RELEASE_V1_ADAPTIVE_ROUTER.md) — delivered scope and execution exclusions.
 - [Routed paper execution](RELEASE_V1_ROUTED_PAPER_EXECUTION.md) — strategy agreement gate for certified simulation orders.
+- [$100 starter-capital readiness](STARTER_CAPITAL_READINESS.md) — conservative sizing and promotion gates for the planned first live balances.
+- [Starter-capital readiness release](RELEASE_V1_STARTER_CAPITAL_READINESS.md) — delivered controls and verification status.
 
 ## Use and administration
 
