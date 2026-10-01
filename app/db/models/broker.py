@@ -38,6 +38,7 @@ class BrokerProfile(Base):
     equity_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     wallet_balance_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     available_balance_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    simulation_capital_override_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     open_positions_count: Mapped[int] = mapped_column(Integer, default=0)
     open_orders_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
