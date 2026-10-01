@@ -46,6 +46,8 @@ class LiveExecutionUpdate(BaseModel):
     confirmation: str | None = Field(default=None, max_length=256)
     duration_minutes: int = Field(default=15, ge=5, le=240)
     reason: str | None = Field(default=None, max_length=500)
+class SimulationCapitalUpdate(BaseModel):
+    simulation_capital_override_usd: float | None = Field(default=None, ge=10, le=100_000_000)
 class BrokerProfilePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID; user_id: uuid.UUID; provider: str; account_label: str; environment: str; external_account_ref: str | None
@@ -53,4 +55,5 @@ class BrokerProfilePublic(BaseModel):
     live_execution_expires_at: datetime | None; live_execution_last_disarm_reason: str | None
     last_connection_status: str; last_connection_test_at: datetime | None; credentials_configured: bool; last_sync_at: datetime | None
     equity_usd: float | None; wallet_balance_usd: float | None; available_balance_usd: float | None
+    simulation_capital_override_usd: float | None
     open_positions_count: int; open_orders_count: int; created_at: datetime

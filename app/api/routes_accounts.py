@@ -16,7 +16,7 @@ from app.db.models.live_execution import LiveExecutionEvent
 from app.db.session import get_db
 from app.market_data.fx import TwelveDataFxMarketData
 from app.services.live_execution import disarm_live_execution, live_execution_blockers, live_execution_is_armed
-from app.schemas.broker_profile import BrokerConnectRequest, BrokerConnectResult, BrokerCredentialsUpdate, BrokerProfileCreate, BrokerProfilePublic, BrokerValidateRequest, BrokerValidationResult, LiveExecutionUpdate
+from app.schemas.broker_profile import BrokerConnectRequest, BrokerConnectResult, BrokerCredentialsUpdate, BrokerProfileCreate, BrokerProfilePublic, BrokerValidateRequest, BrokerValidationResult, LiveExecutionUpdate, SimulationCapitalUpdate
 
 router=APIRouter(prefix='/accounts',tags=['accounts'])
 PROVIDER_ENVIRONMENTS={'BYBIT':{'DEMO','TESTNET','LIVE'},'MT5':{'DEMO','LIVE'},'IBKR':{'PAPER','LIVE'},'TWELVE_DATA':{'LIVE'}}
@@ -204,6 +204,14 @@ def activate(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session
     p=_authorized_profile(db,user,profile_id)
     if p.last_connection_status!='CONNECTED':raise HTTPException(409,'only a successfully connected account can be made active')
     db.execute(update(BrokerProfile).where(BrokerProfile.user_id==p.user_id,BrokerProfile.provider==p.provider).values(is_active=False));p.is_active=True;db.commit();db.refresh(p);return p
+
+@router.put('/{profile_id}/simulation-capital',response_model=BrokerProfilePublic)
+def simulation_capital(profile_id:uuid.UUID,payload:SimulationCapitalUpdate,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    if not _is_admin(user):raise HTTPException(403,'admin role required')
+    p=_authorized_profile(db,user,profile_id)
+    if p.environment not in SIMULATION_ENVIRONMENTS:raise HTTPException(409,'simulation capital override is only available for Paper, Demo or Testnet accounts')
+    p.simulation_capital_override_usd=payload.simulation_capital_override_usd
+    db.commit();db.refresh(p);return p
 
 @router.put('/{profile_id}/live-execution',response_model=BrokerProfilePublic)
 def live_execution(profile_id:uuid.UUID,payload:LiveExecutionUpdate,user:User=Depends(get_current_user),db:Session=Depends(get_db)):

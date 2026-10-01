@@ -20,6 +20,7 @@ from app.market_data.bybit import BybitPublicMarketData
 from app.analysis.strategy_router import route_strategy
 from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal
+from app.services.capital_sizing import capital_policy_payload, capital_sizing_inputs
 
 READINESS_MAX_GROSS_EXPOSURE_PCT = 50.0
 READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT = 5
@@ -339,11 +340,17 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             }
 
             if approved and price > 0:
+                sizing_equity, sizing_available, capital_basis = capital_sizing_inputs(
+                    broker_equity=equity,
+                    broker_available=available,
+                    environment=profile.environment,
+                    simulation_capital_override_usd=profile.simulation_capital_override_usd,
+                )
                 plan = build_execution_plan(
                     decision=generated.decision,
                     price=price,
-                    equity=equity,
-                    available_cash=available,
+                    equity=sizing_equity,
+                    available_cash=sizing_available,
                     risk_per_trade_pct=risk_pct,
                     stop_atr_multiplier=stop,
                     take_profit_rr=rr,
@@ -357,6 +364,10 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                     "quantity": plan.quantity,
                     "stop_loss": plan.stop_loss,
                     "take_profit": plan.take_profit,
+                    "sizing_capital_usd": sizing_equity,
+                    "capital_basis": capital_basis,
+                    "simulation_capital_override_usd": profile.simulation_capital_override_usd,
+                    "max_risk_usd": plan.risk_amount,
                 }
 
                 if profile.provider == "BYBIT":
@@ -405,6 +416,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                         "sizing_policy": "CERTIFIED_MAX_1_SHARE",
                         "certified_max_shares": IBKR_CERTIFIED_MAX_SHARES_PER_ORDER,
                     })
+                    if strategy_shares < 1:
+                        blockers.append("IBKR_FRACTIONAL_ORDER_REQUIRED_NOT_CERTIFIED")
                     if effective_notional > available:
                         blockers.append("INSUFFICIENT_AVAILABLE_BALANCE")
                     blockers.extend(_portfolio_guard(
@@ -454,6 +467,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
     return {
         "execution_enabled": False,
         "purpose": "AUTO_TRADE_READINESS_DRY_RUN",
+        "capital_sizing_policy": capital_policy_payload(simulation_capital_override_usd=None),
         "portfolio_policy": {
             "max_gross_exposure_pct": READINESS_MAX_GROSS_EXPOSURE_PCT,
             "max_new_positions_per_account": READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT,

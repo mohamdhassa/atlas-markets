@@ -2,9 +2,9 @@
 
 Canonical baseline: `v1.0.0` at `5ef08db6426876be6019541c45c0b3b3851f85eb`
 
-Database head: `20260925_0019`
+Database head: `20261001_0022`
 
-Production database: `atlas_markets` (23 tables including `alembic_version`). The separate
+Production database: `atlas_markets` (25 tables including `alembic_version`). The separate
 `atlas` database on the Oracle host belongs to the earlier project and is not part of this ERD.
 
 ## Ownership and execution lineage
@@ -93,6 +93,7 @@ erDiagram
       string last_connection_status
       float equity_usd
       float available_balance_usd
+      float simulation_capital_override_usd
       int open_positions_count
       int open_orders_count
     }
