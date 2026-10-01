@@ -15,3 +15,7 @@ Execution scope remains limited to certified simulation environments:
 
 This release does not enable a live-money provider. Live arming does not override the certified
 simulation-only automation route list.
+
+IBKR readiness re-verifies the live bridge, configured account ID and Paper simulation flag on
+each automation scan. A stale `FAILED` profile can return to `CONNECTED` only after all three
+checks pass; changing database status alone is neither required nor trusted.

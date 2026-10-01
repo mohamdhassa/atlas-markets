@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import httpx
+from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.brokers.bybit_private import BybitPrivateClient
@@ -78,6 +79,46 @@ def _ibkr_provider_unavailable(exc: Exception) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in {502, 503, 504}
     return False
+
+
+def _ibkr_connection_verdict(profile, credentials: dict, health: dict, account: dict) -> tuple[bool, str]:
+    if not health.get("connected"):
+        return False, "IBKR_BRIDGE_DISCONNECTED"
+    actual = str(account.get("account_id") or "").strip()
+    expected = str(credentials.get("account_id") or profile.external_account_ref or "").strip()
+    if not actual or actual != expected:
+        return False, "IBKR_ACCOUNT_MISMATCH"
+    simulation = bool(account.get("simulation", health.get("simulation")))
+    if str(profile.environment or "").upper() == "PAPER" and not simulation:
+        return False, "IBKR_PAPER_SESSION_REQUIRED"
+    return True, "CONNECTED"
+
+
+async def _refresh_ibkr_connection(db, profile, settings) -> tuple[bool, str]:
+    """Repair stale profile state only after live bridge/account verification."""
+    try:
+        credentials = _secret(profile)
+        broker = IbkrBridgeClient(
+            credentials.get("bridge_url") or "http://host.docker.internal:8766",
+            credentials.get("bridge_token"),
+            settings.market_data_timeout_seconds,
+        )
+        health = await broker.health()
+        account = await broker.account() if health.get("connected") else {}
+        connected, reason = _ibkr_connection_verdict(profile, credentials, health, account)
+        profile.last_connection_status = "CONNECTED" if connected else "FAILED"
+        profile.last_connection_test_at = datetime.now(timezone.utc)
+        if connected:
+            profile.equity_usd = float(account.get("equity") or 0)
+            profile.wallet_balance_usd = float(account.get("cash") or 0)
+            profile.available_balance_usd = float(account.get("available") or 0)
+        db.flush()
+        return connected, reason
+    except Exception as exc:
+        profile.last_connection_status = "FAILED"
+        profile.last_connection_test_at = datetime.now(timezone.utc)
+        db.flush()
+        return False, f"{type(exc).__name__}: {str(exc)[:160]}"
 
 
 def _provider_execution_blockers(profile):
@@ -179,6 +220,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             rows.append({**base, "readiness": "BLOCK", "reason": "PROFILE_MISSING"})
             continue
         base.update(provider=profile.provider, environment=profile.environment)
+        if profile.provider == "IBKR":
+            await _refresh_ibkr_connection(db, profile, settings)
         if not (profile.is_enabled and profile.is_active and profile.credentials_configured and profile.last_connection_status == "CONNECTED"):
             rows.append({**base, "readiness": "BLOCK", "reason": "ROUTE_NOT_READY"})
             continue
