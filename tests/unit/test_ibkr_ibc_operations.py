@@ -6,6 +6,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "ops" / "ibkr-ibc" / "compose.yml"
 ENV_EXAMPLE = ROOT / "ops" / "ibkr-ibc" / ".env.example"
+WATCHDOG = ROOT / "ops" / "ibkr_bridge_watchdog.sh"
+WATCHDOG_SERVICE = ROOT / "ops" / "systemd" / "atlas-ibkr-bridge-watchdog.service"
 
 
 def _service():
@@ -49,3 +51,27 @@ def test_ibc_initializes_persistent_settings_permissions_before_gateway():
     assert init["user"] == "0:0"
     assert "chown -R 1000:1000" in init["command"][0]
     assert gateway["depends_on"]["settings-init"]["condition"] == "service_completed_successfully"
+
+
+def test_watchdog_uses_gateway_container_health_not_proxy_port_alone():
+    script = WATCHDOG.read_text(encoding="utf-8")
+    assert "IBKR_GATEWAY_CONTAINER" in script
+    assert "gateway_health" in script
+    assert '== "healthy"' in script
+    assert "IBKR_GATEWAY_RECOVERY" in script
+    assert "IBKR_GATEWAY_RECOVERED" in script
+    assert "IBKR_AUTH_REQUIRED" in script
+    assert script.index("if ! gateway_ready") < script.index('health="$(curl')
+
+
+def test_watchdog_gateway_recovery_has_authentication_cooldown():
+    script = WATCHDOG.read_text(encoding="utf-8")
+    assert "IBKR_GATEWAY_RECOVERY_COOLDOWN_SECONDS" in script
+    assert "IBKR_GATEWAY_RECOVERY_STAMP" in script
+    assert "IBKR_GATEWAY_RECOVERY_COOLDOWN" in script
+
+
+def test_watchdog_service_no_longer_depends_on_masked_legacy_gateway():
+    service = WATCHDOG_SERVICE.read_text(encoding="utf-8")
+    assert "atlas-ibgateway.service" not in service
+    assert "docker.service" in service

@@ -1,7 +1,7 @@
 [Unit]
 Description=ATLAS IBKR Bridge Health Recovery
-After=atlas-ibgateway.service docker.service
-Wants=atlas-ibgateway.service docker.service
+After=docker.service network-online.target
+Wants=docker.service network-online.target
 
 [Service]
 Type=oneshot
