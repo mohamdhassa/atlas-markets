@@ -26,6 +26,17 @@ def test_ibkr_entry_fill_falls_back_only_on_missing_broker_status_and_exact_live
     assert _entry_fill_verified(long_entry,{},'LONG',2.0)[0] is False
 
 
+def test_ibkr_fractional_entry_and_position_reconciliation_is_exact():
+    entry=SimpleNamespace(status='EXECUTED',side='BUY',quantity=0.1234)
+    action=SimpleNamespace(broker_order_id='41',symbol='SPY',side='BUY',quantity=0.1234)
+    execution={'execution_id':'fractional','order_id':41,'account':'DUR980544','symbol':'SPY','side':'BOT','quantity':0.1234}
+    position={'account':'DUR980544','symbol':'SPY','quantity':0.1234,'avg_cost':500.0}
+    assert _entry_fill_verified(entry,{},'LONG',0.1234)[0] is True
+    assert _reconciliation_evidence(action,[execution],'DUR980544')['quantity']==0.1234
+    assert _position_fallback_evidence(action,position,'DUR980544')['live_position_quantity']==0.1234
+    assert _position_fallback_evidence(action,{**position,'quantity':0.2234},'DUR980544') is None
+
+
 def test_ibkr_entry_fill_never_overrides_explicit_broker_nonfilled_state():
     entry=SimpleNamespace(status='EXECUTED',side='BUY',quantity=1.0)
     assert _entry_fill_verified(entry,{'status':'Submitted'},'LONG',1.0)==(False,'BROKER_NOT_FILLED')

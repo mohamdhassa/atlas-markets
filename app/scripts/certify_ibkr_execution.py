@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -13,6 +14,7 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.session import SessionLocal
+from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares
 
 
 def f(value):
@@ -39,7 +41,7 @@ async def wait_for_position_delta(client, account, symbol, baseline, expected_de
     while time.monotonic() < deadline:
         rows = (await client.positions()).get("list", [])
         latest = position_qty(rows, account, symbol)
-        if abs((latest - baseline) - expected_delta) < 1e-9:
+        if ibkr_quantities_match(latest - baseline, expected_delta):
             return True, latest
         await asyncio.sleep(0.75)
     return False, latest
@@ -126,7 +128,10 @@ async def main():
         if not symbol:
             raise RuntimeError("REFUSED: certification candidates SPY/QQQ/IWM/DIA already have positions; will not mix certification shares with existing holdings")
 
-        quantity = 1.0; baseline_qty = position_qty(positions_before, actual_account, symbol)
+        quantity = normalize_ibkr_shares(os.environ.get("IBKR_CERTIFICATION_QUANTITY", "0.01"))
+        if quantity <= 0 or quantity > 1:
+            raise RuntimeError("IBKR_CERTIFICATION_QUANTITY must be between 0.0001 and 1 share")
+        baseline_qty = position_qty(positions_before, actual_account, symbol)
         executions_before = (await client.executions(1)).get("list", [])
         before_ids = {str(x.get("execution_id") or "") for x in executions_before if x.get("execution_id")}
         payload = {"symbol":symbol,"side":"BUY","quantity":quantity,"order_type":"MKT","sec_type":"STK","exchange":"SMART","currency":"USD","account_id":actual_account}
@@ -162,7 +167,7 @@ async def main():
         if not close_check.get("ok") or not close_check.get("simulation"):
             raise RuntimeError(f"IBKR Paper close preflight rejected: {close_check}")
 
-        closed = await client.place_order(close_payload); close_order_id = int(closed.get("order_id") or 0)
+        closed = await client.close_position(symbol=symbol, quantity=quantity, position_side="LONG", account_id=actual_account); close_order_id = int(closed.get("order_id") or 0)
         if not close_order_id:
             raise RuntimeError(f"IBKR Paper close returned no order id: {closed}")
         print(f"CLOSE   | order_id={close_order_id} accepted={closed.get('accepted')} status={closed.get('status')} errors={closed.get('errors')}")

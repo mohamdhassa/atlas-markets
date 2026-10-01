@@ -107,7 +107,7 @@ ATLAS communicates with `tools/ibkr_bridge.py`, which communicates with TWS/IB G
 
 - simulation-only bridge requirement;
 - WhatIf preflight;
-- max 1 share/order certification cap;
+- risk-sized fractional shares rounded down to 0.0001 with broker-native What-If validation;
 - duplicate position/order guards;
 - post-submit broker status polling;
 - cancelled orders recorded as `CANCELLED`, not falsely as executed.

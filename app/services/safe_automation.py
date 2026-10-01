@@ -16,6 +16,7 @@ from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.autotrade_preflight import autotrade_preflight
 from app.services.bybit_spot_execution import execute_managed_spot_order
+from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares
 
 CERTIFIED_AUTOMATION_ROUTES = {
     ("MT5", "DEMO"),
@@ -23,7 +24,6 @@ CERTIFIED_AUTOMATION_ROUTES = {
     ("BYBIT", "TESTNET"),
     ("BYBIT", "DEMO"),
 }
-IBKR_CERTIFIED_MAX_SHARES_PER_ORDER = 1
 IBKR_FILL_VERIFY_ATTEMPTS = 6
 IBKR_FILL_VERIFY_DELAY_SECONDS = 1.0
 IBKR_TERMINAL_ORDER_STATUSES = {"CANCELLED", "CANCELED", "INACTIVE", "API CANCELLED", "APICANCELLED"}
@@ -219,7 +219,7 @@ async def _verify_ibkr_fill(broker, order_id, shares):
         state = str(status.get("status") or "").upper()
         filled = float(status.get("filled") or 0)
         remaining = float(status.get("remaining") or 0)
-        if filled >= float(shares) or (state == "FILLED" and remaining <= 0):
+        if filled > float(shares) or ibkr_quantities_match(filled, shares) or (state == "FILLED" and remaining <= 0):
             return "FILLED", latest
         if state in IBKR_TERMINAL_ORDER_STATUSES:
             return "CANCELLED", latest
@@ -242,10 +242,10 @@ async def _execute_ibkr(db, *, user_id, item):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "ROUTE_NOT_READY"}
     proposed = item.get("request") or {}
     side = str(proposed.get("side") or "").upper()
-    requested = int(proposed.get("shares") or 0)
+    requested = normalize_ibkr_shares(proposed.get("shares") or proposed.get("quantity"))
     if side not in {"BUY", "SELL"} or requested <= 0:
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "INVALID_ORDER_PROPOSAL"}
-    shares = min(requested, IBKR_CERTIFIED_MAX_SHARES_PER_ORDER)
+    shares = requested
     creds = _secret(profile)
     broker = IbkrBridgeClient(creds.get("bridge_url") or "http://host.docker.internal:8766", creds.get("bridge_token"), get_settings().market_data_timeout_seconds)
     health = await broker.health()
@@ -265,7 +265,7 @@ async def _execute_ibkr(db, *, user_id, item):
     if not result.get("accepted"):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "BROKER_ORDER_REJECTED", "broker_result": result}
     order_id = result.get("order_id")
-    base = {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "side": side, "shares": shares, "strategy_requested_shares": proposed.get("strategy_requested_shares") or requested, "sizing_policy": "CERTIFIED_MAX_1_SHARE", "broker_check": check, "broker_result": result}
+    base = {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "side": side, "shares": shares, "strategy_requested_shares": proposed.get("strategy_requested_shares") or requested, "sizing_policy": "RISK_SIZED_FRACTIONAL_SHARES", "quantity_mode": "FRACTIONAL_SHARES", "share_step": 0.0001, "broker_check": check, "broker_result": result}
     if order_id is None:
         return {**base, "status": "SUBMITTED", "reason": "BROKER_ORDER_ID_MISSING"}
     verification, final_status = await _verify_ibkr_fill(broker, order_id, shares)
@@ -347,7 +347,7 @@ async def run_safe_scan():
                 "certified_routes": [
                     {"provider": "BYBIT", "environment": "TESTNET/DEMO", "product": "SPOT", "sell_policy": "ATLAS_MANAGED_INVENTORY_ONLY"},
                     {"provider": "MT5", "environment": "DEMO"},
-                    {"provider": "IBKR", "environment": "PAPER", "max_shares_per_order": IBKR_CERTIFIED_MAX_SHARES_PER_ORDER},
+                    {"provider": "IBKR", "environment": "PAPER", "quantity_mode": "RISK_SIZED_FRACTIONAL_SHARES", "share_step": 0.0001, "capability_check": "BROKER_NATIVE_WHAT_IF_EACH_ORDER"},
                 ],
                 "blocked_routes": {"BYBIT_LIVE": "LIVE_MONEY_NOT_ARMED"},
                 "signals": scan.signals_count,

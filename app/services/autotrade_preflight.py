@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
-from app.services.autotrade_readiness import IBKR_CERTIFIED_MAX_SHARES_PER_ORDER, autotrade_readiness
+from app.services.autotrade_readiness import autotrade_readiness
 
 
 def _secret(profile) -> dict:
@@ -166,9 +166,11 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
                 if not math.isfinite(requested_quantity) or requested_quantity <= 0:
                     items.append({**base, "preflight": "BLOCK", "reason": "INVALID_IBKR_QUANTITY"})
                     continue
-                shares = min(math.floor(requested_quantity), IBKR_CERTIFIED_MAX_SHARES_PER_ORDER)
+                from app.services.ibkr_fractional import normalize_ibkr_shares
+
+                shares = normalize_ibkr_shares(requested_quantity)
                 if shares <= 0:
-                    items.append({**base, "preflight": "BLOCK", "reason": "IBKR_QUANTITY_BELOW_ONE_SHARE"})
+                    items.append({**base, "preflight": "BLOCK", "reason": "IBKR_QUANTITY_BELOW_MINIMUM_FRACTIONAL_SHARE"})
                     continue
                 c = _secret(profile)
                 broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)

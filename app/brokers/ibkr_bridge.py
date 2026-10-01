@@ -2,6 +2,7 @@ from __future__ import annotations
 import httpx
 
 from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
+from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares
 
 class IbkrBridgeClient:
     """ATLAS client for the local IBKR TWS/IB Gateway bridge."""
@@ -43,7 +44,7 @@ class IbkrBridgeClient:
         requested close. The bridge itself still refuses Live execution.
         """
         symbol=str(symbol or '').strip().upper().replace('/','').replace(' ','')
-        quantity=float(quantity or 0);position_side=str(position_side or '').upper()
+        quantity=normalize_ibkr_shares(quantity);position_side=str(position_side or '').upper()
         if quantity<=0 or position_side not in {'LONG','SHORT'}:raise RuntimeError('INVALID_CLOSE_REQUEST')
         async with reserve_execution(f'IBKR:{account_id or self.base_url}',symbol) as reservation:
             if reservation is None:raise RuntimeError('EXECUTION_ALREADY_IN_PROGRESS')
@@ -54,7 +55,7 @@ class IbkrBridgeClient:
             if current is None:raise RuntimeError('POSITION_NOT_FOUND')
             current_qty=float(current.get('quantity') or 0)
             actual_side='LONG' if current_qty>0 else 'SHORT'
-            if actual_side!=position_side or abs(current_qty)!=quantity:raise RuntimeError('POSITION_CHANGED')
+            if actual_side!=position_side or not ibkr_quantities_match(abs(current_qty),quantity):raise RuntimeError('POSITION_CHANGED')
             orders=(await self.orders()).get('list',[])
             if symbol in pending_order_symbols(orders):raise RuntimeError('SYMBOL_ALREADY_HAS_OPEN_ORDER')
             payload={'symbol':symbol,'side':'SELL' if position_side=='LONG' else 'BUY','quantity':quantity,'order_type':'MKT','sec_type':'STK','exchange':'SMART','currency':'USD','account_id':account_id}

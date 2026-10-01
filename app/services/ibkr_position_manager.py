@@ -15,6 +15,7 @@ from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.signal_risk import generate_signal
+from app.services.ibkr_fractional import ibkr_quantities_match
 
 
 def _canonical(value):return str(value or '').strip().upper().replace('/','').replace(' ','')
@@ -44,7 +45,7 @@ def _reconciliation_evidence(action, executions, account_id):
     matches=[x for x in executions if _execution_matches_action(action,x,account_id)]
     expected=float(action.quantity or 0)
     filled=sum(float(x.get('quantity') or 0) for x in matches)
-    if expected<=0 or abs(filled-expected)>=1e-9:return None
+    if expected<=0 or not ibkr_quantities_match(filled,expected):return None
     return {'order_id':str(action.broker_order_id),'symbol':_canonical(action.symbol),'side':str(action.side or '').upper(),'quantity':expected,'execution_ids':[str(x.get('execution_id') or '') for x in matches if x.get('execution_id')]}
 
 def _submitted_entries(db,profile):
@@ -90,7 +91,7 @@ def _position_fallback_evidence(action,position,account_id):
     if expected<=0:return None
     if side=='BUY' and live<=0:return None
     if side=='SELL' and live>=0:return None
-    if abs(live)+1e-9<expected:return None
+    if not ibkr_quantities_match(abs(live),expected):return None
     return {'order_id':str(action.broker_order_id),'account':str(position.get('account') or account_id or ''),'symbol':_canonical(action.symbol),'side':side,'quantity':expected,'live_position_quantity':live,'live_avg_cost':position.get('avg_cost')}
 
 def _reconcile_submitted_entries_from_positions(db,profile,positions,account_id):
@@ -141,7 +142,7 @@ def _entry_fill_verified(entry, broker_entry, position_side, quantity):
     if state:return False,'BROKER_NOT_FILLED'
     expected_side='LONG' if entry.side=='BUY' else 'SHORT' if entry.side=='SELL' else None
     persisted_qty=float(entry.quantity or 0)
-    if entry.status=='EXECUTED' and expected_side==position_side and persisted_qty>0 and abs(persisted_qty-float(quantity))<1e-9:
+    if entry.status=='EXECUTED' and expected_side==position_side and persisted_qty>0 and ibkr_quantities_match(persisted_qty,quantity):
         return True,'PERSISTED_EXECUTED_LIVE_POSITION_MATCH'
     return False,'ENTRY_FILL_NOT_VERIFIED'
 def _persist(db,scan,user_id,profile,item,result):
@@ -153,7 +154,7 @@ async def _verify_fill(broker,order_id,quantity):
     for attempt in range(6):
         if attempt:await asyncio.sleep(1)
         latest=await broker.order_status(int(order_id));status=latest.get('status') or {};state=str(status.get('status') or '').upper();filled=float(status.get('filled') or 0);remaining=float(status.get('remaining') or 0)
-        if filled>=quantity or (state=='FILLED' and remaining<=0):return True,latest
+        if filled>quantity or ibkr_quantities_match(filled,quantity) or (state=='FILLED' and remaining<=0):return True,latest
         if state in {'CANCELLED','CANCELED','INACTIVE','API CANCELLED','APICANCELLED'}:return False,latest
     return False,latest
 

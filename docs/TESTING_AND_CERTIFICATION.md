@@ -40,7 +40,7 @@ Required safeguards:
 
 - Paper/simulation bridge only;
 - WhatIf preflight;
-- max 1 share/order;
+- fractional Paper entry and close certification (default 0.01 share);
 - existing position/open-order guard;
 - post-submit status polling;
 - fills marked `EXECUTED` only after broker confirmation;
