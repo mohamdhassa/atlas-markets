@@ -14,6 +14,7 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [Adaptive router release](RELEASE_V1_ADAPTIVE_ROUTER.md) — delivered scope and execution exclusions.
 - [Routed paper execution](RELEASE_V1_ROUTED_PAPER_EXECUTION.md) — strategy agreement gate for certified simulation orders.
 - [$100 starter-capital readiness](STARTER_CAPITAL_READINESS.md) — conservative sizing and promotion gates for the planned first live balances.
+- [IBKR fractional Paper execution](IBKR_FRACTIONAL_PAPER_EXECUTION.md) — risk-sized fractional entries, broker preflight, reconciliation and exact exits.
 - [Starter-capital readiness release](RELEASE_V1_STARTER_CAPITAL_READINESS.md) — delivered controls and verification status.
 
 ## Use and administration

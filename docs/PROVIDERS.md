@@ -7,7 +7,7 @@ Last updated: 2026-09-23
 | Provider | Purpose | Current environment | Automatic execution |
 |---|---|---|---|
 | Fusion Markets MT5 | FX, metals, commodities | Demo | CERTIFIED |
-| Interactive Brokers | Stocks, ETFs | Paper | CERTIFIED with max 1 share/order |
+| Interactive Brokers | Stocks, ETFs | Paper | Risk-sized fractional shares; broker What-If required |
 | Bybit | Crypto Spot | Testnet / Demo | CERTIFIED with managed-inventory and balance-reconciliation safeguards |
 | Twelve Data | Market/historical data | API data service | NEVER execution |
 
@@ -34,7 +34,9 @@ Certified safeguards:
 
 - Paper/simulation bridge only.
 - WhatIf preflight required.
-- maximum 1 share per automatic order.
+- fractional quantities are rounded down to 0.0001 shares so sizing never exceeds the risk budget;
+- every order requires a successful broker-native What-If check before Paper submission;
+- entries and exits reconcile fractional fills using a strict numeric tolerance.
 - duplicate position/open-order prevention.
 - broker status verification after submission.
 - cancelled broker orders are persisted as `CANCELLED` rather than `EXECUTED`.

@@ -16,6 +16,7 @@ from app.core.crypto import decrypt_secret
 from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
 from app.db.session import get_db
+from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares
 
 router = APIRouter(prefix="/provider-certification", tags=["provider-certification"])
 
@@ -70,13 +71,13 @@ async def bybit_diagnostics(profile_id: uuid.UUID, user: User = Depends(get_curr
 class IbkrWhatIfRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=24)
     side: str = Field(pattern="^(BUY|SELL)$")
-    quantity: int = Field(ge=1, le=100)
+    quantity: float = Field(ge=0.0001, le=100000)
 
 
 class IbkrCertificationRequest(BaseModel):
     symbol: str = Field(default="IWM", min_length=1, max_length=24)
     side: str = Field(default="BUY", pattern="^(BUY|SELL)$")
-    quantity: int = Field(default=1, ge=1, le=1)
+    quantity: float = Field(default=0.01, ge=0.0001, le=1)
 
 
 def _ibkr_bridge(profile: BrokerProfile) -> tuple[IbkrBridgeClient, dict]:
@@ -87,7 +88,7 @@ def _ibkr_bridge(profile: BrokerProfile) -> tuple[IbkrBridgeClient, dict]:
     return bridge, creds
 
 
-def _ibkr_payload(creds: dict, symbol: str, side: str, quantity: int = 1) -> dict:
+def _ibkr_payload(creds: dict, symbol: str, side: str, quantity: float = 0.01) -> dict:
     return {"symbol":symbol.strip().upper(),"side":side,"quantity":quantity,"order_type":"MKT","sec_type":"STK","exchange":"SMART","currency":"USD","account_id":creds.get("account_id")}
 
 
@@ -108,7 +109,7 @@ async def ibkr_certify_single(profile_id: uuid.UUID, payload: IbkrCertificationR
     if profile is None or profile.provider != "IBKR": raise HTTPException(404, "IBKR account not found")
     bridge, creds = _ibkr_bridge(profile); health = await bridge.health()
     if not health.get("simulation"): raise HTTPException(409, "IBKR bridge is not in PAPER/simulation mode")
-    symbol = payload.symbol.strip().upper(); side = payload.side; order_payload = _ibkr_payload(creds, symbol, side, 1)
+    symbol = payload.symbol.strip().upper(); side = payload.side; quantity = normalize_ibkr_shares(payload.quantity); order_payload = _ibkr_payload(creds, symbol, side, quantity)
     positions = (await bridge.positions()).get("list", []); orders = (await bridge.orders()).get("list", [])
     if any(str(x.get("symbol") or "").upper() == symbol and float(x.get("quantity") or 0) != 0 for x in positions): raise HTTPException(409, "IBKR_CERTIFICATION_SYMBOL_ALREADY_HAS_POSITION")
     if any(str(x.get("symbol") or "").upper() == symbol for x in orders): raise HTTPException(409, "IBKR_CERTIFICATION_SYMBOL_ALREADY_HAS_OPEN_ORDER")
@@ -119,10 +120,10 @@ async def ibkr_certify_single(profile_id: uuid.UUID, payload: IbkrCertificationR
     order_id = int(placed.get("order_id")); status = placed.get("status")
     for _ in range(10):
         status_result = await bridge.order_status(order_id); status = status_result.get("status") or status
-        if status and (float(status.get("filled") or 0) >= 1 or str(status.get("status") or "").upper() in {"FILLED","CANCELLED","INACTIVE"}): break
+        if status and (float(status.get("filled") or 0) >= quantity or str(status.get("status") or "").upper() in {"FILLED","CANCELLED","INACTIVE"}): break
         await asyncio.sleep(0.5)
-    positions_after = (await bridge.positions()).get("list", []); position = next((x for x in positions_after if str(x.get("symbol") or "").upper() == symbol and abs(float(x.get("quantity") or 0)) >= 1), None)
-    return {"provider":"IBKR","environment":"PAPER","purpose":"CONTROLLED_SINGLE_SHARE_CERTIFICATION","certification_pass":bool(position),"symbol":symbol,"side":side,"quantity":1,"what_if":check,"order_id":order_id,"order_status":status,"position":position,"next_action":"Run controlled close using the returned symbol after certification_pass=true."}
+    positions_after = (await bridge.positions()).get("list", []); position = next((x for x in positions_after if str(x.get("symbol") or "").upper() == symbol and ibkr_quantities_match(abs(float(x.get("quantity") or 0)), quantity)), None)
+    return {"provider":"IBKR","environment":"PAPER","purpose":"CONTROLLED_FRACTIONAL_SHARE_CERTIFICATION","certification_pass":bool(position),"symbol":symbol,"side":side,"quantity":quantity,"what_if":check,"order_id":order_id,"order_status":status,"position":position,"next_action":"Run controlled close with the same symbol and quantity after certification_pass=true."}
 
 
 @router.post("/ibkr/{profile_id}/certify-close")
@@ -131,10 +132,10 @@ async def ibkr_certify_close(profile_id: uuid.UUID, payload: IbkrCertificationRe
     if profile is None or profile.provider != "IBKR": raise HTTPException(404, "IBKR account not found")
     bridge, creds = _ibkr_bridge(profile); health = await bridge.health()
     if not health.get("simulation"): raise HTTPException(409, "IBKR bridge is not in PAPER/simulation mode")
-    symbol = payload.symbol.strip().upper(); positions = (await bridge.positions()).get("list", [])
-    position = next((x for x in positions if str(x.get("symbol") or "").upper() == symbol and abs(float(x.get("quantity") or 0)) == 1), None)
-    if not position: raise HTTPException(409, "IBKR_CERTIFICATION_EXACT_ONE_SHARE_POSITION_REQUIRED")
-    qty = float(position.get("quantity") or 0); close_side = "SELL" if qty > 0 else "BUY"; close_payload = _ibkr_payload(creds, symbol, close_side, 1)
+    symbol = payload.symbol.strip().upper(); quantity = normalize_ibkr_shares(payload.quantity); positions = (await bridge.positions()).get("list", [])
+    position = next((x for x in positions if str(x.get("symbol") or "").upper() == symbol and ibkr_quantities_match(abs(float(x.get("quantity") or 0)), quantity)), None)
+    if not position: raise HTTPException(409, "IBKR_CERTIFICATION_EXACT_FRACTIONAL_POSITION_REQUIRED")
+    qty = float(position.get("quantity") or 0); close_side = "SELL" if qty > 0 else "BUY"; close_payload = _ibkr_payload(creds, symbol, close_side, quantity)
     check = await bridge.order_check(close_payload)
     if not check.get("what_if") or not check.get("ok"): raise HTTPException(409, {"message":"IBKR close WhatIf did not pass","broker_result":check})
     # Close intentionally calls the bridge order endpoint through the client transport because normal place_order duplicate protection correctly blocks symbols with an existing position.
@@ -143,8 +144,8 @@ async def ibkr_certify_close(profile_id: uuid.UUID, payload: IbkrCertificationRe
     order_id = int(placed.get("order_id")); status = placed.get("status")
     for _ in range(10):
         status_result = await bridge.order_status(order_id); status = status_result.get("status") or status
-        if status and (float(status.get("filled") or 0) >= 1 or str(status.get("status") or "").upper() in {"FILLED","CANCELLED","INACTIVE"}): break
+        if status and (float(status.get("filled") or 0) >= quantity or str(status.get("status") or "").upper() in {"FILLED","CANCELLED","INACTIVE"}): break
         await asyncio.sleep(0.5)
     remaining = [x for x in (await bridge.positions()).get("list", []) if str(x.get("symbol") or "").upper() == symbol and float(x.get("quantity") or 0) != 0]
     executions = await bridge.executions(1)
-    return {"provider":"IBKR","environment":"PAPER","purpose":"CONTROLLED_SINGLE_SHARE_CERTIFICATION_CLOSE","close_pass":not remaining,"symbol":symbol,"side":close_side,"quantity":1,"what_if":check,"order_id":order_id,"order_status":status,"remaining_positions":remaining,"executions":[x for x in executions.get("list", []) if str(x.get("symbol") or "").upper() == symbol],"certification_complete":not remaining}
+    return {"provider":"IBKR","environment":"PAPER","purpose":"CONTROLLED_FRACTIONAL_SHARE_CERTIFICATION_CLOSE","close_pass":not remaining,"symbol":symbol,"side":close_side,"quantity":quantity,"what_if":check,"order_id":order_id,"order_status":status,"remaining_positions":remaining,"executions":[x for x in executions.get("list", []) if str(x.get("symbol") or "").upper() == symbol],"certification_complete":not remaining}
