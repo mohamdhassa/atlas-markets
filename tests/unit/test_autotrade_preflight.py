@@ -1,5 +1,7 @@
 from app.services.autotrade_preflight import _mt5_check_ok
-from app.services.autotrade_readiness import _router_blocker
+from types import SimpleNamespace
+
+from app.services.autotrade_readiness import _ibkr_connection_verdict, _router_blocker
 
 
 def test_mt5_preflight_accepts_success_retcode_zero():
@@ -29,3 +31,12 @@ def test_darvas_breakout_direction_gates_order():
     route = {"strategy": "darvas_box", "regime": "BOX_BREAKOUT", "box": {"breakout": "UP"}}
     assert _router_blocker(route, "SELL") == "STRATEGY_ROUTER_DIRECTION_CONFLICT"
     assert _router_blocker(route, "BUY") is None
+
+
+def test_ibkr_stale_profile_can_only_recover_after_account_verification():
+    profile = SimpleNamespace(environment="PAPER", external_account_ref="DU123")
+    credentials = {"account_id": "DU123"}
+    assert _ibkr_connection_verdict(profile, credentials, {"connected": True, "simulation": True}, {"account_id": "DU123", "simulation": True}) == (True, "CONNECTED")
+    assert _ibkr_connection_verdict(profile, credentials, {"connected": True, "simulation": True}, {"account_id": "DU999", "simulation": True}) == (False, "IBKR_ACCOUNT_MISMATCH")
+    assert _ibkr_connection_verdict(profile, credentials, {"connected": True, "simulation": False}, {"account_id": "DU123", "simulation": False}) == (False, "IBKR_PAPER_SESSION_REQUIRED")
+    assert _ibkr_connection_verdict(profile, credentials, {"connected": False}, {}) == (False, "IBKR_BRIDGE_DISCONNECTED")
