@@ -16,6 +16,7 @@ from app.db.models.signal import RiskProfile
 from app.db.models.strategy import StrategyProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.market_data.bybit import BybitPublicMarketData
+from app.analysis.strategy_router import route_strategy
 from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal
 
@@ -94,6 +95,25 @@ def _provider_execution_blockers(profile):
     return []
 
 
+def _router_blocker(route: dict, decision: str) -> str | None:
+    decision = str(decision or "").upper()
+    strategy = str(route.get("strategy") or "NO_TRADE").upper()
+    regime = str(route.get("regime") or "").upper()
+    if strategy == "NO_TRADE":
+        return "STRATEGY_ROUTER_NO_TRADE"
+    if decision not in {"BUY", "SELL"}:
+        return "STRATEGY_ROUTER_DIRECTION_REQUIRED"
+    if regime in {"TRENDING_UP"} and decision != "BUY":
+        return "STRATEGY_ROUTER_DIRECTION_CONFLICT"
+    if regime in {"TRENDING_DOWN"} and decision != "SELL":
+        return "STRATEGY_ROUTER_DIRECTION_CONFLICT"
+    if regime == "BOX_BREAKOUT":
+        breakout = str((route.get("box") or {}).get("breakout") or "NONE").upper()
+        if (breakout == "UP" and decision != "BUY") or (breakout == "DOWN" and decision != "SELL"):
+            return "STRATEGY_ROUTER_DIRECTION_CONFLICT"
+    return None
+
+
 def _bybit_spot_available(wallet: dict, coin: str = "USDT") -> float:
     rows = wallet.get("list") or []
     coins = (rows[0].get("coin") or []) if rows else []
@@ -169,11 +189,13 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             existing_positions = 0
             existing_gross = equity = available = price = 0.0
             sizing = {}
+            normalized_candles = []
             signal_market = str(cfg.market or "CRYPTO").upper()
 
             if profile.provider == "BYBIT":
                 candles = await market.get_candles(symbol=cfg.symbol, interval=timeframe, category="spot", limit=200)
-                generated = generate_signal([x.model_dump() for x in candles], timeframe=timeframe, market=signal_market)
+                normalized_candles = [x.model_dump() for x in candles]
+                generated = generate_signal(normalized_candles, timeframe=timeframe, market=signal_market)
                 environment = str(profile.environment or "").upper()
                 if environment == "DEMO":
                     base_url = settings.bybit_demo_base_url
@@ -204,7 +226,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             elif profile.provider == "MT5":
                 c = _secret(profile)
                 broker = Mt5BridgeClient(c.get("bridge_url") or "http://host.docker.internal:8765", c.get("bridge_token"), settings.market_data_timeout_seconds)
-                generated = generate_signal((await broker.candles(cfg.symbol, timeframe, 200)).get("list", []), timeframe=timeframe, market=signal_market)
+                normalized_candles = (await broker.candles(cfg.symbol, timeframe, 200)).get("list", [])
+                generated = generate_signal(normalized_candles, timeframe=timeframe, market=signal_market)
                 acct = await broker.account()
                 positions = (await broker.positions()).get("list", [])
                 equity = float(acct.get("equity") or 0)
@@ -219,7 +242,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             elif profile.provider == "IBKR":
                 c = _secret(profile)
                 broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)
-                generated = generate_signal((await broker.candles(cfg.symbol, timeframe, 200, sec_type="STK")).get("list", []), timeframe=timeframe, market=signal_market)
+                normalized_candles = (await broker.candles(cfg.symbol, timeframe, 200, sec_type="STK")).get("list", [])
+                generated = generate_signal(normalized_candles, timeframe=timeframe, market=signal_market)
                 acct = await broker.account()
                 positions = [p for p in (await broker.positions()).get("list", []) if float(p.get("quantity") or 0) != 0]
                 equity = float(acct.get("equity") or 0)
@@ -239,7 +263,12 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 allow_live_trading=False,
                 account_environment=profile.environment,
             )
+            strategy_route = route_strategy(normalized_candles)
+            details["strategy_route"] = strategy_route
             blockers = _provider_execution_blockers(profile)
+            router_blocker = _router_blocker(strategy_route, generated.decision)
+            if router_blocker:
+                blockers.append(router_blocker)
             if not approved:
                 blockers.append(reason)
 
@@ -358,6 +387,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 "strength": generated.strength,
                 "signal_reason": reason,
                 "risk_details": details,
+                "strategy_route": strategy_route,
                 "account": {"equity": equity, "available": available, "open_positions": existing_positions},
                 "portfolio": portfolio,
                 "existing_symbol_quantity": existing_qty,

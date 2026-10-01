@@ -12,6 +12,7 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [Providers](PROVIDERS.md) — broker and data-provider responsibilities.
 - [Adaptive strategy router](ADAPTIVE_STRATEGY_ROUTER.md) — regime selection, Darvas Box and shadow-only safety.
 - [Adaptive router release](RELEASE_V1_ADAPTIVE_ROUTER.md) — delivered scope and execution exclusions.
+- [Routed paper execution](RELEASE_V1_ROUTED_PAPER_EXECUTION.md) — strategy agreement gate for certified simulation orders.
 
 ## Use and administration
 

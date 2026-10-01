@@ -21,8 +21,9 @@ volume confirmation. The router reports `NO_TRADE` when evidence or confidence i
 
 The router is integrated into shadow observations and exposed at
 `POST /analysis/strategy-router/from-candles`. It is advisory (`SHADOW`, `executable=false`) and
-cannot submit, authorize or promote an order. Existing execution gates, account ownership,
-provider certification, live arming and risk controls remain authoritative.
+cannot independently submit, authorize or promote an order. The existing safe-automation service
+may use its output as one additional gate for already-certified paper/testnet routes. Existing
+execution gates, account ownership, provider certification and risk controls remain authoritative.
 
 Promotion requires walk-forward validation, transaction costs, sufficient settled shadow trades
 and forward paper observation. Profit is never guaranteed, and routing must be evaluated by
