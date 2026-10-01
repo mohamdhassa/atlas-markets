@@ -10,6 +10,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [ERP operating model](ERP_OPERATING_MODEL.md) — ERP-style control, workflow and audit model.
 - [Authorization](AUTHORIZATION.md) — ADMIN/USER authority and execution gates.
 - [Providers](PROVIDERS.md) — broker and data-provider responsibilities.
+- [Adaptive strategy router](ADAPTIVE_STRATEGY_ROUTER.md) — regime selection, Darvas Box and shadow-only safety.
+- [Adaptive router release](RELEASE_V1_ADAPTIVE_ROUTER.md) — delivered scope and execution exclusions.
 
 ## Use and administration
 
