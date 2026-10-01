@@ -7,6 +7,7 @@ from app.analysis.adaptive_strategy import select_strategy
 from app.analysis.asset_universe import profile_for,universe_profiles,universe_summary
 from app.analysis.strategy_intelligence import scenario_from_candles
 from app.analysis.shadow_strategy import evaluate_shadow_strategy,walk_forward_shadow_backtest
+from app.analysis.strategy_router import route_strategy
 from app.analysis.technical import analyze_candles
 from app.api.dependencies import get_current_user
 from app.core.config import get_settings
@@ -32,6 +33,12 @@ async def adaptive_from_candles(payload:dict=Body(...),_:User=Depends(get_curren
  candles=payload.get("candles") or [];symbol=str(payload.get("symbol") or "").upper().replace("/","");profile=profile_for(symbol);families=payload.get("strategy_families") or (profile.strategy_families if profile else ("trend","momentum","breakout","mean_reversion"))
  if not isinstance(candles,list) or len(candles)<30:raise HTTPException(status_code=400,detail="at least 30 normalized OHLC candles are required")
  return {"symbol":symbol,"asset_profile":profile.__dict__ if profile else None,**select_strategy(candles,families)}
+@router.post("/strategy-router/from-candles")
+async def strategy_router_from_candles(payload:dict=Body(...),_:User=Depends(get_current_user)):
+ candles=payload.get("candles") or []
+ if not isinstance(candles,list) or len(candles)<31:raise HTTPException(status_code=400,detail="at least 31 normalized OHLC candles are required")
+ try:return {"symbol":str(payload.get("symbol") or "UNKNOWN").upper().replace("/",""),**route_strategy(candles,news_score=payload.get("news_score"),minimum_confidence=float(payload.get("minimum_confidence") or 60.0))}
+ except (KeyError,TypeError,ValueError) as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
 @router.post("/shadow/from-candles")
 async def shadow_from_candles(payload:dict=Body(...),_:User=Depends(get_current_user)):
  candles=payload.get("candles") or []

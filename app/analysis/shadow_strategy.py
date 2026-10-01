@@ -5,6 +5,7 @@ from math import sqrt
 from statistics import mean, pstdev
 
 from app.analysis.strategy_intelligence import scenario_from_candles
+from app.analysis.strategy_router import route_strategy
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,7 @@ def evaluate_shadow_strategy(
     symbol = symbol.upper().replace("/", "")
     scenario = scenario_from_candles(candles, timeframe=timeframe, market=market)
     regime = detect_regime(candles)
+    strategy_route = route_strategy(candles, news_score=news_score)
     calibration = SYMBOL_CALIBRATION.get(symbol, {"threshold": 70.0, "min_confirmations": 2})
     base_action = _direction(scenario.get("action"))
     base_confidence = float(scenario.get("confidence") or 0.0)
@@ -156,6 +158,7 @@ def evaluate_shadow_strategy(
         "base_scenario": scenario,
         "regime_details": regime,
         "calibration": calibration,
+        "strategy_route": strategy_route,
         "safety": "Shadow decisions are observational and cannot submit orders.",
     }
 

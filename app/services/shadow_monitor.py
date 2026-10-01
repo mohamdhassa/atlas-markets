@@ -146,7 +146,7 @@ async def observe_strategy(db, strategy: SymbolStrategy, profile: BrokerProfile,
         entry_price=float(latest["close"]), source_timestamp_ms=timestamp_ms, horizon_bars=HORIZON_BARS,
         evaluation_due_at=now + timedelta(seconds=timeframe_seconds(timeframe) * HORIZON_BARS),
         news_score=news.sentiment if news.article_count else None, round_trip_cost_bps=ROUND_TRIP_COST_BPS,
-        outcome="PENDING", details_json=json.dumps({"reasons": decision["reasons"], "calibration": decision["calibration"], "regime_details": decision["regime_details"], "news_articles": news.article_count}),
+        outcome="PENDING", details_json=json.dumps({"reasons": decision["reasons"], "calibration": decision["calibration"], "regime_details": decision["regime_details"], "strategy_route": decision["strategy_route"], "news_articles": news.article_count}),
     ))
     return {"status": "OBSERVED", "reason": "DECISION_RECORDED", "symbol": strategy.symbol, "action": decision["action"], "settled": settled}
 
