@@ -1,0 +1,8 @@
+[Unit]
+Description=ATLAS application health recovery
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock -n /run/atlas-app-watchdog.lock /usr/local/sbin/atlas-app-watchdog

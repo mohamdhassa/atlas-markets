@@ -63,3 +63,19 @@ that may contain data written by a newer schema.
 - Code `2176`: fractional-size compatibility warning.
 
 These notices do not by themselves mean the Gateway or account is disconnected.
+
+## Application freeze prevention and recovery
+
+The `/health` route runs synchronous PostgreSQL and Redis checks in FastAPI's worker thread pool,
+not on the ASGI event loop. Both checks use bounded timeouts. PostgreSQL health uses a separate,
+non-pooled connection so application pool pressure cannot deadlock the health probe or frontend.
+
+Production runs `atlas-app-watchdog.timer` once per minute. After three failed health checks it
+restarts only the application, waits for startup and verifies recovery. PostgreSQL, Redis, IBKR
+Gateway and the IBKR bridge are not restarted. Canonical files are stored in
+`ops/atlas_app_watchdog.sh` and `ops/systemd/atlas-app-watchdog.*`.
+
+```bash
+systemctl status atlas-app-watchdog.timer --no-pager
+sudo tail -100 /var/log/atlas-app-watchdog.log
+```

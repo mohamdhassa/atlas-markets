@@ -1,3 +1,4 @@
+import inspect
 import pytest
 pytest.importorskip("redis")
 from fastapi.testclient import TestClient
@@ -49,3 +50,15 @@ def test_health_degraded(monkeypatch):
     r = client.get("/health")
     assert r.status_code == 503
     assert r.json()["status"] == "degraded"
+
+
+def test_health_dependency_checks_never_run_on_asgi_event_loop():
+    assert not inspect.iscoroutinefunction(health_module.health)
+
+
+def test_redis_health_client_has_bounded_socket_timeouts():
+    from app.core.redis import redis_client
+
+    options = redis_client.connection_pool.connection_kwargs
+    assert options["socket_connect_timeout"] > 0
+    assert options["socket_timeout"] > 0
