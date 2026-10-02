@@ -10,7 +10,8 @@ router = APIRouter(tags=["system"])
 
 
 @router.get("/health")
-async def health(response: Response) -> dict[str, object]:
+def health(response: Response) -> dict[str, object]:
+    """Run blocking dependency checks outside the ASGI event loop."""
     settings = get_settings()
     database_ok, database_error = check_database()
     redis_ok, redis_error = check_redis()
