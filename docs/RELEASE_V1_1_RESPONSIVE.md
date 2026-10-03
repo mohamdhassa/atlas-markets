@@ -17,6 +17,9 @@ backend behavior are preserved.
 - Initial application boot occurs after all page decorators load, preventing intermediate
   legacy layouts from flashing before the final page renderer.
 - Safe-area padding and 44-pixel touch targets support modern mobile devices.
+- The Portfolio trading universe uses separated two-column instrument cards on phones and a
+  single column on very narrow screens, preventing symbol, market, mode and state text from
+  collapsing into one continuous line.
 
 ## Page-by-page responsive audit
 
