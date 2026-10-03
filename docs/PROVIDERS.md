@@ -7,7 +7,7 @@ Last updated: 2026-09-23
 | Provider | Purpose | Current environment | Automatic execution |
 |---|---|---|---|
 | Fusion Markets MT5 | FX, metals, commodities | Demo | CERTIFIED |
-| Interactive Brokers | Stocks, ETFs | Paper | Risk-sized fractional shares; broker What-If required |
+| Interactive Brokers | Stocks, ETFs | Paper | Whole shares by default; fractional shares require explicit API certification; broker What-If required |
 | Bybit | Crypto Spot | Testnet / Demo | CERTIFIED with managed-inventory and balance-reconciliation safeguards |
 | Twelve Data | Market/historical data | API data service | NEVER execution |
 

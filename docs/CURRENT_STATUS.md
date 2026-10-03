@@ -18,6 +18,8 @@ administration, provider integrations, portfolio/activity/P&L and analytics.
 ## Runtime
 
 - FastAPI application, PostgreSQL 17 and Redis 7 are healthy on Oracle Cloud.
+- IBKR Paper error `10243` proved that the current production API route cannot submit fractional
+  shares. Fractional preflight is disabled by default; whole-share orders remain risk-gated.
 - Production app is bound to localhost port `8100`.
 - Bybit Testnet Spot is integrated with managed-inventory safeguards.
 - The configured IBKR Paper account is connected through Gateway port `4002` and bridge port
