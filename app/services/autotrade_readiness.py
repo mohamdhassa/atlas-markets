@@ -404,7 +404,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                         reservation["notional"] = float(reservation["notional"]) + effective_notional
                         reservation["positions"] = int(reservation["positions"]) + 1
                 elif profile.provider == "IBKR":
-                    from app.services.ibkr_fractional import normalize_ibkr_shares
+                    from app.services.ibkr_fractional import ibkr_quantity_is_fractional, normalize_ibkr_shares
 
                     strategy_shares = max(0.0, float(plan.quantity))
                     certified_shares = normalize_ibkr_shares(strategy_shares)
@@ -420,6 +420,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                     })
                     if certified_shares <= 0:
                         blockers.append("IBKR_QUANTITY_BELOW_MINIMUM_FRACTIONAL_SHARE")
+                    if ibkr_quantity_is_fractional(certified_shares) and not settings.ibkr_fractional_api_enabled:
+                        blockers.append("IBKR_FRACTIONAL_API_UNSUPPORTED")
                     if effective_notional > available:
                         blockers.append("INSUFFICIENT_AVAILABLE_BALANCE")
                     blockers.extend(_portfolio_guard(

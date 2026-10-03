@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN
 IBKR_FRACTIONAL_SHARE_STEP = Decimal("0.0001")
 IBKR_MIN_FRACTIONAL_SHARES = Decimal("0.0001")
 IBKR_QUANTITY_TOLERANCE = 0.0000001
+IBKR_FRACTIONAL_API_ERROR_CODE = 10243
 
 
 def normalize_ibkr_shares(value: object) -> float:
@@ -40,6 +41,28 @@ def ibkr_quantities_match(left: object, right: object) -> bool:
     )
 
 
+def ibkr_quantity_is_fractional(value: object) -> bool:
+    try:
+        quantity = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(quantity) and quantity > 0 and not math.isclose(
+        quantity, round(quantity), abs_tol=IBKR_QUANTITY_TOLERANCE
+    )
+
+
+def ibkr_preflight_rejection_reason(result: dict) -> str:
+    """Return a stable ATLAS reason for known broker-native failures."""
+    for error in result.get("errors") or []:
+        try:
+            code = int(error.get("code"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if code == IBKR_FRACTIONAL_API_ERROR_CODE:
+            return "IBKR_FRACTIONAL_API_UNSUPPORTED"
+    return "BROKER_PREFLIGHT_REJECTED"
+
+
 def ibkr_fractional_policy_payload() -> dict:
     return {
         "quantity_mode": "FRACTIONAL_SHARES",
@@ -47,4 +70,5 @@ def ibkr_fractional_policy_payload() -> dict:
         "share_step": float(IBKR_FRACTIONAL_SHARE_STEP),
         "rounding": "DOWN_TO_PRESERVE_RISK_LIMIT",
         "capability_check": "BROKER_NATIVE_WHAT_IF_EACH_ORDER",
+        "runtime_flag": "IBKR_FRACTIONAL_API_ENABLED",
     }
