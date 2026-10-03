@@ -5,7 +5,7 @@ STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
 
 def test_frontend_entrypoint_uses_consolidated_core_only():
     html = (STATIC / "index.html").read_text()
-    assert '/static/app.js?v=53.1' in html
+    assert '/static/app.js?v=84.0' in html
     assert '/static/atlas-core.js?v=53.0' in html
     assert 'phase50-operational-parity.js' not in html
     assert 'phase51-integration-architecture-fix.js' not in html
