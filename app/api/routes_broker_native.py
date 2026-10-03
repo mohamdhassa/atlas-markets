@@ -16,6 +16,7 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.bybit_inventory import BybitManagedInventory
 from app.db.models.automation import AutomationAction
 from app.db.models.symbol_strategy import SymbolStrategy
+from app.db.models.news import NewsArticle
 from app.db.session import get_db
 
 router=APIRouter(tags=['portfolio','performance'])
@@ -61,6 +62,69 @@ def _symbol_market_map(db,profile_id):
 def _account_market(provider):return 'CRYPTO' if provider=='BYBIT' else 'STOCK+ETF' if provider=='IBKR' else 'FX+METAL+COMMODITY'
 def _stats(rows):
  pnl_rows=[r for r in rows if r.get('pnl_available',True)];pnls=[_f(r.get('pnl')) for r in pnl_rows];wins=[x for x in pnls if x>0];loss=[x for x in pnls if x<0];gross_win=sum(wins);gross_loss=abs(sum(loss));return {'trades':len(rows),'pnl_trades':len(pnl_rows),'realized_pnl':round(sum(pnls),2),'wins':len(wins),'losses':len(loss),'win_rate':round((len(wins)/len(pnls)*100) if pnls else 0,2),'average_win':round(gross_win/len(wins),2) if wins else 0,'average_loss':round(sum(loss)/len(loss),2) if loss else 0,'profit_factor':round(gross_win/gross_loss,3) if gross_loss else (999.0 if gross_win else 0),'pnl_complete':len(pnl_rows)==len(rows)}
+
+def _side(value):
+ return 'BUY' if str(value or '').upper() in {'BUY','BOT','LONG'} else 'SELL' if str(value or '').upper() in {'SELL','SLD','SHORT'} else str(value or '').upper()
+
+def _iso_ms(value):
+ return datetime.fromtimestamp(value/1000,tz=timezone.utc).isoformat() if value else None
+
+def _pair_execution_lots(rows):
+ """Add entry/duration context without replacing broker-reported P&L."""
+ inventory=defaultdict(lambda:{'BUY':[],'SELL':[]})
+ for row in sorted(rows,key=lambda x:x.get('time') or 0):
+  key=(str(row.get('profile_id')),str(row.get('symbol') or '').upper())
+  side=_side(row.get('side')); qty=_f(row.get('quantity')); price=_f(row.get('execution_price'))
+  if side not in {'BUY','SELL'} or qty<=0 or price<=0:continue
+  opposite='SELL' if side=='BUY' else 'BUY'
+  if not row.get('pnl_available'):
+   inventory[key][side].append([qty,price,int(row.get('time') or 0)])
+   continue
+  remaining=qty;cost=0.0;matched=0.0;opened=[]
+  while remaining>1e-12 and inventory[key][opposite]:
+   lot=inventory[key][opposite][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;opened.append(lot[2]);lot[0]-=take;remaining-=take
+   if lot[0]<=1e-12:inventory[key][opposite].pop(0)
+  if matched>0:
+   row['entry_price']=cost/matched;row['invested_amount']=cost;row['opened_at']=min(opened) if opened else 0
+  elif row.get('entry_price'):
+   row['invested_amount']=qty*_f(row.get('entry_price'))
+  row['closed_at']=int(row.get('time') or 0)
+  row['duration_seconds']=max(0,(row['closed_at']-row.get('opened_at',0))//1000) if row.get('opened_at') else None
+  pnl=_f(row.get('pnl')) if row.get('pnl_available') else None
+  row['return_pct']=round(pnl/row['invested_amount']*100,4) if pnl is not None and row.get('invested_amount') else None
+  row['opened_at_iso']=_iso_ms(row.get('opened_at'));row['closed_at_iso']=_iso_ms(row.get('closed_at'))
+ return rows
+
+def _trade_context(db,user,rows):
+ profile_ids={r.get('profile_id') for r in rows if r.get('profile_id')};symbols={str(r.get('symbol') or '').upper() for r in rows}
+ strategies=list(db.scalars(select(SymbolStrategy).where(SymbolStrategy.profile_id.in_(profile_ids))).all()) if profile_ids else []
+ strategy_map={(str(x.profile_id),str(x.symbol).upper()):x for x in strategies}
+ aq=select(AutomationAction).where(AutomationAction.broker_profile_id.in_(profile_ids)) if profile_ids else None
+ if aq is not None and user.role!='ADMIN':aq=aq.where(AutomationAction.user_id==user.id)
+ actions=list(db.scalars(aq.order_by(AutomationAction.created_at.desc())).all()) if aq is not None else []
+ by_order={str(x.broker_order_id):x for x in actions if x.broker_order_id}
+ by_symbol=defaultdict(list)
+ for x in actions:by_symbol[(str(x.broker_profile_id),str(x.symbol).upper())].append(x)
+ news=list(db.scalars(select(NewsArticle).order_by(NewsArticle.published_at.desc()).limit(500)).all()) if symbols else []
+ for row in rows:
+  key=(str(row.get('profile_id')),str(row.get('symbol') or '').upper());action=by_order.get(str(row.get('broker_order_id') or ''))
+  if action is None:
+   candidates=by_symbol.get(key,[]);stamp=int(row.get('time') or 0)
+   action=min(candidates,key=lambda x:abs(int(x.created_at.timestamp()*1000)-stamp)) if candidates and stamp else None
+  strategy=strategy_map.get(key);exact=bool(action and row.get('broker_order_id') and str(action.broker_order_id)==str(row.get('broker_order_id')))
+  row['attribution']='ATLAS_EXACT_ORDER' if exact else 'BROKER_REPORTED'
+  row['strategy']={'id':str(strategy.id),'mode':strategy.mode,'timeframe':strategy.timeframe,'risk_per_trade_pct':strategy.risk_per_trade_pct,'minimum_signal_strength':strategy.minimum_signal_strength} if strategy else None
+  row['decision']={'side':action.side,'status':action.status,'reason':action.reason,'sizing_policy':action.sizing_policy,'created_at':action.created_at.isoformat()} if action else None
+  closed=int(row.get('time') or 0);articles=[]
+  for item in news:
+   published=item.published_at or item.created_at
+   if not published or key[1] not in {s.strip().upper() for s in str(item.symbols_csv or '').split(',')}:continue
+   delta=closed-int(published.timestamp()*1000) if closed else 0
+   if closed and 0<=delta<=24*60*60*1000:
+    articles.append({'title':item.title,'source':item.source,'url':item.url if str(item.url or '').lower().startswith(('http://','https://')) else '#','published_at':published.isoformat(),'sentiment_score':item.sentiment_score,'relevance_score':item.relevance_score})
+   if len(articles)>=3:break
+  row['news']=articles;row['news_attribution']='TIME_AND_SYMBOL_CONTEXT' if articles else 'NO_STORED_CONTEXT'
+ return rows
 
 @router.get('/portfolio')
 async def portfolio(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -151,14 +215,14 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
      side=str(row.get('side') or '').upper();qty=_f(row.get('quantity'));price=row.get('execution_price')
      if not price or qty<=0:continue
      key=str(row.get('symbol') or '').upper()
-     if side=='BUY':inventory[key].append([qty,_f(price)])
+     if side=='BUY':inventory[key].append([qty,_f(price),int(row.get('time') or 0)])
      elif side=='SELL':
       remaining=qty;cost=0.0;matched=0.0
       while remaining>1e-12 and inventory[key]:
-       lot=inventory[key][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;lot[0]-=take;remaining-=take
+       lot=inventory[key][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;row.setdefault('opened_at',lot[2]);lot[0]-=take;remaining-=take
        if lot[0]<=1e-12:inventory[key].pop(0)
       if matched>0 and remaining<=1e-12:
-       row['pnl']=round(qty*_f(price)-cost,8);row['pnl_available']=True;row['entry_price']=cost/matched if matched else None
+       row['pnl']=round(qty*_f(price)-cost,8);row['pnl_available']=True;row['entry_price']=cost/matched if matched else None;row['invested_amount']=cost
     trade_rows.extend(bybit_report_rows)
    elif p.provider=='MT5':
     c=_mt5(p);a=await c.account();hist=await c.history_deals(days);equity=_f(a.get('equity'));available=_f(a.get('margin_free'));account_market='FX+METAL+COMMODITY'
@@ -169,14 +233,19 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
     c=_ibkr(p);a=await c.account();hist=await c.executions(days);equity=_f(a.get('equity'));available=_f(a.get('available'));account_market='STOCK+ETF'
     for x in hist.get('list',[]):
      symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':_execution_time_ms(x),'side':x.get('side'),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
-   account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'equity':equity,'available':available})
+   account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'broker_equity':equity,'equity':equity,'available':available,'starting_capital':_f(p.simulation_capital_override_usd) if p.simulation_capital_override_usd is not None else None})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
+ _pair_execution_lots(trade_rows)
+ _trade_context(db,user,trade_rows)
  for row in trade_rows:
   stamp=int(row.get('time') or 0)
   row['executed_at']=datetime.fromtimestamp(stamp/1000,tz=timezone.utc).isoformat() if stamp else None
  by_account=defaultdict(list);by_market=defaultdict(list);by_symbol=defaultdict(list)
  for r in trade_rows:by_account[r['profile_id']].append(r);by_market[r['market']].append(r);by_symbol[f"{r['market']}:{r['symbol']}"].append(r)
- accounts=[{**a,**_stats(by_account[a['profile_id']])} for a in account_rows]
+ accounts=[]
+ for a in account_rows:
+  stats=_stats(by_account[a['profile_id']]);start=a.get('starting_capital');realized=stats['realized_pnl']
+  accounts.append({**a,**stats,'strategy_value':round(start+realized,2) if start is not None else None,'net_gain':realized,'return_pct':round(realized/start*100,2) if start else None})
  markets=[]
  for market in MARKETS:
   rows=by_market[market];markets.append({'market':market,'equity':round(sum(a['equity'] for a in account_rows if market in a['market'].split('+')),2),**_stats(rows),'connected_accounts':sum(1 for a in account_rows if market in a['market'].split('+'))})
@@ -184,7 +253,8 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
  for r in trade_rows:
   if r.get('pnl_available') and r.get('time'):
    d=datetime.fromtimestamp(r['time']/1000,tz=timezone.utc).date().isoformat();series[d]+=_f(r['pnl'])
- return {'days':days,'overall':{'equity':round(sum(a['equity'] for a in account_rows),2),**_stats(trade_rows)},'markets':markets,'accounts':accounts,'symbols':symbols,'daily':[{'date':d,'realized_pnl':round(v,2)} for d,v in sorted(series.items())],'trades':sorted(trade_rows,key=lambda x:x.get('time') or 0,reverse=True)[:200],'errors':errors,'notes':{'IBKR':'Execution history is available; realized P&L requires commission/P&L pairing and is intentionally not fabricated.'}}
+ starting=sum(a.get('starting_capital') or 0 for a in accounts);overall_stats=_stats(trade_rows)
+ return {'days':days,'overall':{'broker_equity':round(sum(a['equity'] for a in account_rows),2),'equity':round(sum(a['equity'] for a in account_rows),2),'starting_capital':round(starting,2),'strategy_value':round(starting+overall_stats['realized_pnl'],2),**overall_stats},'markets':markets,'accounts':accounts,'symbols':symbols,'daily':[{'date':d,'realized_pnl':round(v,2)} for d,v in sorted(series.items())],'trades':sorted(trade_rows,key=lambda x:x.get('time') or 0,reverse=True)[:200],'errors':errors,'notes':{'IBKR':'Broker-reported P&L is authoritative. Entry, duration, strategy and news context are attached only when matching evidence exists.','attribution':'ATLAS_EXACT_ORDER requires an exact persisted broker order match; other rows remain BROKER_REPORTED.','news':'News is contextual when stored for the same symbol within 24 hours before execution; it is not claimed as causal.'}}
 
 @router.get('/execution-readiness')
 async def execution_readiness(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
