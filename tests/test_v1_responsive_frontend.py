@@ -7,7 +7,7 @@ STATIC = Path("app/static")
 def test_responsive_assets_load_last_and_boot_once_after_decorators():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     app = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert '/static/responsive-v1.css?v=1.3' in html
+    assert '/static/responsive-v1.css?v=1.4' in html
     assert html.rindex('/static/responsive-v1.js?v=1.1') > html.rindex('/static/live-activity-v75.js?v=79.0')
     assert "window.AtlasBoot=boot" in app
     assert "\nboot();" not in app
@@ -68,3 +68,11 @@ def test_mobile_layout_protects_long_content_and_scrollable_controls():
     assert ".v61-toolbar" in css
     assert ".mg-page .account-meta" in css
     assert ".provider-actions" in css
+
+
+def test_portfolio_terminal_universe_uses_readable_mobile_cards():
+    css = (STATIC / "responsive-v1.css").read_text(encoding="utf-8")
+    assert ".v63-symbols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in css
+    assert ".v63-symbols{grid-template-columns:1fr}" in css
+    assert ".v63-symbol span{min-width:0;overflow-wrap:anywhere}" in css
+    assert ".v63-symbol em{flex:0 0 auto;white-space:nowrap}" in css

@@ -70,8 +70,11 @@ label{min-width:0}
   .v61-holdings{grid-template-columns:1fr}
   .v63-layout{grid-template-columns:1fr;min-height:0}
   .v63-watch{border-right:0;border-bottom:1px solid rgba(255,255,255,.08)}
-  .v63-symbols{display:flex;max-height:none;overflow:auto;padding-bottom:4px}
-  .v63-symbol{flex:0 0 135px}
+  .v63-symbols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:none;overflow:visible;padding-bottom:4px}
+  .v63-symbol{min-width:0;width:100%;min-height:58px;padding:9px;align-items:flex-start}
+  .v63-symbol span{min-width:0;overflow-wrap:anywhere}
+  .v63-symbol small{line-height:1.35}
+  .v63-symbol em{flex:0 0 auto;white-space:nowrap}
   .v63-chartbox{height:300px}
   .v67-grid{grid-template-columns:1fr}
   .mg-page>.analysis-grid{grid-template-columns:1fr}
@@ -99,6 +102,8 @@ label{min-width:0}
   .v721-facts,.v61-price-row,.v63-stats,.mg-page>.metric-grid{grid-template-columns:1fr 1fr}
   .v722-grid,.v722-status,.v722-provider-grid,.v726-summary,.v721-status{grid-template-columns:1fr!important}
   .v63-terminal{padding:12px}
+  .v63-watch{padding:14px 10px}
+  .v63-symbols{grid-template-columns:1fr}
   .v63-head{align-items:flex-start;flex-direction:column}
   .v63-chartbox{height:260px}
   .v64-summary{grid-template-columns:auto auto}
