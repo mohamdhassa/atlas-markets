@@ -1,6 +1,8 @@
 from app.services.ibkr_fractional import (
     ibkr_fractional_policy_payload,
+    ibkr_preflight_rejection_reason,
     ibkr_quantities_match,
+    ibkr_quantity_is_fractional,
     normalize_ibkr_shares,
 )
 
@@ -27,6 +29,20 @@ def test_fractional_policy_requires_broker_native_what_if():
     assert policy["quantity_mode"] == "FRACTIONAL_SHARES"
     assert policy["share_step"] == 0.0001
     assert policy["capability_check"] == "BROKER_NATIVE_WHAT_IF_EACH_ORDER"
+    assert policy["runtime_flag"] == "IBKR_FRACTIONAL_API_ENABLED"
+
+
+def test_fractional_quantity_detection_preserves_whole_share_orders():
+    assert ibkr_quantity_is_fractional(0.0386)
+    assert ibkr_quantity_is_fractional(1.5)
+    assert not ibkr_quantity_is_fractional(1)
+    assert not ibkr_quantity_is_fractional(2.0)
+
+
+def test_ibkr_error_10243_has_precise_reason():
+    rejected = {"errors": [{"code": 10243, "message": "Fractional-sized order cannot be placed via API."}]}
+    assert ibkr_preflight_rejection_reason(rejected) == "IBKR_FRACTIONAL_API_UNSUPPORTED"
+    assert ibkr_preflight_rejection_reason({"errors": [{"code": 201}]}) == "BROKER_PREFLIGHT_REJECTED"
 
 
 def test_automation_path_does_not_restore_whole_share_cap():
@@ -35,3 +51,4 @@ def test_automation_path_does_not_restore_whole_share_cap():
     assert "requested = int(" not in safe_automation
     assert "math.floor(plan.quantity)" not in readiness
     assert '"sizing_policy": "RISK_SIZED_FRACTIONAL_SHARES"' in readiness
+    assert 'blockers.append("IBKR_FRACTIONAL_API_UNSUPPORTED")' in readiness

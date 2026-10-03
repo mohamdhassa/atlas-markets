@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     mt5_bridge_token: str = ""
     market_data_timeout_seconds: float = 8.0
     dependency_health_timeout_seconds: float = 2.0
+    ibkr_fractional_api_enabled: bool = False
     model_config = SettingsConfigDict(env_file=".env",env_file_encoding="utf-8",case_sensitive=False,extra="ignore")
 
 @lru_cache

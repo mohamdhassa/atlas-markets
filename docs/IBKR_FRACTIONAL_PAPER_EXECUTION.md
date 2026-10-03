@@ -1,7 +1,13 @@
 # IBKR fractional Paper execution
 
-ATLAS supports risk-sized fractional US stock and ETF orders on the IBKR **Paper** route. Live-money
-IBKR execution remains locked.
+ATLAS supports risk-sized fractional US stock and ETF orders only when the IBKR **Paper** API route
+has been explicitly certified and `IBKR_FRACTIONAL_API_ENABLED=true`. The production flag defaults
+to `false`. Live-money IBKR execution remains locked.
+
+The Oracle Paper bridge returned IBKR error `10243` for fractional API orders on 2026-10-03. ATLAS
+therefore blocks fractional quantities locally as `IBKR_FRACTIONAL_API_UNSUPPORTED` and does not
+repeat a broker What-If request every scan. Whole-share orders remain eligible when they fit all
+capital, portfolio and risk limits. ATLAS never rounds a fractional request up to one share.
 
 ## Safety sequence
 
@@ -9,16 +15,17 @@ IBKR execution remains locked.
 2. Round share quantity down to 0.0001 so the risk budget is never exceeded.
 3. Require an active, connected IBKR Paper profile and simulation bridge.
 4. Reject a symbol with an existing position, open order or concurrent execution reservation.
-5. Submit the exact fractional quantity to broker-native What-If.
-6. Place only when What-If reports `ok`, `what_if` and `simulation`.
-7. Persist the exact quantity and broker order ID, then reconcile the fractional fill.
-8. Position exits re-read broker state and close the exact current fractional quantity.
+5. Block a fractional quantity unless the runtime capability flag was enabled after certification.
+6. Submit an eligible quantity to broker-native What-If.
+7. Place only when What-If reports `ok`, `what_if` and `simulation`.
+8. Persist the exact quantity and broker order ID, then reconcile the fill.
+9. Position exits re-read broker state and close the exact current quantity.
 
 IBKR rejection never causes ATLAS to round up to one whole share.
 
 ## Controlled certification
 
-Run only during regular US market hours against Paper:
+Enable the flag only after this command passes during regular US market hours against Paper:
 
 ```bash
 IBKR_CERTIFICATION_QUANTITY=0.01 python -m app.scripts.certify_ibkr_execution
@@ -30,6 +37,6 @@ then sells the exact quantity and verifies the original position baseline was re
 
 ## Scaling
 
-The implementation has no one-share application cap. Increasing the account capital override or
-eventually using broker equity changes risk sizing without changing order code. Portfolio exposure,
-available balance, strategy risk, and broker checks remain the limits.
+With the capability flag disabled, whole-share orders may still execute, but only when one whole
+share fits the configured capital and per-trade risk budget. A USD 100 allocation cannot trade
+high-priced symbols through this IBKR route unless fractional API capability is later certified.

@@ -166,7 +166,7 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
                 if not math.isfinite(requested_quantity) or requested_quantity <= 0:
                     items.append({**base, "preflight": "BLOCK", "reason": "INVALID_IBKR_QUANTITY"})
                     continue
-                from app.services.ibkr_fractional import normalize_ibkr_shares
+                from app.services.ibkr_fractional import ibkr_preflight_rejection_reason, normalize_ibkr_shares
 
                 shares = normalize_ibkr_shares(requested_quantity)
                 if shares <= 0:
@@ -192,7 +192,13 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
             items.append({
                 **base,
                 "preflight": "PASS" if ok else "BLOCK",
-                "reason": None if ok else ("SYMBOL_ALREADY_HAS_OPEN_SPOT_ORDER" if profile.provider == "BYBIT" else "BROKER_PREFLIGHT_REJECTED"),
+                "reason": None if ok else (
+                    "SYMBOL_ALREADY_HAS_OPEN_SPOT_ORDER"
+                    if profile.provider == "BYBIT"
+                    else ibkr_preflight_rejection_reason(result)
+                    if profile.provider == "IBKR"
+                    else "BROKER_PREFLIGHT_REJECTED"
+                ),
                 "request": {
                     "side": proposed.get("side"),
                     "notional": proposed.get("notional"),
