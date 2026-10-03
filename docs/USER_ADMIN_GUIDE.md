@@ -26,11 +26,18 @@ optional overrides for timeframe, strength, risk, stop, reward and position noti
 
 ## Portfolio interpretation
 
-- Open Positions: current broker-held exposure.
-- Orders/fills: provider events plus ATLAS lineage when available.
-- Realized P&L: closed broker result after available costs.
+- Portfolio: current broker balances and open broker-held exposure only.
+- Performance: starting allocation, realized gain/loss, strategy value and closed-trade ledger.
+- Broker equity: the provider's raw Paper/Testnet balance; it is not the ATLAS allocation.
+- Strategy value: configured starting allocation plus broker-confirmed realized P&L.
+- Orders/fills: provider events plus ATLAS lineage when an exact order match exists.
+- Realized P&L: closed broker result after available costs; broker P&L is authoritative.
 - Unrealized P&L: current mark-to-market result.
 - Shadow result: hypothetical, non-executable forward observation.
+
+News shown beside a trade is same-symbol context stored during the prior 24 hours. It does not
+prove that the news caused the decision. A `BROKER_REPORTED` attribution likewise must not be
+presented as an ATLAS-generated trade unless an exact persisted order match exists.
 
 ## Automation controls
 
@@ -44,4 +51,3 @@ gates remain active.
 - `502/503`: inspect the named provider/dependency independently.
 - IBKR `connected:false`: follow `IBKR_CONTINUITY.md`.
 - Page asset mismatch after deployment: use `Ctrl+F5` after backend health is confirmed.
-
