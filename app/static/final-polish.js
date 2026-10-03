@@ -1,17 +1,8 @@
-/* Final presentation-only polish for Users and Signals. Existing APIs and trading logic remain unchanged. */
+/* Final presentation-only polish for Signals. Existing APIs and trading logic remain unchanged. */
 (()=>{
 'use strict';
 const h=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toFixed(d):'—';
-async function polishedUsers(){
- content.innerHTML='<div class="panel empty-state">Loading users…</div>';
- try{
-  const users=await api('/admin/users');
-  const admins=users.filter(u=>u.role==='ADMIN').length, active=users.filter(u=>u.is_active).length;
-  content.innerHTML=`<div class="polish-hero"><div><p class="eyebrow">ADMINISTRATION</p><h1>Users & Access</h1><p>Manage ATLAS application users and role-based access.</p></div><span class="accounts-count">${users.length} USERS</span></div><div class="polish-metrics"><div><span>Total users</span><strong>${users.length}</strong></div><div><span>Active</span><strong>${active}</strong></div><div><span>Administrators</span><strong>${admins}</strong></div><div><span>Standard users</span><strong>${users.length-admins}</strong></div></div><section class="polish-grid users-layout"><div class="polish-card"><div class="section-title"><div class="round-icon">＋</div><div><h3>Create User</h3><p>Add an ADMIN or USER account.</p></div></div><form id="createUserForm" class="polish-form"><label>Username<input id="newUsername" required minlength="3" placeholder="Username"></label><label>Email<input id="newEmail" type="email" placeholder="Email (optional)"></label><label>Password<input id="newPassword" type="password" required minlength="12" placeholder="Minimum 12 characters"></label><label>Role<select id="newRole"><option value="USER">USER</option><option value="ADMIN">ADMIN</option></select></label><button class="primary-button" type="submit">Create user</button><span id="userFormMessage" class="muted"></span></form></div><div class="polish-card user-list-card"><div class="section-title"><div class="round-icon shield">✓</div><div><h3>Current Users</h3><p>Role and account status.</p></div></div><div class="responsive-table"><table class="data-table"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody>${users.map(u=>`<tr><td><strong>${h(u.username)}</strong></td><td>${h(u.email||'—')}</td><td><span class="badge">${h(u.role)}</span></td><td><span class="badge ${u.is_active?'good':'warn'}">${u.is_active?'ACTIVE':'DISABLED'}</span></td></tr>`).join('')}</tbody></table></div></div></section>`;
-  document.getElementById('createUserForm').onsubmit=async ev=>{ev.preventDefault();const msg=document.getElementById('userFormMessage');msg.textContent='Creating…';try{await api('/admin/users',{method:'POST',body:JSON.stringify({username:document.getElementById('newUsername').value,email:document.getElementById('newEmail').value||null,password:document.getElementById('newPassword').value,role:document.getElementById('newRole').value})});msg.textContent='User created';setTimeout(polishedUsers,350)}catch(err){msg.textContent=err.message}};
- }catch(err){content.innerHTML=`<div class="panel empty-state">Users unavailable: ${h(err.message)}</div>`}
-}
 async function polishedSignals(){
  content.innerHTML='<div class="panel empty-state">Calculating market analysis…</div>';
  const symbols=['BTCUSDT','ETHUSDT','SOLUSDT','XRPUSDT','BNBUSDT'];
@@ -22,6 +13,6 @@ async function polishedSignals(){
  }catch(err){content.innerHTML=`<div class="panel empty-state">Signals unavailable: ${h(err.message)}</div>`}
 }
 const previous=renderPage;
-renderPage=function(page){if(page==='Users'){setActive(page);return polishedUsers()}if(page==='Signals'){setActive(page);return polishedSignals()}return previous(page)};
-window.AtlasFinalPolish={users:polishedUsers,signals:polishedSignals};
+renderPage=function(page){if(page==='Signals'){setActive(page);return polishedSignals()}return previous(page)};
+window.AtlasFinalPolish={signals:polishedSignals};
 })();
