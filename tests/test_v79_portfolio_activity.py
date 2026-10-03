@@ -20,9 +20,9 @@ def test_portfolio_derives_open_pnl_only_from_loaded_live_marks():
     assert "data-v61-mark" in js
 
 
-def test_portfolio_exposes_verified_closed_results():
+def test_portfolio_routes_closed_results_to_canonical_performance_ledger():
     js = (STATIC / "portfolio-v61.js").read_text()
-    assert "CLOSED POSITIONS" in js
-    assert "Only broker-reported or safely matched P&amp;L" in js
-    assert "closed=tr.filter(x=>x.pnl_available)" in js
-    assert "No closed positions with verified realized P&amp;L" in js
+    assert "Open Performance ledger" in js
+    assert "renderPage('Performance')" in js
+    assert "CLOSED POSITIONS" not in js
+    assert "Execution ledger" not in js

@@ -35,7 +35,8 @@ def test_bybit_reporting_matches_closed_spot_round_trips_for_pnl():
     source=Path('app/api/routes_broker_native.py').read_text()
     block=_performance_bybit_block(source)
     assert "inventory=defaultdict(list)" in block
-    assert "if side=='BUY':inventory[key].append([qty,_f(price)])" in block
+    assert "if side=='BUY':inventory[key].append([qty,_f(price),int(row.get('time') or 0)])" in block
+    assert "row.setdefault('opened_at',lot[2])" in block
     assert "row['pnl_available']=True" in block
 
 def test_bybit_client_has_read_only_spot_execution_endpoint():

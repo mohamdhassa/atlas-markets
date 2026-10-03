@@ -84,14 +84,14 @@ node and does not block this roadmap. Reverted experimental versions are not bas
 - [x] News persistence with sentiment/relevance fields.
 - [ ] Present technical, historical and news evidence together in the Signals/Strategy UI.
 - [ ] Make decision reasons and risk blockers visible and auditable.
-- [ ] Add performance diagnostics by provider, symbol and strategy.
-- [ ] Avoid representing unverified attribution as broker truth.
+- [x] Add performance diagnostics by provider, symbol and strategy.
+- [x] Avoid representing unverified attribution as broker truth.
 
 ## 5. Portfolio, orders and performance
 
 - [ ] Verify broker-native positions and orders pages for every connected provider.
 - [ ] Verify unified realized/unrealized P&L.
-- [ ] Add usable daily/monthly performance views.
+- [x] Add a usable 30-day provider and closed-trade performance view.
 - [ ] Add provider/symbol/strategy filters.
 - [ ] Ensure empty/error/loading states are useful on mobile.
 

@@ -1,6 +1,6 @@
 # ATLAS MARKETS v1 — Current Status
 
-Last verified: 2026-09-28
+Last verified: 2026-10-02
 
 ## Canonical baseline
 
@@ -8,7 +8,7 @@ Last verified: 2026-09-28
 - Git tag: `v1.0.0`
 - Commit: `5ef08db6426876be6019541c45c0b3b3851f85eb`
 - Environment: production application with simulation/paper/testnet providers
-- Database: PostgreSQL at Alembic head `20260925_0019`
+- Database: PostgreSQL at Alembic head `20261001_0022`
 - Live Money: explicitly gated
 
 Older experimental and reverted release lines are historical Git data, not production
@@ -36,6 +36,10 @@ administration, provider integrations, portfolio/activity/P&L and analytics.
 - technical, historical, news and forward shadow intelligence.
 - independent provider, environment, certification, risk and kill-switch gates.
 - provider-native portfolio, order/fill context and performance.
+- provider starting-capital reporting and a closed-trade ledger with duration, investment,
+  conservative strategy attribution and nearby stored news context.
+- one canonical Users & Access implementation; Portfolio owns current holdings while
+  Performance owns closed-trade history.
 - durable scan/action/risk/audit evidence and conservative attribution.
 
 ## Known boundaries

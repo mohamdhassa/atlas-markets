@@ -41,7 +41,9 @@ preflight; it never guarantees execution.
 
 - `/portfolio*` — unified provider-native exposure.
 - `/positions/lifecycle*` — tracked position lifecycle.
-- `/performance*` — broker-native and unified performance.
+- `/performance/broker-native` — provider starting capital, broker equity, realized P&L,
+  strategy value, FIFO entry/duration matching, exact-order attribution and contextual news.
+- `/performance*` — other broker-native and unified performance views.
 - `/strategies/performance*` — conservative strategy attribution.
 - `/reporting*` — daily records and exports.
 
@@ -62,4 +64,3 @@ preflight; it never guarantees execution.
 | 409 | Duplicate or lifecycle conflict |
 | 502 | Provider or bridge failure |
 | 503 | Required dependency/configuration unavailable |
-

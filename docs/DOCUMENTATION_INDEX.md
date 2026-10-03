@@ -16,6 +16,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [$100 starter-capital readiness](STARTER_CAPITAL_READINESS.md) — conservative sizing and promotion gates for the planned first live balances.
 - [IBKR fractional Paper execution](IBKR_FRACTIONAL_PAPER_EXECUTION.md) — risk-sized fractional entries, broker preflight, reconciliation and exact exits.
 - [Starter-capital readiness release](RELEASE_V1_STARTER_CAPITAL_READINESS.md) — delivered controls and verification status.
+- [Trade and performance ledger](TRADE_PERFORMANCE_LEDGER.md) — provider capital, closed trades, attribution and news context.
+- [Trade ledger release](RELEASE_V1_TRADE_PERFORMANCE_LEDGER.md) — delivered frontend consolidation and reporting scope.
 
 ## Use and administration
 
