@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import httpx
 
 from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
@@ -14,7 +15,26 @@ class IbkrBridgeClient:
     async def _post(self,path:str,payload:dict):
         async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.post(self.base_url+path,json=payload,headers=self._headers());r.raise_for_status();return r.json()
     async def health(self):return await self._get('/health')
-    async def account(self):return await self._get('/account')
+    async def account(self):
+        # Wait for the competing summary's fresh result, within this client's
+        # deadline. Only the explicit busy response is retryable.
+        try:
+            async with asyncio.timeout(self.timeout):
+                while True:
+                    try:
+                        return await self._get('/account')
+                    except httpx.HTTPStatusError as exc:
+                        if exc.response.status_code != 503:
+                            raise
+                        try:
+                            detail = exc.response.json().get('detail')
+                        except (ValueError, AttributeError):
+                            raise exc
+                        if detail != 'IBKR account summary already in progress; retry shortly':
+                            raise
+                        await asyncio.sleep(.5)
+        except TimeoutError as exc:
+            raise RuntimeError('IBKR_ACCOUNT_READ_TIMEOUT') from exc
     async def positions(self):return await self._get('/positions')
     async def orders(self):return await self._get('/orders')
     async def order_status(self,order_id:int):return await self._get(f'/orders/{order_id}/status')
