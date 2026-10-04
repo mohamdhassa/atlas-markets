@@ -7,7 +7,7 @@ STATIC = Path("app/static")
 def test_responsive_assets_load_last_and_boot_once_after_decorators():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     app = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert '/static/responsive-v1.css?v=1.4' in html
+    assert '/static/responsive-v1.css?v=1.5' in html
     assert html.rindex('/static/responsive-v1.js?v=1.1') > html.rindex('/static/live-activity-v75.js?v=79.0')
     assert "window.AtlasBoot=boot" in app
     assert "\nboot();" not in app
@@ -76,3 +76,14 @@ def test_portfolio_terminal_universe_uses_readable_mobile_cards():
     assert ".v63-symbols{grid-template-columns:1fr}" in css
     assert ".v63-symbol span{min-width:0;overflow-wrap:anywhere}" in css
     assert ".v63-symbol em{flex:0 0 auto;white-space:nowrap}" in css
+
+
+def test_portfolio_mobile_contains_chart_stats_and_toolbar():
+    css = (STATIC / "responsive-v1.css").read_text()
+    assert ".v63-layout{grid-template-columns:minmax(0,1fr);min-height:0}" in css
+    assert "align-items:center;overflow:visible" in css
+    assert "width:auto;height:auto;min-height:0;align-self:center" in css
+    assert ".v61-toolbar #v61-performance-link{flex:1 0 100%" in css
+    assert ".v63-stats{grid-template-columns:repeat(3,minmax(0,1fr))}" in css
+    assert ".v63-symbol strong{white-space:nowrap;overflow-wrap:normal}" in css
+    assert ".v61-toolbar,.v61-tabs,.v65-controls,.market-tabs{flex-wrap:nowrap" not in css
