@@ -68,14 +68,22 @@ label{min-width:0}
   .v72-chart,.v72-chart svg{min-height:240px;height:240px}
   .v61-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .v61-holdings{grid-template-columns:1fr}
-  .v63-layout{grid-template-columns:1fr;min-height:0}
+  .v61-shell,.v63-wrap,.v63-layout,.v63-watch,.v63-terminal,.v63-chartbox,.v63-stats{min-width:0;max-width:100%;box-sizing:border-box}
+  .v61-toolbar{width:100%;display:flex;flex-wrap:wrap;align-items:center;overflow:visible}
+  .v61-toolbar .v61-pill{flex:0 1 auto;width:auto;height:auto;min-height:0;align-self:center;white-space:normal;border-radius:999px}
+  .v61-toolbar #v61-performance-link{flex:1 0 100%;width:100%;height:auto;min-height:44px;white-space:normal}
+  .v63-layout{grid-template-columns:minmax(0,1fr);min-height:0}
   .v63-watch{border-right:0;border-bottom:1px solid rgba(255,255,255,.08)}
   .v63-symbols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:none;overflow:visible;padding-bottom:4px}
   .v63-symbol{min-width:0;width:100%;min-height:58px;padding:9px;align-items:flex-start}
   .v63-symbol span{min-width:0;overflow-wrap:anywhere}
   .v63-symbol small{line-height:1.35}
+  .v63-symbol strong{white-space:nowrap;overflow-wrap:normal}
   .v63-symbol em{flex:0 0 auto;white-space:nowrap}
   .v63-chartbox{height:300px}
+  .v63-chartbox canvas{width:100%;height:100%;min-width:0;display:block}
+  .v63-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .v63-stats>div{min-width:0;overflow-wrap:anywhere}
   .v67-grid{grid-template-columns:1fr}
   .mg-page>.analysis-grid{grid-template-columns:1fr}
   .mg-page #mgEditor .login-form{grid-template-columns:1fr}
@@ -99,7 +107,7 @@ label{min-width:0}
   .page-intro{gap:10px;margin-bottom:12px}
   .page-intro>div:last-child,.chart-controls,.action-row{width:100%}
   .action-row>button,.action-row>.primary-button,.action-row>.secondary-button{flex:1 1 100%;width:100%}
-  .v721-facts,.v61-price-row,.v63-stats,.mg-page>.metric-grid{grid-template-columns:1fr 1fr}
+  .v721-facts,.v61-price-row,.v63-stats,.mg-page>.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .v722-grid,.v722-status,.v722-provider-grid,.v726-summary,.v721-status{grid-template-columns:1fr!important}
   .v63-terminal{padding:12px}
   .v63-watch{padding:14px 10px}
@@ -115,7 +123,7 @@ label{min-width:0}
   .mg-page .account-meta span{margin-top:4px}
   .provider-actions{align-items:stretch;flex-direction:column}
   .provider-actions button,.p21-actions button{width:100%;min-width:0}
-  .v61-toolbar,.v61-tabs,.v65-controls,.market-tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+  .v61-tabs,.v65-controls,.market-tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
   .v61-pill,.v61-tab,.v65-tf,.market-tab{flex:0 0 auto;white-space:nowrap}
   .v64-summary{width:100%}
   .v75-id{max-width:12ch}
