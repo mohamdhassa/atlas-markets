@@ -24,6 +24,16 @@ to establish whether other handlers/background jobs cause stalls.
 
 ## Validation and deployment
 
+### Follow-up: concurrent account reads
+
+The bridge's deliberate busy 503 was surfaced as a provider failure by the app.
+The app now retries only the exact account-summary-in-progress response at
+half-second intervals, within its existing client timeout. It uses a fresh
+successful response; disconnected, unauthorized and rejected responses remain
+errors. Order submission and preflight are never retried. This follow-up changes
+only the app image; the bridge does not require another restart. Regression
+tests cover recovery, bounded waits, real errors and non-retried order preflight.
+
 Regression tests cover successful/failed summary cleanup, subscription overlap,
 broker rejection, and responsive health/homepage during a blocked page read.
 The production-equivalent Docker suite must pass before activation. No migration
