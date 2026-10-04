@@ -18,6 +18,7 @@ from app.db.models.automation import AutomationAction
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.models.news import NewsArticle
 from app.db.session import get_db
+from app.services.provider_reads import isolated_provider_read
 
 router=APIRouter(tags=['portfolio','performance'])
 MARKETS=['CRYPTO','FX','STOCK','ETF','METAL','COMMODITY']
@@ -127,6 +128,7 @@ def _trade_context(db,user,rows):
  return rows
 
 @router.get('/portfolio')
+@isolated_provider_read
 async def portfolio(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  out=[];positions=[];errors=[]
  for p in _accounts(db,user):
@@ -156,6 +158,7 @@ async def portfolio(user:User=Depends(get_current_user),db:Session=Depends(get_d
  return {'accounts':out,'positions':positions,'errors':errors,'totals':{'equity':round(sum(x['equity'] for x in out),2),'available':round(sum(x['available'] for x in out),2),'unrealized_pnl':round(sum(x['unrealized_pnl'] for x in out),2),'open_positions':len(positions)}}
 
 @router.get('/broker-orders')
+@isolated_provider_read
 async def broker_orders(limit:int=Query(default=100,ge=1,le=200),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  accounts=[];orders=[];errors=[]
  for p in _accounts(db,user):
@@ -181,6 +184,7 @@ async def broker_orders(limit:int=Query(default=100,ge=1,le=200),user:User=Depen
  orders.sort(key=lambda x:x.get('time') or 0,reverse=True);return {'accounts':accounts,'orders':orders[:limit],'errors':errors,'count':min(len(orders),limit)}
 
 @router.get('/performance/broker-native')
+@isolated_provider_read
 async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  account_rows=[];trade_rows=[];errors=[]
  for p in _accounts(db,user):
