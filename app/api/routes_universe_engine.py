@@ -17,6 +17,7 @@ from app.services.mt5_position_inspection import inspect_mt5_position
 from app.services.universe_scanner import scan_user_universe
 from app.services.instrument_universe import build_universe
 from app.services.universe_seed import seed_validated_universe
+from app.services.provider_reads import isolated_provider_read
 
 router = APIRouter(prefix='/strategies/symbols', tags=['strategies'])
 
@@ -41,6 +42,7 @@ async def seed_validated(payload: ValidatedSeedRequest, user: User = Depends(get
 
 
 @router.get('/universe/market-monitor')
+@isolated_provider_read
 async def market_monitor(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """One read-only ATLAS monitor: configured IBKR + configured/starter Bybit instruments."""
     profiles = list(db.scalars(select(BrokerProfile).where(BrokerProfile.user_id == user.id, BrokerProfile.provider.in_(['BYBIT','IBKR']))).all())

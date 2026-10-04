@@ -11,12 +11,16 @@ import uvicorn
 
 class State(EWrapper,EClient):
  def __init__(self):
+  self.account_requests={}
   EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self.order_statuses={};self.whatif_results={};self._events={}
  def _event(self,k):return self._events.setdefault(k,threading.Event())
  def nextValidId(self,orderId):self.next_id=orderId;self._event('connected').set()
  def managedAccounts(self,accountsList):self.accounts=[x for x in accountsList.split(',') if x]
- def accountSummary(self,reqId,account,tag,value,currency):self.values[(account,tag)]=(value,currency)
- def accountSummaryEnd(self,reqId):self._event(f'acct:{reqId}').set()
+ def accountSummary(self,reqId,account,tag,value,currency):
+  values=self.account_requests.get(reqId)
+  if values is not None:values[(account,tag)]=(value,currency)
+ def accountSummaryEnd(self,reqId):
+  if reqId in self.account_requests:self._event(f'acct:{reqId}').set()
  def position(self,account,contract,pos,avgCost):self.positions.append({'account':account,'symbol':contract.symbol,'sec_type':contract.secType,'exchange':contract.exchange,'currency':contract.currency,'quantity':float(pos),'avg_cost':float(avgCost)})
  def positionEnd(self):self._event('positions').set()
  def openOrder(self,orderId,contract,order,orderState):
@@ -51,11 +55,13 @@ class State(EWrapper,EClient):
   row={'id':reqId,'code':errorCode,'message':errorString}
   if advancedOrderRejectJson:row['advanced_reject']=advancedOrderRejectJson
   self.errors.append(row)
+  if reqId in self.account_requests:self._event(f'acct:{reqId}').set()
   if reqId>=0:
    self._event(f'order-status:{reqId}').set()
    if errorCode not in {2104,2106,2158,2186}:self._event(f'quote:{reqId}').set();self._event(f'bars:{reqId}').set();self._event(f'contract:{reqId}').set()
 
 app=FastAPI(title='ATLAS IBKR Bridge');ib=State();cfg={}
+account_lock=threading.Lock();account_cache=None;account_cache_at=0.0
 def auth(x_atlas_bridge_token:str|None):
  token=cfg.get('token')
  if token and x_atlas_bridge_token!=token:raise HTTPException(401,'invalid bridge token')
@@ -72,6 +78,8 @@ def duration(tf,limit):
  minutes={'1m':1,'5m':5,'15m':15,'30m':30,'1h':60,'4h':240}.get(tf,5)*max(limit,10)
  return f'{max(1,min(365,(minutes//1440)+2))} D'
 def _connect_once():
+ global account_cache,account_cache_at
+ account_cache=None;account_cache_at=0.0
  ib._event('connected').clear();ib.next_id=None;ib.errors=[]
  try:
   if ib.isConnected():ib.disconnect();time.sleep(.25)
@@ -100,11 +108,26 @@ def health(x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);return {'status':'ok','connected':ib.isConnected(),'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'errors':ib.errors[-12:]}
 @app.get('/account')
 def account(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);r=rid();key=f'acct:{r}';prepare(key);ib.reqAccountSummary(r,'All','NetLiquidation,TotalCashValue,AvailableFunds,BuyingPower');wait(key);ib.cancelAccountSummary(r);acct=cfg.get('account_id') or (ib.accounts[0] if ib.accounts else '')
- def val(tag):
-  try:return float(ib.values.get((acct,tag),('0',''))[0])
-  except:return 0.0
- return {'account_id':acct,'equity':val('NetLiquidation'),'cash':val('TotalCashValue'),'available':val('AvailableFunds'),'buying_power':val('BuyingPower'),'simulation':cfg['simulation']}
+ global account_cache,account_cache_at
+ auth(x_atlas_bridge_token)
+ if not ib.isConnected():raise HTTPException(503,'IBKR disconnected')
+ if account_cache is not None and time.monotonic()-account_cache_at<2:return dict(account_cache)
+ # Never queue more broker subscriptions while an earlier summary is pending.
+ if not account_lock.acquire(blocking=False):raise HTTPException(503,'IBKR account summary already in progress; retry shortly')
+ r=rid();key=f'acct:{r}';ib.account_requests[r]={};prepare(key)
+ try:
+  ib.reqAccountSummary(r,'All','NetLiquidation,TotalCashValue,AvailableFunds,BuyingPower');wait(key)
+  if any(e.get('id')==r for e in ib.errors):raise HTTPException(502,'IBKR account summary rejected')
+  acct=cfg.get('account_id') or (ib.accounts[0] if ib.accounts else '')
+  values=ib.account_requests[r]
+  tags={'equity':'NetLiquidation','cash':'TotalCashValue','available':'AvailableFunds','buying_power':'BuyingPower'}
+  if any((acct,tag) not in values for tag in tags.values()):raise HTTPException(502,'IBKR account summary incomplete')
+  result={'account_id':acct,'simulation':cfg['simulation'],**{name:float(values[(acct,tag)][0]) for name,tag in tags.items()}}
+  account_cache=dict(result);account_cache_at=time.monotonic();return result
+ finally:
+  try:ib.cancelAccountSummary(r)
+  finally:
+   ib.account_requests.pop(r,None);ib._events.pop(key,None);account_lock.release()
 @app.get('/positions')
 def positions(x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);ib.positions=[];prepare('positions');ib.reqPositions();wait('positions');ib.cancelPositions();return {'list':ib.positions}
