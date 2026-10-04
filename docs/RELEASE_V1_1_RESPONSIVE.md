@@ -20,6 +20,10 @@ backend behavior are preserved.
 - The Portfolio trading universe uses separated two-column instrument cards on phones and a
   single column on very narrow screens, preventing symbol, market, mode and state text from
   collapsing into one continuous line.
+- Portfolio grids and canvases are constrained to the available viewport width. Hero status
+  pills retain their natural height, while the Performance button takes its own mobile row.
+- Terminal candle labels now read provider `timestamp_ms` dates instead of inventing dates
+  from array indices; missing dates remain unlabeled. Canvas resolution matches its CSS size.
 
 ## Page-by-page responsive audit
 
