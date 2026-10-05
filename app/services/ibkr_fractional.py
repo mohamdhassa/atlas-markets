@@ -63,11 +63,25 @@ def ibkr_preflight_rejection_reason(result: dict) -> str:
     return "BROKER_PREFLIGHT_REJECTED"
 
 
-def ibkr_fractional_policy_payload() -> dict:
+def size_ibkr_entry(value: object, *, fractional_enabled: bool) -> dict:
+    """Round an entry down to the certified step; never increase risk-sized shares."""
+    quantity = normalize_ibkr_shares(value)
+    if not fractional_enabled:
+        quantity = float(Decimal(str(quantity)).to_integral_value(rounding=ROUND_DOWN))
+    policy = ibkr_fractional_policy_payload(fractional_enabled=fractional_enabled)
+    return {"shares": quantity, "quantity": quantity,
+            "quantity_mode": policy["quantity_mode"], "share_step": policy["share_step"],
+            "sizing_policy": "RISK_SIZED_" + policy["quantity_mode"]}
+
+
+def ibkr_fractional_policy_payload(*, fractional_enabled: bool | None = None) -> dict:
+    if fractional_enabled is None:
+        from app.core.config import get_settings
+        fractional_enabled = get_settings().ibkr_fractional_api_enabled
     return {
-        "quantity_mode": "FRACTIONAL_SHARES",
-        "minimum_shares": float(IBKR_MIN_FRACTIONAL_SHARES),
-        "share_step": float(IBKR_FRACTIONAL_SHARE_STEP),
+        "quantity_mode": "FRACTIONAL_SHARES" if fractional_enabled else "WHOLE_SHARES",
+        "minimum_shares": float(IBKR_MIN_FRACTIONAL_SHARES) if fractional_enabled else 1.0,
+        "share_step": float(IBKR_FRACTIONAL_SHARE_STEP) if fractional_enabled else 1.0,
         "rounding": "DOWN_TO_PRESERVE_RISK_LIMIT",
         "capability_check": "BROKER_NATIVE_WHAT_IF_EACH_ORDER",
         "runtime_flag": "IBKR_FRACTIONAL_API_ENABLED",

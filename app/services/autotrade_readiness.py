@@ -413,24 +413,19 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                         reservation["notional"] = float(reservation["notional"]) + effective_notional
                         reservation["positions"] = int(reservation["positions"]) + 1
                 elif profile.provider == "IBKR":
-                    from app.services.ibkr_fractional import ibkr_quantity_is_fractional, normalize_ibkr_shares
+                    from app.services.ibkr_fractional import size_ibkr_entry
 
                     strategy_shares = max(0.0, float(plan.quantity))
-                    certified_shares = normalize_ibkr_shares(strategy_shares)
+                    entry = size_ibkr_entry(strategy_shares, fractional_enabled=settings.ibkr_fractional_api_enabled)
+                    certified_shares = entry["shares"]
                     effective_notional = certified_shares * price
                     proposed.update({
                         "strategy_requested_shares": strategy_shares,
-                        "shares": certified_shares,
-                        "quantity": certified_shares,
+                        **entry,
                         "notional": effective_notional,
-                        "sizing_policy": "RISK_SIZED_FRACTIONAL_SHARES",
-                        "quantity_mode": "FRACTIONAL_SHARES",
-                        "share_step": 0.0001,
                     })
                     if certified_shares <= 0:
-                        blockers.append("IBKR_QUANTITY_BELOW_MINIMUM_FRACTIONAL_SHARE")
-                    if ibkr_quantity_is_fractional(certified_shares) and not settings.ibkr_fractional_api_enabled:
-                        blockers.append("IBKR_FRACTIONAL_API_UNSUPPORTED")
+                        blockers.append("IBKR_QUANTITY_BELOW_MINIMUM_FRACTIONAL_SHARE" if settings.ibkr_fractional_api_enabled else "IBKR_QUANTITY_BELOW_ONE_SHARE")
                     if effective_notional > available:
                         blockers.append("INSUFFICIENT_AVAILABLE_BALANCE")
                     blockers.extend(_portfolio_guard(
@@ -489,8 +484,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
         "portfolio_policy": {
             "max_gross_exposure_pct": READINESS_MAX_GROSS_EXPOSURE_PCT,
             "max_new_positions_per_account": READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT,
-            "ibkr_paper_quantity_mode": "RISK_SIZED_FRACTIONAL_SHARES",
-            "ibkr_paper_share_step": 0.0001,
+            "ibkr_paper_quantity_mode": "RISK_SIZED_FRACTIONAL_SHARES" if settings.ibkr_fractional_api_enabled else "RISK_SIZED_WHOLE_SHARES",
+            "ibkr_paper_share_step": 0.0001 if settings.ibkr_fractional_api_enabled else 1.0,
             "bybit_product": "SPOT",
             "bybit_environments": sorted(BYBIT_SIMULATION_ENVIRONMENTS),
             "bybit_sell_policy": "ATLAS_MANAGED_INVENTORY_ONLY",

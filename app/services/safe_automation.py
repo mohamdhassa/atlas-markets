@@ -16,7 +16,7 @@ from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.autotrade_preflight import autotrade_preflight
 from app.services.bybit_spot_execution import execute_managed_spot_order
-from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares
+from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares, ibkr_quantity_is_fractional, ibkr_fractional_policy_payload
 
 CERTIFIED_AUTOMATION_ROUTES = {
     ("MT5", "DEMO"),
@@ -251,6 +251,8 @@ async def _execute_ibkr(db, *, user_id, item):
     requested = normalize_ibkr_shares(proposed.get("shares") or proposed.get("quantity"))
     if side not in {"BUY", "SELL"} or requested <= 0:
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "INVALID_ORDER_PROPOSAL"}
+    if ibkr_quantity_is_fractional(requested) and not get_settings().ibkr_fractional_api_enabled:
+        return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_FRACTIONAL_API_UNSUPPORTED"}
     shares = requested
     creds = _secret(profile)
     broker = IbkrBridgeClient(creds.get("bridge_url") or "http://host.docker.internal:8766", creds.get("bridge_token"), get_settings().market_data_timeout_seconds)
@@ -271,7 +273,7 @@ async def _execute_ibkr(db, *, user_id, item):
     if not result.get("accepted"):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "BROKER_ORDER_REJECTED", "broker_result": result}
     order_id = result.get("order_id")
-    base = {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "side": side, "shares": shares, "strategy_requested_shares": proposed.get("strategy_requested_shares") or requested, "sizing_policy": "RISK_SIZED_FRACTIONAL_SHARES", "quantity_mode": "FRACTIONAL_SHARES", "share_step": 0.0001, "broker_check": check, "broker_result": result}
+    base = {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "side": side, "shares": shares, "strategy_requested_shares": proposed.get("strategy_requested_shares") or requested, "sizing_policy": "RISK_SIZED_" + ibkr_fractional_policy_payload()["quantity_mode"], **ibkr_fractional_policy_payload(), "broker_check": check, "broker_result": result}
     if order_id is None:
         return {**base, "status": "SUBMITTED", "reason": "BROKER_ORDER_ID_MISSING"}
     verification, final_status = await _verify_ibkr_fill(broker, order_id, shares)
@@ -365,7 +367,7 @@ async def run_safe_scan():
                 "certified_routes": [
                     {"provider": "BYBIT", "environment": "TESTNET/DEMO", "product": "SPOT", "sell_policy": "ATLAS_MANAGED_INVENTORY_ONLY"},
                     {"provider": "MT5", "environment": "DEMO"},
-                    {"provider": "IBKR", "environment": "PAPER", "quantity_mode": "RISK_SIZED_FRACTIONAL_SHARES", "share_step": 0.0001, "capability_check": "BROKER_NATIVE_WHAT_IF_EACH_ORDER"},
+                    {"provider": "IBKR", "environment": "PAPER", **ibkr_fractional_policy_payload()},
                 ],
                 "blocked_routes": {"BYBIT_LIVE": "LIVE_MONEY_NOT_ARMED"},
                 "signals": scan.signals_count,
