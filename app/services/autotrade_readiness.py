@@ -203,6 +203,10 @@ def _position_notional(position):
     return 0.0
 
 
+from app.services.system_events import context, emit, traced
+
+
+@traced('READINESS')
 async def autotrade_readiness(db, *, user_id) -> dict:
     settings = get_settings()
     risk = _risk(db)
@@ -215,6 +219,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
 
     for cfg in sorted(configs, key=lambda x: (x.market, x.symbol)):
         profile = profiles.get(cfg.profile_id)
+        context(market=cfg.market, symbol=cfg.symbol, provider=profile.provider if profile else 'UNKNOWN')
+        emit('AUTOMATION', 'SYMBOL_CHECK_STARTED', message='Configured instrument check started')
         base = {"market": cfg.market, "symbol": cfg.symbol, "mode": cfg.mode, "execution": "DRY_RUN"}
         if not profile:
             rows.append({**base, "readiness": "BLOCK", "reason": "PROFILE_MISSING"})
@@ -307,6 +313,9 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 account_environment=profile.environment,
             )
             strategy_route = route_strategy(normalized_candles)
+            emit('TRADING', 'SIGNAL_EVALUATED', message='Signal and risk evaluation completed',
+                 decision=generated.decision, status='PASS' if approved else 'BLOCK', reason=reason,
+                 timeframe=timeframe, candle_count=len(normalized_candles))
             details["strategy_route"] = strategy_route
             blockers = _provider_execution_blockers(profile)
             router_blocker = _router_blocker(strategy_route, generated.decision)
@@ -468,6 +477,11 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             else:
                 rows.append({**base, "readiness": "BLOCK", "reason": f"{type(exc).__name__}: {str(exc) or repr(exc)}"})
 
+    for row in rows:
+        emit('TRADING', 'READINESS_OUTCOME', message='Instrument readiness outcome', provider=row.get('provider'),
+             market=row.get('market'), symbol=row.get('symbol'), decision=row.get('decision') or 'HOLD',
+             status=row.get('readiness'), reason='|'.join(row.get('blockers') or []) or row.get('reason'),
+             level='INFO' if row.get('readiness') == 'PASS' else 'WARNING')
     return {
         "execution_enabled": False,
         "purpose": "AUTO_TRADE_READINESS_DRY_RUN",
