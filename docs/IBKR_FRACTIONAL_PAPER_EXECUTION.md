@@ -5,17 +5,18 @@ has been explicitly certified and `IBKR_FRACTIONAL_API_ENABLED=true`. The produc
 to `false`. Live-money IBKR execution remains locked.
 
 The Oracle Paper bridge returned IBKR error `10243` for fractional API orders on 2026-10-03. ATLAS
-therefore blocks fractional quantities locally as `IBKR_FRACTIONAL_API_UNSUPPORTED` and does not
-repeat a broker What-If request every scan. Whole-share orders remain eligible when they fit all
+therefore sizes new entries down to whole shares when fractional capability is disabled. Stale
+fractional requests are blocked locally as `IBKR_FRACTIONAL_API_UNSUPPORTED`. Whole-share orders remain eligible when they fit all
 capital, portfolio and risk limits. ATLAS never rounds a fractional request up to one share.
 
 ## Safety sequence
 
-1. Size against the configured account capital basis (currently USD 100 in production).
-2. Round share quantity down to 0.0001 so the risk budget is never exceeded.
+1. Size against broker equity or the optional configured simulation capital override.
+2. Round down to whole shares when fractional capability is disabled, or 0.0001 shares when enabled.
+   A result below one whole share remains blocked; never round up.
 3. Require an active, connected IBKR Paper profile and simulation bridge.
 4. Reject a symbol with an existing position, open order or concurrent execution reservation.
-5. Block a fractional quantity unless the runtime capability flag was enabled after certification.
+5. Reject any stale fractional request when capability is disabled; preserve exact approved quantity.
 6. Submit an eligible quantity to broker-native What-If.
 7. Place only when What-If reports `ok`, `what_if` and `simulation`.
 8. Persist the exact quantity and broker order ID, then reconcile the fill.

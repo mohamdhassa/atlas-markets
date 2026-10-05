@@ -169,11 +169,14 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
                 if not math.isfinite(requested_quantity) or requested_quantity <= 0:
                     items.append({**base, "preflight": "BLOCK", "reason": "INVALID_IBKR_QUANTITY"})
                     continue
-                from app.services.ibkr_fractional import ibkr_preflight_rejection_reason, normalize_ibkr_shares
+                from app.services.ibkr_fractional import ibkr_preflight_rejection_reason, normalize_ibkr_shares, ibkr_quantity_is_fractional
 
                 shares = normalize_ibkr_shares(requested_quantity)
                 if shares <= 0:
                     items.append({**base, "preflight": "BLOCK", "reason": "IBKR_QUANTITY_BELOW_MINIMUM_FRACTIONAL_SHARE"})
+                    continue
+                if ibkr_quantity_is_fractional(shares) and not settings.ibkr_fractional_api_enabled:
+                    items.append({**base, "preflight": "BLOCK", "reason": "IBKR_FRACTIONAL_API_UNSUPPORTED"})
                     continue
                 c = _secret(profile)
                 broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)
