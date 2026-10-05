@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from urllib.parse import urlencode
 
 import httpx
+from app.services.system_events import observed_provider
 
 from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
 
@@ -40,6 +41,7 @@ class BybitPrivateClient:
         if payload.get("retCode") != 0:raise BybitPrivateError(f"Bybit {payload.get('retCode')}: {payload.get('retMsg', 'request failed')}")
         return payload.get("result") or {}
 
+    @observed_provider('BYBIT', 'GET')
     async def get(self,path:str,params:dict[str,str|int]|None=None)->dict:
         await self._sync_time();params=params or {};query=urlencode(params);headers=self._headers(query)
         async with httpx.AsyncClient(timeout=self.timeout) as client:response=await client.get(f"{self.base_url}{path}",params=params,headers=headers)
@@ -49,6 +51,7 @@ class BybitPrivateClient:
             async with httpx.AsyncClient(timeout=self.timeout) as client:response=await client.get(f"{self.base_url}{path}",params=params,headers=headers)
         return self._result(response)
 
+    @observed_provider('BYBIT', 'POST')
     async def post(self,path:str,payload:dict)->dict:
         await self._sync_time();body=json.dumps(payload,separators=(",",":"),ensure_ascii=False);headers=self._headers(body)
         async with httpx.AsyncClient(timeout=self.timeout) as client:response=await client.post(f"{self.base_url}{path}",content=body,headers=headers)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import httpx
+from app.services.system_events import observed_provider
 
 from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
 
@@ -16,6 +17,7 @@ class Mt5BridgeClient:
         return str(symbol or '').strip().upper().replace('/','').replace(' ','')
     def _headers(self)->dict[str,str]:
         return {'X-ATLAS-BRIDGE-TOKEN':self.token} if self.token else {}
+    @observed_provider('MT5')
     async def _request(self,method:str,path:str,json:dict|None=None)->dict:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import httpx
+from app.services.system_events import observed_provider
 
 from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
 from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares
@@ -10,8 +11,10 @@ class IbkrBridgeClient:
     def __init__(self,base_url:str,token:str|None=None,timeout:float=15.0):
         self.base_url=base_url.rstrip('/');self.token=token;self.timeout=timeout
     def _headers(self):return {'X-ATLAS-Bridge-Token':self.token} if self.token else {}
+    @observed_provider('IBKR', 'GET')
     async def _get(self,path:str,params:dict|None=None):
         async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.get(self.base_url+path,params=params,headers=self._headers());r.raise_for_status();return r.json()
+    @observed_provider('IBKR', 'POST')
     async def _post(self,path:str,payload:dict):
         async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.post(self.base_url+path,json=payload,headers=self._headers());r.raise_for_status();return r.json()
     async def health(self):return await self._get('/health')
