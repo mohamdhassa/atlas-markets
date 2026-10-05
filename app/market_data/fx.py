@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import httpx
+from app.services.system_events import observed_provider
 
 FX_WATCHLIST=("EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD")
 
@@ -16,6 +17,7 @@ class TwelveDataFxMarketData:
         s=symbol.upper().replace("/","").strip()
         if len(s)!=6 or not s.isalpha(): raise ValueError("FX symbol must look like EURUSD or EUR/USD")
         return f"{s[:3]}/{s[3:]}"
+    @observed_provider('TWELVE_DATA', 'GET')
     async def _get(self,path:str,params:dict)->dict:
         params={**params,"apikey":self.api_key}
         try:
