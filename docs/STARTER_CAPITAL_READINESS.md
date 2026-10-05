@@ -17,8 +17,9 @@ change as capital grows.
 
 The override does **not** enable Live Money and is ignored for Live accounts. Bybit remains
 Testnet/Demo Spot and IBKR remains Paper.
-IBKR symbols whose safe quantity is below one share use risk-sized fractional quantities rounded
-down to the broker-supported 0.0001-share step. Every order must pass broker-native What-If before
+IBKR entry quantities round down to whole shares by default. Quantities below one share stay
+blocked. With explicitly certified fractional API capability enabled, quantities round down to
+the 0.0001-share step. Every order must pass broker-native What-If before
 submission; duplicate-symbol guards, Paper-only checks, fill reconciliation and exact-quantity exits
 remain mandatory. Broker rejection blocks the order without falling back to a whole share.
 

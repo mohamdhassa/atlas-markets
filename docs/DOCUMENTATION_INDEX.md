@@ -15,6 +15,7 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [Routed paper execution](RELEASE_V1_ROUTED_PAPER_EXECUTION.md) — strategy agreement gate for certified simulation orders.
 - [$100 starter-capital readiness](STARTER_CAPITAL_READINESS.md) — conservative sizing and promotion gates for the planned first live balances.
 - [IBKR fractional Paper execution](IBKR_FRACTIONAL_PAPER_EXECUTION.md) — risk-sized fractional entries, broker preflight, reconciliation and exact exits.
+- [IBKR whole-share sizing](RELEASE_V1_IBKR_WHOLE_SHARE_SIZING.md) — round entries down to the certified step without increasing risk.
 - [IBKR fractional capability fix](RELEASE_V1_IBKR_FRACTIONAL_CAPABILITY_FIX.md) — error 10243 handling and safe whole-share fallback.
 - [Starter-capital readiness release](RELEASE_V1_STARTER_CAPITAL_READINESS.md) — delivered controls and verification status.
 - [Trade and performance ledger](TRADE_PERFORMANCE_LEDGER.md) — provider capital, closed trades, attribution and news context.
