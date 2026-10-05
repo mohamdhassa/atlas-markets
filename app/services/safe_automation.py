@@ -106,6 +106,12 @@ def _persist_action(db, scan, user_id, item, result):
     if qty is None:
         qty = request.get("quantity")
     order_id, position_id = _broker_ids({**broker_result, "broker_order_id": result.get("broker_order_id")})
+    from app.services.system_events import emit
+    emit('TRADING', 'ENGINE_OUTCOME', message='Trading engine outcome observed; audit commit pending',
+         level='WARNING' if result.get('status') == 'BLOCK' else 'INFO', provider=result.get('provider') or item.get('provider'),
+         symbol=result.get('symbol') or item.get('symbol'), decision=result.get('side') or request.get('side') or 'HOLD',
+         status=result.get('status'), reason=result.get('reason'), quantity=qty, scan_id=scan.id,
+         readiness=item.get('readiness'), preflight=item.get('preflight'), order_id=order_id)
     db.add(
         AutomationAction(
             scan_id=scan.id,
@@ -277,6 +283,10 @@ async def _execute_ibkr(db, *, user_id, item):
     return {**base, "status": "SUBMITTED", "reason": "BROKER_FILL_NOT_CONFIRMED"}
 
 
+from app.services.system_events import context, emit, traced
+
+
+@traced('SCAN')
 async def run_safe_scan():
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
@@ -299,12 +309,15 @@ async def run_safe_scan():
         db.add(scan)
         db.commit()
         db.refresh(scan)
+        context(scan_id=scan.id)
+        emit('AUTOMATION', 'SCAN_CREATED', message='Persisted scan created', status='RUNNING')
         results = []
         try:
             for user_id in user_ids:
                 preflight = await autotrade_preflight(db, user_id=user_id)
                 for item in preflight.get("items", []):
                     provider = str(item.get("provider") or "").upper()
+                    context(provider=provider, market=item.get('market'), symbol=item.get('symbol'))
                     if item.get("preflight") != "PASS":
                         result = {"market": item.get("market"), "symbol": item.get("symbol"), "provider": provider, "status": "BLOCK", "reason": item.get("reason") or "READINESS_BLOCKED"}
                         results.append(result)
@@ -312,7 +325,12 @@ async def run_safe_scan():
                         continue
                     scan.signals_count += 1
                     scan.approved_count += 1
+                    emit('TRADING', 'PREFLIGHT_APPROVED', message='Preflight approved; broker execution not yet confirmed',
+                         provider=provider, symbol=item.get('symbol'), decision=(item.get('request') or {}).get('side') or 'HOLD',
+                         status='PASS', preflight='PASS', scan_id=scan.id)
                     try:
+                        emit('TRADING', 'EXECUTION_ATTEMPT', message='Execution workflow entered; submission and fill still require broker confirmation',
+                             decision=(item.get('request') or {}).get('side') or 'HOLD')
                         if provider == "BYBIT":
                             result = await _execute_bybit(db, user_id=user_id, item=item)
                         elif provider == "MT5":
@@ -382,6 +400,7 @@ async def safe_automation_loop(stop_event):
             except asyncio.TimeoutError:
                 pass
         except Exception:
+            emit('AUTOMATION', 'SCAN_LOOP_ERROR', level='ERROR', message='Scan worker iteration failed')
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=15)
             except asyncio.TimeoutError:

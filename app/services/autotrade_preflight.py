@@ -12,6 +12,7 @@ from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.services.autotrade_readiness import autotrade_readiness
+from app.services.system_events import context, emit, traced
 
 
 def _secret(profile) -> dict:
@@ -64,6 +65,7 @@ def _bybit_client(profile, settings) -> BybitPrivateClient:
     )
 
 
+@traced('PREFLIGHT')
 async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None, markets: set[str] | None = None) -> dict:
     provider_filter = {str(x).upper() for x in (providers or set())}
     market_filter = {str(x).upper() for x in (markets or set())}
@@ -74,6 +76,7 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
     items = []
 
     for row in readiness["items"]:
+        context(provider=row.get('provider'), market=row.get('market'), symbol=row.get('symbol'))
         row_provider = str(row.get("provider") or "").upper()
         row_market = str(row.get("market") or "").upper()
         if provider_filter and row_provider not in provider_filter:
@@ -215,6 +218,11 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
         except Exception as exc:
             items.append({**base, "preflight": "BLOCK", "reason": f"{type(exc).__name__}: {str(exc) or repr(exc)}"})
 
+    for item in items:
+        emit('TRADING', 'PREFLIGHT_OUTCOME', message='Broker preflight outcome; no order placed by this check',
+             provider=item.get('provider'), market=item.get('market'), symbol=item.get('symbol'),
+             decision=(item.get('request') or {}).get('side') or 'HOLD', status=item.get('preflight'),
+             reason=item.get('reason'), level='INFO' if item.get('preflight') == 'PASS' else 'WARNING')
     return {
         "execution_enabled": False,
         "purpose": "BROKER_PREFLIGHT_NO_EXECUTION",

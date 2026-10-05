@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.health import router as health_router
+from app.api.routes_logs import router as logs_router
+from app.services import system_events
 from app.api.routes_account_lifecycle import router as account_lifecycle_router
 from app.api.routes_accounts import router as accounts_router
 from app.api.routes_admin import router as admin_router
@@ -50,6 +52,7 @@ static_dir = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    system_events.start()
     stop = asyncio.Event()
     tasks = [
         asyncio.create_task(safe_automation_loop(stop)),
@@ -62,6 +65,13 @@ async def lifespan(app: FastAPI):
     ]
     app.state.automation_stop = stop
     app.state.background_tasks = tasks
+    for task in tasks:
+        name = task.get_coro().__name__
+        system_events.emit('SERVER', 'WORKER_STARTED', message='Background worker started', status=name)
+        def finished(done, worker=name):
+            if not done.cancelled() and done.exception() is not None:
+                system_events.emit('SERVER', 'WORKER_FAILED', level='ERROR', message='Background worker exited with error', status=worker, error_kind=type(done.exception()).__name__)
+        task.add_done_callback(finished)
     try:
         yield
     finally:
@@ -71,12 +81,14 @@ async def lifespan(app: FastAPI):
                 await asyncio.wait_for(task, timeout=3)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 task.cancel()
+        await system_events.stop()
 
 
 app = FastAPI(title=settings.app_name, version="2.0.0", debug=settings.debug, lifespan=lifespan)
+app.add_middleware(system_events.EventMiddleware)
 
 routers = (
-    health_router, auth_router, admin_router, markets_router, workspace_quotes_router,
+    health_router, logs_router, auth_router, admin_router, markets_router, workspace_quotes_router,
     bybit_certification_state_router, accounts_router, account_lifecycle_router,
     bybit_environment_router, bybit_oauth_router, ibkr_external_router,
     provider_certification_router, analysis_router, signals_router,

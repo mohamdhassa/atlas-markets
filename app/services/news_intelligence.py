@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.db.models.news import NewsArticle
 from app.db.session import SessionLocal
 from app.services.signal_risk import GeneratedSignal
+from app.services.system_events import emit, traced
 
 DEFAULT_FEEDS=(
     ("CoinDesk","https://www.coindesk.com/arc/outboundfeeds/rss/"),
@@ -77,17 +78,21 @@ def parse_rss(xml_text:str,source:str)->list[dict]:
         if title and url: rows.append({"source":source,"external_id":external_id[:512],"title":title[:512],"url":url,"summary":re.sub('<[^>]+>',' ',summary)[:4000],"symbols":symbols,"sentiment_score":score_sentiment(text),"relevance_score":relevance_for(text,symbols),"published_at":published})
     return rows
 
+@traced('NEWS_REFRESH')
 async def refresh_news(db,feeds=DEFAULT_FEEDS)->dict:
     inserted=0;errors=[]
     async with httpx.AsyncClient(timeout=10.0,follow_redirects=True,headers={"User-Agent":"ATLAS-MARKETS/0.12"}) as client:
         for source,url in feeds:
+            emit('PROVIDER', 'NEWS_READ_STARTED', message='News feed read started', provider=source)
             try:
                 r=await client.get(url);r.raise_for_status();rows=parse_rss(r.text,source)
+                emit('PROVIDER', 'NEWS_READ_COMPLETED', message='News feed parsed', provider=source, http_status=r.status_code, article_count=len(rows))
                 for row in rows:
                     if db.scalar(select(NewsArticle).where(NewsArticle.external_id==row["external_id"])):continue
                     db.add(NewsArticle(source=row["source"],external_id=row["external_id"],title=row["title"],url=row["url"],summary=row["summary"],symbols_csv=",".join(row["symbols"]),sentiment_score=row["sentiment_score"],relevance_score=row["relevance_score"],published_at=row["published_at"]));inserted+=1
                 db.commit()
             except Exception as exc:
+                emit('PROVIDER', 'NEWS_READ_FAILED', level='ERROR', message='News feed read failed', provider=source, error_kind=type(exc).__name__)
                 db.rollback();errors.append(f"{source}: {str(exc)[:120]}")
     return {"inserted":inserted,"errors":errors}
 

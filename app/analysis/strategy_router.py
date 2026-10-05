@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from statistics import mean, pstdev
+from app.services.system_events import observed_strategy
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ def darvas_box(candles: list[dict], *, lookback: int = 20, breakout_buffer_pct: 
     }
 
 
+@observed_strategy
 def route_strategy(
     candles: list[dict],
     *,

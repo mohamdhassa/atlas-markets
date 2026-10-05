@@ -31,6 +31,7 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 ## Production operations
 
 - [Provider request isolation](RELEASE_V1_PROVIDER_REQUEST_ISOLATION.md) — IBKR summary cleanup and bounded read-only page workers.
+- [Live system logs](LIVE_SYSTEM_LOGS.md) — ADMIN timeline, scan correlation, trading outcomes, safe provider/browser telemetry and retention limits.
 
 - [Database operations](DATABASE_OPERATIONS.md) — production identity, pgAdmin SSH access and schema changes.
 - [Operations runbook](OPERATIONS_RUNBOOK.md) — health, deployment, incident and rollback procedures.

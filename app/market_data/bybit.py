@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.schemas.market import MarketCandle, MarketSnapshot, MarketTicker
+from app.services.system_events import observed_provider
 
 
 SUPPORTED_CATEGORIES = {"linear", "spot"}
@@ -41,6 +42,7 @@ class BybitPublicMarketData:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
+    @observed_provider('BYBIT_PUBLIC', 'GET')
     async def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(base_url=self.base_url, timeout=self.timeout_seconds) as client:

@@ -1,0 +1,18 @@
+.system-logs{min-width:0;max-width:100%}
+.log-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+.log-filters label{display:flex;flex-direction:column;gap:6px;min-width:0}
+.log-filters input,.log-filters select{width:100%;min-width:0;min-height:44px}
+.log-search{grid-column:span 2}
+.log-toolbar,.log-event-head,.log-event-body{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.log-toolbar button,.system-logs>button{min-height:44px;width:auto}
+.log-coverage{font-size:.8rem;line-height:1.6;overflow-wrap:anywhere}
+.log-events{display:grid;gap:10px;max-height:70vh;overflow:auto;margin:16px 0;overscroll-behavior:contain}
+.log-event{border:1px solid rgba(130,160,190,.18);border-radius:12px;padding:14px;min-width:0;background:rgba(255,255,255,.025)}
+.log-event-head{font-size:.8rem;color:#9aafc2;margin-bottom:10px}
+.log-event p{overflow-wrap:anywhere;margin:10px 0}
+.log-event details{font-size:.85rem}
+.log-event summary{cursor:pointer;min-height:36px}
+.log-event dl{display:grid;grid-template-columns:minmax(90px,140px) minmax(0,1fr);gap:6px}
+.log-event dd{margin:0;overflow-wrap:anywhere}.log-event dt{color:#9aafc2}
+@media(max-width:760px){.log-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.log-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.log-toolbar button{width:100%;white-space:normal}.log-events{max-height:65vh}.system-logs .page-intro{display:block}.log-event{padding:12px}.log-event dl{grid-template-columns:minmax(75px,100px) minmax(0,1fr)}}
+@media(max-width:380px){.log-filters{grid-template-columns:minmax(0,1fr)}.log-search{grid-column:auto}}
