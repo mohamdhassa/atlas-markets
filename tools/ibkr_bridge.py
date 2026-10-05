@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse,os,threading,time,math
-from datetime import datetime,timedelta
+from functools import wraps
+from datetime import datetime,timedelta,timezone
 from fastapi import FastAPI,HTTPException,Header
 from pydantic import BaseModel
 from ibapi.client import EClient
@@ -12,9 +13,13 @@ import uvicorn
 class State(EWrapper,EClient):
  def __init__(self):
   self.account_requests={}
+  self.connection_epoch=0;self.request_epochs={};self.server_connected=None;self.server_changed_at=None;self.read_failures={};self.read_retry_at={};self.read_state_lock=threading.Lock()
   EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self.order_statuses={};self.whatif_results={};self._events={}
  def _event(self,k):return self._events.setdefault(k,threading.Event())
- def nextValidId(self,orderId):self.next_id=orderId;self._event('connected').set()
+ def nextValidId(self,orderId):
+  self.next_id=orderId
+  if self.server_connected is None:self.server_connected=True
+  self._event('connected').set()
  def managedAccounts(self,accountsList):self.accounts=[x for x in accountsList.split(',') if x]
  def accountSummary(self,reqId,account,tag,value,currency):
   values=self.account_requests.get(reqId)
@@ -55,6 +60,18 @@ class State(EWrapper,EClient):
   row={'id':reqId,'code':errorCode,'message':errorString}
   if advancedOrderRejectJson:row['advanced_reject']=advancedOrderRejectJson
   self.errors.append(row)
+  self.errors=self.errors[-200:]
+  if errorCode in {1100,2110,1101,1102}:
+   self.server_connected=errorCode in {1101,1102}
+   self.server_changed_at=datetime.now(timezone.utc).isoformat()
+   global account_cache_at
+   account_cache_at=0.0
+   if self.server_connected:
+    with self.read_state_lock:self.read_failures.clear();self.read_retry_at.clear()
+   else:
+    self.connection_epoch+=1
+    for event in tuple(self._events.values()):event.set()
+   print('IBKR_SERVER_RESTORED' if self.server_connected else 'IBKR_SERVER_UNAVAILABLE',flush=True)
   if reqId in self.account_requests:self._event(f'acct:{reqId}').set()
   if reqId>=0:
    self._event(f'order-status:{reqId}').set()
@@ -65,10 +82,40 @@ account_lock=threading.Lock();account_cache=None;account_cache_at=0.0
 def auth(x_atlas_bridge_token:str|None):
  token=cfg.get('token')
  if token and x_atlas_bridge_token!=token:raise HTTPException(401,'invalid bridge token')
-def prepare(key):ib._event(key).clear()
+def server_ready():return ib.isConnected() and ib.server_connected is not False
+def require_server():
+ if not server_ready():raise HTTPException(503,'IBKR_SERVER_UNAVAILABLE' if ib.isConnected() else 'IBKR_SOCKET_DISCONNECTED')
+def read_ready(operation):
+ require_server()
+ with ib.read_state_lock:remaining=max(0,ib.read_retry_at.get(operation,0)-time.monotonic())
+ if remaining:raise HTTPException(503,'IBKR_READ_RECOVERY_COOLDOWN',headers={'Retry-After':str(max(1,math.ceil(remaining)))})
+def read_failed(operation):
+ with ib.read_state_lock:
+  attempts=min(5,ib.read_failures.get(operation,0)+1);ib.read_failures[operation]=attempts
+  ib.read_retry_at[operation]=time.monotonic()+min(120,10*2**(attempts-1))
+def read_succeeded(operation):
+ with ib.read_state_lock:ib.read_failures.pop(operation,None);ib.read_retry_at.pop(operation,None)
+read_locks={'positions':threading.Lock(),'orders':threading.Lock()}
+def serial_read(operation):
+ def decorate(fn):
+  @wraps(fn)
+  def wrapped(x_atlas_bridge_token=None):
+   auth(x_atlas_bridge_token);read_ready(operation)
+   if not read_locks[operation].acquire(blocking=False):raise HTTPException(503,'IBKR_READ_ALREADY_IN_PROGRESS')
+   try:return fn(x_atlas_bridge_token)
+   finally:read_locks[operation].release()
+  return wrapped
+ return decorate
+def prepare(key):ib.request_epochs[key]=ib.connection_epoch;ib._event(key).clear()
 def wait(key,seconds=10):
  e=ib._event(key)
- if not e.wait(seconds):raise HTTPException(504,f'IBKR timeout waiting for {key}')
+ try:
+  if not e.wait(seconds):
+   read_failed(key.split(':')[0]);raise HTTPException(504,f'IBKR timeout waiting for {key}')
+  require_server()
+  if ib.request_epochs.get(key,ib.connection_epoch)!=ib.connection_epoch:raise HTTPException(503,'IBKR_READ_INTERRUPTED_BY_DISCONNECT')
+  read_succeeded(key.split(':')[0])
+ finally:ib.request_epochs.pop(key,None)
 def rid():return int(time.time()*1000000)%2000000000
 def contract(symbol,sec_type='STK',exchange='SMART',currency='USD'):
  c=Contract();c.symbol=symbol.upper();c.secType=sec_type;c.exchange=exchange;c.currency=currency;return c
@@ -80,7 +127,8 @@ def duration(tf,limit):
 def _connect_once():
  global account_cache,account_cache_at
  account_cache=None;account_cache_at=0.0
- ib._event('connected').clear();ib.next_id=None;ib.errors=[]
+ ib._event('connected').clear();ib.next_id=None;ib.errors=[];ib.server_connected=None
+ with ib.read_state_lock:ib.read_failures.clear();ib.read_retry_at.clear()
  try:
   if ib.isConnected():ib.disconnect();time.sleep(.25)
   ib.connect(cfg['host'],cfg['port'],clientId=cfg['client_id'])
@@ -105,12 +153,12 @@ def startup():
 def shutdown():ib.disconnect()
 @app.get('/health')
 def health(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);return {'status':'ok','connected':ib.isConnected(),'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'errors':ib.errors[-12:]}
+ auth(x_atlas_bridge_token);return {'status':'ok' if server_ready() else 'degraded','connected':server_ready(),'socket_connected':ib.isConnected(),'server_connected':ib.server_connected,'server_changed_at':ib.server_changed_at,'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'errors':ib.errors[-12:]}
 @app.get('/account')
 def account(x_atlas_bridge_token:str|None=Header(default=None)):
  global account_cache,account_cache_at
  auth(x_atlas_bridge_token)
- if not ib.isConnected():raise HTTPException(503,'IBKR disconnected')
+ read_ready('acct')
  if account_cache is not None and time.monotonic()-account_cache_at<2:return dict(account_cache)
  # Never queue more broker subscriptions while an earlier summary is pending.
  if not account_lock.acquire(blocking=False):raise HTTPException(503,'IBKR account summary already in progress; retry shortly')
@@ -122,25 +170,29 @@ def account(x_atlas_bridge_token:str|None=Header(default=None)):
   values=ib.account_requests[r]
   tags={'equity':'NetLiquidation','cash':'TotalCashValue','available':'AvailableFunds','buying_power':'BuyingPower'}
   if any((acct,tag) not in values for tag in tags.values()):raise HTTPException(502,'IBKR account summary incomplete')
-  result={'account_id':acct,'simulation':cfg['simulation'],**{name:float(values[(acct,tag)][0]) for name,tag in tags.items()}}
+  result={'account_id':acct,'simulation':cfg['simulation'],'data_status':'FRESH','observed_at':datetime.now(timezone.utc).isoformat(),**{name:float(values[(acct,tag)][0]) for name,tag in tags.items()}}
   account_cache=dict(result);account_cache_at=time.monotonic();return result
  finally:
   try:ib.cancelAccountSummary(r)
   finally:
-   ib.account_requests.pop(r,None);ib._events.pop(key,None);account_lock.release()
+   ib.account_requests.pop(r,None);ib._events.pop(key,None);ib.request_epochs.pop(key,None);account_lock.release()
 @app.get('/positions')
+@serial_read('positions')
 def positions(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);ib.positions=[];prepare('positions');ib.reqPositions();wait('positions');ib.cancelPositions();return {'list':ib.positions}
+ auth(x_atlas_bridge_token);read_ready('positions');ib.positions=[];prepare('positions');ib.reqPositions()
+ try:wait('positions');return {'list':list(ib.positions)}
+ finally:ib.cancelPositions()
 @app.get('/orders')
+@serial_read('orders')
 def orders(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);ib.open_orders=[];prepare('orders');ib.reqOpenOrders();wait('orders');return {'list':ib.open_orders}
+ auth(x_atlas_bridge_token);read_ready('orders');ib.open_orders=[];prepare('orders');ib.reqOpenOrders();wait('orders');return {'list':ib.open_orders}
 @app.get('/orders/{order_id}/status')
 def order_status(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);status=ib.order_statuses.get(int(order_id));errs=[e for e in ib.errors if int(e.get('id') or -1)==int(order_id)]
  return {'order_id':int(order_id),'status':status,'errors':errs[-8:]}
 @app.get('/executions')
 def executions(days:int=30,x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);from ibapi.execution import ExecutionFilter
+ auth(x_atlas_bridge_token);read_ready('exec');from ibapi.execution import ExecutionFilter
  r=rid();key=f'exec:{r}';ib.executions=[];ib.commissions={};f=ExecutionFilter();f.time=(datetime.now()-timedelta(days=max(1,min(days,30)))).strftime('%Y%m%d 00:00:00');prepare(key);ib.reqExecutions(r,f);wait(key);time.sleep(.35)
  rows=[]
  for x in ib.executions:
@@ -148,18 +200,18 @@ def executions(days:int=30,x_atlas_bridge_token:str|None=Header(default=None)):
  return {'list':rows}
 @app.get('/contract')
 def contract_info(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);r=rid();key=f'contract:{r}';ib.contracts[r]=[];prepare(key);ib.reqContractDetails(r,contract(symbol,sec_type,exchange,currency));wait(key,12);rows=ib.contracts.pop(r,[])
+ auth(x_atlas_bridge_token);read_ready('contract');r=rid();key=f'contract:{r}';ib.contracts[r]=[];prepare(key);ib.reqContractDetails(r,contract(symbol,sec_type,exchange,currency));wait(key,12);rows=ib.contracts.pop(r,[])
  if not rows:raise HTTPException(404,f'No IBKR contract found for {symbol}')
  exact=next((x for x in rows if x.get('symbol','').upper()==symbol.upper() and x.get('sec_type')==sec_type),rows[0]);return exact
 @app.get('/quote')
 def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token)
+ auth(x_atlas_bridge_token);read_ready('quote');read_ready('bars')
  r=rid();key=f'quote:{r}';ib.quotes[r]={};prepare(key)
  ib.reqMktData(r,contract(symbol,sec_type,exchange,currency),'',True,False,[])
  try:
   wait(key,6)
  except HTTPException:
-  pass
+  require_server()
  q=ib.quotes.pop(r,{})
  # Snapshot requests can legitimately end without a usable last/bid/ask on
  # delayed IBKR data. Avoid cancelMktData for snapshot=True: IBKR ends the
@@ -184,14 +236,17 @@ def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',
  return {'symbol':symbol.upper(),'sec_type':sec_type,'currency':currency,'last':last,'source':'HISTORICAL_FALLBACK','bar_time':rows[-1].get('time')}
 @app.get('/candles')
 def candles(symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);limit=max(10,min(limit,1000));r=rid();key=f'bars:{r}';ib.bars[r]=[];prepare(key);ib.reqHistoricalData(r,contract(symbol,sec_type,exchange,currency),'',duration(timeframe,limit),bar_size(timeframe),'TRADES',1,1,False,[]);wait(key,15);ib.cancelHistoricalData(r);rows=ib.bars.pop(r,[])
+ auth(x_atlas_bridge_token);read_ready('bars');limit=max(10,min(limit,1000));r=rid();key=f'bars:{r}';ib.bars[r]=[];prepare(key);ib.reqHistoricalData(r,contract(symbol,sec_type,exchange,currency),'',duration(timeframe,limit),bar_size(timeframe),'TRADES',1,1,False,[]);
+ try:wait(key,15);rows=ib.bars.pop(r,[])
+ finally:
+  ib.cancelHistoricalData(r);ib.bars.pop(r,None);ib._events.pop(key,None);ib.request_epochs.pop(key,None)
  if not rows:raise HTTPException(502,f'No IBKR candles returned for {symbol}')
  return {'symbol':symbol.upper(),'timeframe':timeframe,'list':rows[-limit:]}
 class OrderPayload(BaseModel):
  symbol:str;side:str;quantity:float;order_type:str='MKT';limit_price:float|None=None;sec_type:str='STK';exchange:str='SMART';currency:str='USD';account_id:str|None=None
 @app.post('/order-check')
 def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token)
+ auth(x_atlas_bridge_token);require_server()
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
  if p.quantity<=0:raise HTTPException(400,'quantity must be positive')
  if p.side.upper() not in {'BUY','SELL'}:raise HTTPException(400,'side must be BUY or SELL')
@@ -205,13 +260,15 @@ def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None
  if o.orderType=='LMT':o.lmtPrice=float(p.limit_price or 0)
  ib.placeOrder(oid,contract(p.symbol,p.sec_type,p.exchange,p.currency),o);ib.next_id+=1
  ib._event(f'whatif:{int(oid)}').wait(8)
+ require_server()
+ if ib.request_epochs.get(f'whatif:{int(oid)}',ib.connection_epoch)!=ib.connection_epoch:raise HTTPException(503,'IBKR_READ_INTERRUPTED_BY_DISCONNECT')
  result=ib.whatif_results.pop(int(oid),None);errs=[e for e in ib.errors if int(e.get('id') or -1)==int(oid)]
  if result is None:return {'ok':False,'what_if':True,'simulation':True,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper(),'errors':errs[-8:],'reason':'NO_WHAT_IF_RESPONSE'}
  margin={k:result.get(k) for k in ('init_margin_before','init_margin_change','init_margin_after','maint_margin_before','maint_margin_change','maint_margin_after','equity_with_loan_before','equity_with_loan_change','equity_with_loan_after')}
  return {'ok':not bool(errs),'what_if':True,'simulation':True,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper(),'margin':margin,'commission':{'estimate':result.get('commission'),'min':result.get('min_commission'),'max':result.get('max_commission'),'currency':result.get('commission_currency')},'warning':result.get('warning'),'errors':errs[-8:]}
 @app.post('/orders')
 def place(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token)
+ auth(x_atlas_bridge_token);require_server()
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
  if p.quantity<=0:raise HTTPException(400,'quantity must be positive')
  if p.side.upper() not in {'BUY','SELL'}:raise HTTPException(400,'side must be BUY or SELL')
@@ -226,7 +283,7 @@ def place(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
  return {'accepted':True,'simulation':True,'order_id':oid,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper()}
 @app.delete('/orders/{order_id}')
 def cancel(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token)
+ auth(x_atlas_bridge_token);require_server()
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
  ib.cancelOrder(order_id);return {'cancel_requested':True,'order_id':order_id,'simulation':True}
 
