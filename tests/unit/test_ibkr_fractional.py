@@ -25,7 +25,7 @@ def test_fractional_reconciliation_uses_numeric_tolerance():
 
 
 def test_fractional_policy_requires_broker_native_what_if():
-    policy = ibkr_fractional_policy_payload()
+    policy = ibkr_fractional_policy_payload(fractional_enabled=True)
     assert policy["quantity_mode"] == "FRACTIONAL_SHARES"
     assert policy["share_step"] == 0.0001
     assert policy["capability_check"] == "BROKER_NATIVE_WHAT_IF_EACH_ORDER"
@@ -45,10 +45,21 @@ def test_ibkr_error_10243_has_precise_reason():
     assert ibkr_preflight_rejection_reason({"errors": [{"code": 201}]}) == "BROKER_PREFLIGHT_REJECTED"
 
 
-def test_automation_path_does_not_restore_whole_share_cap():
-    safe_automation = open("app/services/safe_automation.py", encoding="utf-8").read()
-    readiness = open("app/services/autotrade_readiness.py", encoding="utf-8").read()
-    assert "requested = int(" not in safe_automation
-    assert "math.floor(plan.quantity)" not in readiness
-    assert '"sizing_policy": "RISK_SIZED_FRACTIONAL_SHARES"' in readiness
-    assert 'blockers.append("IBKR_FRACTIONAL_API_UNSUPPORTED")' in readiness
+def test_entry_sizing_uses_certified_step_without_rounding_up():
+    from app.services.ibkr_fractional import size_ibkr_entry
+    for value, whole in [(12.7, 12), (1.99999, 1), (1, 1), (0.9999, 0), (0.0386, 0)]:
+        result = size_ibkr_entry(value, fractional_enabled=False)
+        assert result["shares"] == whole
+        assert result["shares"] <= value
+        assert result["sizing_policy"] == "RISK_SIZED_WHOLE_SHARES"
+        assert result["share_step"] == 1
+    assert size_ibkr_entry(12.76549, fractional_enabled=True)["shares"] == 12.7654
+    for value in ["nan", "inf", -1, "invalid", None]:
+        assert size_ibkr_entry(value, fractional_enabled=False)["shares"] == 0
+
+
+def test_disabled_fractional_policy_reports_whole_share_minimum():
+    policy = ibkr_fractional_policy_payload(fractional_enabled=False)
+    assert policy["quantity_mode"] == "WHOLE_SHARES"
+    assert policy["minimum_shares"] == policy["share_step"] == 1
+    assert policy["capability_check"] == "BROKER_NATIVE_WHAT_IF_EACH_ORDER"
