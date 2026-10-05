@@ -31,6 +31,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Production operations
 
+- [IBKR outage recovery](RELEASE_V1_IBKR_OUTAGE_RECOVERY.md) — backend connectivity, bounded read cooldowns and explicit stale balances.
+
 - [Provider request isolation](RELEASE_V1_PROVIDER_REQUEST_ISOLATION.md) — IBKR summary cleanup and bounded read-only page workers.
 - [Live system logs](LIVE_SYSTEM_LOGS.md) — ADMIN timeline, scan correlation, trading outcomes, safe provider/browser telemetry and retention limits.
 
