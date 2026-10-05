@@ -14,6 +14,8 @@ from app.db.session import get_db
 from app.services.automation import get_or_create_state
 from app.services.safe_automation import CERTIFIED_AUTOMATION_ROUTES, run_safe_scan
 
+from app.services.ibkr_fractional import ibkr_fractional_policy_payload
+
 router=APIRouter(prefix="/automation",tags=["automation"])
 class AutomationUpdate(BaseModel):
     enabled:bool
@@ -21,7 +23,7 @@ class AutomationUpdate(BaseModel):
     auto_execute_paper:bool|None=None
     interval_seconds:int=Field(300,ge=30,le=86400)
     symbols:list[str]=Field(default_factory=lambda:["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","BNBUSDT"])
-def _state_payload(s):return {"enabled":s.enabled,"killed":s.killed,"simulation_execution":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at,"execution_policy":"CERTIFIED_ROUTES_ONLY","certified_routes":[{"provider":"BYBIT","environment":"TESTNET/DEMO","product":"SPOT","sell_policy":"ATLAS_MANAGED_INVENTORY_ONLY"},{"provider":"MT5","environment":"DEMO"},{"provider":"IBKR","environment":"PAPER","quantity_mode":"RISK_SIZED_FRACTIONAL_SHARES","share_step":0.0001,"capability_check":"BROKER_NATIVE_WHAT_IF_EACH_ORDER"}],"blocked_routes":{"BYBIT_LIVE":"LIVE_MONEY_NOT_ARMED","IBKR_LIVE":"LIVE_MONEY_NOT_ARMED"}}
+def _state_payload(s):return {"enabled":s.enabled,"killed":s.killed,"simulation_execution":s.auto_execute_paper,"interval_seconds":s.interval_seconds,"symbols":[x for x in s.symbols_csv.split(",") if x],"last_scan_at":s.last_scan_at,"next_scan_at":s.next_scan_at,"execution_policy":"CERTIFIED_ROUTES_ONLY","certified_routes":[{"provider":"BYBIT","environment":"TESTNET/DEMO","product":"SPOT","sell_policy":"ATLAS_MANAGED_INVENTORY_ONLY"},{"provider":"MT5","environment":"DEMO"},{"provider":"IBKR","environment":"PAPER",**ibkr_fractional_policy_payload()}],"blocked_routes":{"BYBIT_LIVE":"LIVE_MONEY_NOT_ARMED","IBKR_LIVE":"LIVE_MONEY_NOT_ARMED"}}
 @router.get('/state')
 def state(_:User=Depends(get_current_user),db:Session=Depends(get_db)):return _state_payload(get_or_create_state(db))
 @router.put('/state')
