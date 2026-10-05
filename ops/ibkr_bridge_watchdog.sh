@@ -91,6 +91,13 @@ if printf '%s' "${health}" | python3 -c 'import json,sys; d=json.load(sys.stdin)
   exit 0
 fi
 
+# A healthy local socket with a lost IBKR backend is a server outage, not a
+# dead bridge. Preserve Gateway's automatic reconnection and authentication.
+if printf '%s' "${health}" | python3 -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("socket_connected") is True and d.get("server_connected") is False else 1)' 2>/dev/null; then
+  log_event "IBKR_SERVER_UNAVAILABLE waiting_for_gateway_reconnection"
+  exit 0
+fi
+
 # Gateway is authenticated and healthy but the bridge is stale or unavailable.
 if ! docker inspect "${BRIDGE_CONTAINER}" >/dev/null 2>&1; then
   log_event "IBKR_BRIDGE_MISSING"

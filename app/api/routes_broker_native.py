@@ -153,9 +153,13 @@ async def portfolio(user:User=Depends(get_current_user),db:Session=Depends(get_d
     for x in plist:
      symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'IBKR','market':market,'symbol':symbol,'side':'LONG' if _f(x.get('quantity'))>0 else 'SHORT','quantity':abs(_f(x.get('quantity'))),'entry_price':_f(x.get('avg_cost')),'mark_price':None,'unrealized_pnl':None,'leverage':None})
     unrealized=0
-   out.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_account_market(p.provider),'environment':p.environment,'active':p.is_active,'status':p.last_connection_status,'equity':equity,'available':available,'positions':len(plist),'unrealized_pnl':round(unrealized,2)})
-  except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
- return {'accounts':out,'positions':positions,'errors':errors,'totals':{'equity':round(sum(x['equity'] for x in out),2),'available':round(sum(x['available'] for x in out),2),'unrealized_pnl':round(sum(x['unrealized_pnl'] for x in out),2),'open_positions':len(positions)}}
+   out.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_account_market(p.provider),'environment':p.environment,'active':p.is_active,'status':'CONNECTED','data_status':'FRESH','observed_at':datetime.now(timezone.utc).isoformat(),'equity':equity,'available':available,'positions':len(plist),'unrealized_pnl':round(unrealized,2)})
+  except Exception as exc:
+   errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
+   if p.provider=='IBKR':
+    out.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_account_market(p.provider),'environment':p.environment,'active':p.is_active,'status':'UNAVAILABLE','data_status':'STALE','observed_at':p.last_sync_at.isoformat() if p.last_sync_at else None,'equity':p.equity_usd,'available':None,'positions':None,'unrealized_pnl':None})
+ fresh=[x for x in out if x.get('data_status')=='FRESH']
+ return {'accounts':out,'positions':positions,'errors':errors,'totals':{'partial':bool(errors),'equity':round(sum(x['equity'] for x in fresh),2),'available':round(sum(x['available'] for x in fresh),2),'unrealized_pnl':round(sum(x['unrealized_pnl'] for x in fresh),2),'open_positions':len(positions)}}
 
 @router.get('/broker-orders')
 @isolated_provider_read

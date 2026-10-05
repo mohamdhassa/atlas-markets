@@ -82,8 +82,10 @@ def _ibkr_provider_unavailable(exc: Exception) -> bool:
 
 
 def _ibkr_connection_verdict(profile, credentials: dict, health: dict, account: dict) -> tuple[bool, str]:
-    if not health.get("connected"):
+    if not health.get("connected") or health.get("server_connected") is False:
         return False, "IBKR_BRIDGE_DISCONNECTED"
+    if account.get("data_status") == "STALE":
+        return False, "IBKR_ACCOUNT_DATA_STALE"
     actual = str(account.get("account_id") or "").strip()
     expected = str(credentials.get("account_id") or profile.external_account_ref or "").strip()
     if not actual or actual != expected:
@@ -109,6 +111,7 @@ async def _refresh_ibkr_connection(db, profile, settings) -> tuple[bool, str]:
         profile.last_connection_status = "CONNECTED" if connected else "FAILED"
         profile.last_connection_test_at = datetime.now(timezone.utc)
         if connected:
+            profile.last_sync_at = datetime.now(timezone.utc)
             profile.equity_usd = float(account.get("equity") or 0)
             profile.wallet_balance_usd = float(account.get("cash") or 0)
             profile.available_balance_usd = float(account.get("available") or 0)

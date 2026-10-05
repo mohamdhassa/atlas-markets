@@ -91,3 +91,20 @@ The 2026-09-29 incident proved that the bare systemd Gateway exits during its da
 returns to an unauthenticated login screen. Production now uses the ARM64 IBC deployment in
 `IBKR_IBC_RELIABILITY.md`. Weekly token invalidation and exceptional IBKR security challenges
 still require operator approval.
+
+## Backend connectivity and read recovery
+
+The bridge distinguishes the local Gateway socket from the Gateway connection to IBKR.
+Errors 1100/2110 mark the backend unavailable; 1101/1102 restore it. A market-data farm OK
+message alone does not restore backend readiness. Pending reads are interrupted on loss,
+and fresh account data is required after restoration. Orders are never automatically retried.
+
+Timed-out reads enter an operation-specific cooldown (10, 20, 40, 80, then at most 120 seconds).
+Concurrent account, position and open-order reads cannot queue duplicate requests. During a
+known backend outage the watchdog logs `IBKR_SERVER_UNAVAILABLE` and preserves the Gateway
+session while it reconnects. It still recovers a stopped/unhealthy Gateway or broken local socket.
+
+Portfolio and Dashboard mark saved IBKR balances STALE with their last synchronization time.
+Unknown positions show unavailable instead of FLAT. Partial totals exclude unavailable providers;
+Bybit can continue reporting independently. Saved balances cannot satisfy execution readiness.
+See [outage handling release](RELEASE_V1_IBKR_OUTAGE_RECOVERY.md) for validation and deployment.
