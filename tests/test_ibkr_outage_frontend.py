@@ -6,7 +6,7 @@ import pytest
 
 def test_outage_assets_have_new_cache_versions():
     html = Path('app/static/index.html').read_text()
-    assert 'portfolio-v61.js?v=84.1' in html
+    assert 'portfolio-v61.js?v=84.2' in html
     assert 'dashboard-v72-2.js?v=72.3' in html
 
 
