@@ -14,4 +14,4 @@ def test_desktop_sidebar_is_fixed_while_main_page_scrolls():
 def test_sidebar_fix_has_a_new_cache_version():
     index = Path("app/static/index.html").read_text()
 
-    assert "responsive-v1.css?v=1.5" in index
+    assert "responsive-v1.css?v=1.6" in index
