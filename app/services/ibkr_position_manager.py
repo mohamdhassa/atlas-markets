@@ -12,6 +12,7 @@ from app.db.models.automation import AutomationAction, AutomationScan
 from app.db.models.broker import BrokerProfile
 from app.db.models.strategy import StrategyProfile
 from app.db.models.symbol_strategy import SymbolStrategy
+from app.services.scan_lifecycle import interrupt_scan
 from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.signal_risk import generate_signal
@@ -210,6 +211,9 @@ async def run_ibkr_position_manager():
                         if filled:result['status']='EXIT_EXECUTED';scan.executed_count+=1
                     results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result);db.commit()
             scan.status='COMPLETED';scan.finished_at=datetime.now(timezone.utc);db.commit();return {'status':'COMPLETED','purpose':'IBKR_PAPER_POSITION_LIFECYCLE_EXECUTION','execution_enabled':True,'evaluated':scan.symbols_count,'exit_signals':scan.signals_count,'exit_executed':scan.executed_count,'results':results}
+        except asyncio.CancelledError:
+            interrupt_scan(db, scan.id)
+            raise
         except Exception as exc:
             db.rollback();persisted=db.get(AutomationScan,scan.id)
             if persisted is not None:persisted.status='FAILED';persisted.error_message=_short(exc,500);persisted.finished_at=datetime.now(timezone.utc);db.commit()

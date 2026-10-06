@@ -12,6 +12,7 @@ from app.core.crypto import decrypt_secret
 from app.db.models.automation import AutomationAction, AutomationScan
 from app.db.models.broker import BrokerProfile
 from app.db.models.symbol_strategy import SymbolStrategy
+from app.services.scan_lifecycle import interrupt_scan
 from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.autotrade_preflight import autotrade_preflight
@@ -378,6 +379,9 @@ async def run_safe_scan():
                 "executed": scan.executed_count,
                 "results": results,
             }
+        except asyncio.CancelledError:
+            interrupt_scan(db, scan.id)
+            raise
         except Exception as exc:
             error = _short(exc, 500)
             db.rollback()
