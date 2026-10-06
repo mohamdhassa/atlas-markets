@@ -16,7 +16,7 @@ from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.autotrade_preflight import autotrade_preflight
 from app.services.bybit_spot_execution import execute_managed_spot_order
-from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares, ibkr_quantity_is_fractional, ibkr_fractional_policy_payload
+from app.services.ibkr_fractional import ibkr_fill_is_complete, normalize_ibkr_shares, ibkr_quantity_is_fractional, ibkr_fractional_policy_payload
 
 CERTIFIED_AUTOMATION_ROUTES = {
     ("MT5", "DEMO"),
@@ -220,12 +220,14 @@ async def _verify_ibkr_fill(broker, order_id, shares):
     for attempt in range(IBKR_FILL_VERIFY_ATTEMPTS):
         if attempt:
             await asyncio.sleep(IBKR_FILL_VERIFY_DELAY_SECONDS)
-        latest = await broker.order_status(int(order_id))
+        try:
+            latest = await broker.order_status(int(order_id))
+        except Exception as exc:
+            # An accepted order remains unresolved, never a rejected order.
+            return "SUBMITTED", {"verification_error": type(exc).__name__}
         status = latest.get("status") or {}
         state = str(status.get("status") or "").upper()
-        filled = float(status.get("filled") or 0)
-        remaining = float(status.get("remaining") or 0)
-        if filled > float(shares) or ibkr_quantities_match(filled, shares) or (state == "FILLED" and remaining <= 0):
+        if ibkr_fill_is_complete(status, shares):
             return "FILLED", latest
         if state in IBKR_TERMINAL_ORDER_STATUSES:
             return "CANCELLED", latest
@@ -353,6 +355,7 @@ async def run_safe_scan():
                     _persist_action(db, scan, user_id, item, result)
                     if result.get("status") == "EXECUTED":
                         scan.executed_count += 1
+                    db.commit()
 
             finished = datetime.now(timezone.utc)
             scan.status = "COMPLETED"

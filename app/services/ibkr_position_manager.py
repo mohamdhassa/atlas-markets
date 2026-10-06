@@ -15,7 +15,7 @@ from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.signal_risk import generate_signal
-from app.services.ibkr_fractional import ibkr_quantities_match
+from app.services.ibkr_fractional import ibkr_fill_is_complete, ibkr_quantities_match
 
 
 def _canonical(value):return str(value or '').strip().upper().replace('/','').replace(' ','')
@@ -153,8 +153,12 @@ async def _verify_fill(broker,order_id,quantity):
     latest=None
     for attempt in range(6):
         if attempt:await asyncio.sleep(1)
-        latest=await broker.order_status(int(order_id));status=latest.get('status') or {};state=str(status.get('status') or '').upper();filled=float(status.get('filled') or 0);remaining=float(status.get('remaining') or 0)
-        if filled>quantity or ibkr_quantities_match(filled,quantity) or (state=='FILLED' and remaining<=0):return True,latest
+        try:
+            latest=await broker.order_status(int(order_id))
+        except Exception as exc:
+            return False, {'verification_error':type(exc).__name__}
+        status=latest.get('status') or {};state=str(status.get('status') or '').upper()
+        if ibkr_fill_is_complete(status,quantity):return True,latest
         if state in {'CANCELLED','CANCELED','INACTIVE','API CANCELLED','APICANCELLED'}:return False,latest
     return False,latest
 
@@ -204,7 +208,7 @@ async def run_ibkr_position_manager():
                     if order_id is not None:
                         filled,final_status=await _verify_fill(broker,order_id,abs(qty));close_result['final_status']=final_status
                         if filled:result['status']='EXIT_EXECUTED';scan.executed_count+=1
-                    results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result)
+                    results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result);db.commit()
             scan.status='COMPLETED';scan.finished_at=datetime.now(timezone.utc);db.commit();return {'status':'COMPLETED','purpose':'IBKR_PAPER_POSITION_LIFECYCLE_EXECUTION','execution_enabled':True,'evaluated':scan.symbols_count,'exit_signals':scan.signals_count,'exit_executed':scan.executed_count,'results':results}
         except Exception as exc:
             db.rollback();persisted=db.get(AutomationScan,scan.id)

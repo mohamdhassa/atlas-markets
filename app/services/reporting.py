@@ -38,7 +38,7 @@ def generate_daily_reports(day: date | None = None) -> int:
 
 async def reporting_loop(stop_event: asyncio.Event):
     while not stop_event.is_set():
-        try:generate_daily_reports()
+        try:await asyncio.to_thread(generate_daily_reports)
         except Exception:pass
         try:await asyncio.wait_for(stop_event.wait(),timeout=3600)
         except asyncio.TimeoutError:pass

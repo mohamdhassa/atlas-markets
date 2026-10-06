@@ -86,3 +86,20 @@ def ibkr_fractional_policy_payload(*, fractional_enabled: bool | None = None) ->
         "capability_check": "BROKER_NATIVE_WHAT_IF_EACH_ORDER",
         "runtime_flag": "IBKR_FRACTIONAL_API_ENABLED",
     }
+
+
+def ibkr_fill_is_complete(status: dict, expected_quantity: object) -> bool:
+    """Require exact finite fill quantity and zero remaining broker quantity."""
+    try:
+        expected = float(expected_quantity)
+        filled = float(status.get("filled"))
+        remaining = float(status.get("remaining"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        math.isfinite(expected) and expected > 0
+        and math.isfinite(filled) and filled > 0
+        and math.isfinite(remaining) and remaining >= 0
+        and ibkr_quantities_match(filled, expected)
+        and ibkr_quantities_match(remaining, 0)
+    )
