@@ -5,6 +5,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Product and design
 
+- [Responsive frontend](RELEASE_V1_1_RESPONSIVE.md) — phone instrument list scrolls horizontally within the existing Portfolio layout.
+
 - [Portfolio single render](RELEASE_V1_PORTFOLIO_SINGLE_RENDER.md) — preserve the final design while removing intermediate layout flashes.
 
 - [Architecture](ARCHITECTURE.md) — components, trust boundaries and runtime flow.

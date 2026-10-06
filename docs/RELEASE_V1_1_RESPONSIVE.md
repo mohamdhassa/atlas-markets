@@ -17,9 +17,10 @@ backend behavior are preserved.
 - Initial application boot occurs after all page decorators load, preventing intermediate
   legacy layouts from flashing before the final page renderer.
 - Safe-area padding and 44-pixel touch targets support modern mobile devices.
-- The Portfolio trading universe uses separated two-column instrument cards on phones and a
-  single column on very narrow screens, preventing symbol, market, mode and state text from
-  collapsing into one continuous line.
+- The Portfolio terminal trading universe uses one horizontally scrollable instrument row
+  on phones, including narrow screens. Cards retain readable labels and do not shrink or
+  wrap into additional rows. Swiping stays inside the list; page width, chart sizes, existing
+  colors, typography and the desktop list remain unchanged. Responsive asset version: 1.6.
 - Portfolio grids and canvases are constrained to the available viewport width. Hero status
   pills retain their natural height, while the Performance button takes its own mobile row.
 - Terminal candle labels now read provider `timestamp_ms` dates instead of inventing dates
