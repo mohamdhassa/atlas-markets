@@ -5,6 +5,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Product and design
 
+- [Portfolio single render](RELEASE_V1_PORTFOLIO_SINGLE_RENDER.md) — preserve the final design while removing intermediate layout flashes.
+
 - [Architecture](ARCHITECTURE.md) — components, trust boundaries and runtime flow.
 - [ERD](ERD.md) — PostgreSQL entities, relationships and ownership rules.
 - [ERP operating model](ERP_OPERATING_MODEL.md) — ERP-style control, workflow and audit model.
