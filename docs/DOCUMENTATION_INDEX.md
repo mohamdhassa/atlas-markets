@@ -35,6 +35,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Production operations
 
+- [Position slots and interrupted scans](RELEASE_V1_POSITION_SLOTS_AND_INTERRUPTED_SCANS.md) — conservative quantity-dust classification and worker cancellation audit.
+
 - [Fill audit and reporting isolation](RELEASE_V1_FILL_AUDIT_AND_REPORTING.md) — preserve accepted orders across status-read failures and keep daily reporting off the web event loop.
 
 - [IBKR outage recovery](RELEASE_V1_IBKR_OUTAGE_RECOVERY.md) — backend connectivity, bounded read cooldowns and explicit stale balances.
