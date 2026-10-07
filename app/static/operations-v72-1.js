@@ -1,4 +1,4 @@
-/* ATLAS v72.1 — read-only Operations command center presentation. */
+/* ATLAS Operations command center and ADMIN simulation controls. */
 (()=>{'use strict';
 const E=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const U=v=>v==null||!Number.isFinite(Number(v))?'—':'$'+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -20,7 +20,32 @@ function providerCard(a,actions,positions,spot){
  const extra=provider==='BYBIT'&&spot&&!spot.error?`<div class="v721-fact"><span>BUY certification</span><strong>${spot.buy_certified?'PASSED':'PENDING'}</strong></div><div class="v721-fact"><span>SELL certification</span><strong>${spot.sell_certified?'PASSED':'PENDING'}</strong></div>`:`<div class="v721-fact"><span>Open positions</span><strong>${ps.length}</strong></div><div class="v721-fact"><span>Recent decisions</span><strong>${recent.length}</strong></div>`;
  return `<article class="panel v721-provider"><div class="v721-provider-head"><div><p class="eyebrow">${E(provider)}</p><div class="v721-provider-name">${E(a.account_label)}</div><div class="muted">${E(a.environment)} · ${E(a.market||'—')}</div></div>${B(route,routeGood?'good':'warn')}</div><div class="v721-facts"><div class="v721-fact"><span>Connection</span><strong>${E(a.last_connection_status||'UNKNOWN')}</strong><span>${provider==='IBKR'&&providerUnavailable?'Gateway/API session needs attention':''}</span></div><div class="v721-fact"><span>Equity</span><strong>${U(a.equity_usd)}</strong></div>${extra}</div><div class="v721-route muted">${provider==='BYBIT'?'Managed Spot simulation route':'IBKR Paper broker route'} · ${recent.length} recent ATLAS actions</div></article>`;
 }
-async function operations(){
+let scanBusy=false,controlBusy=false;
+function bindControls(panel){
+ const message=panel.querySelector('[role="status"]');
+ const buttons=[...panel.querySelectorAll('button')];
+ const sync=()=>buttons.forEach(b=>{b.disabled=b.dataset.action==='scan'?(scanBusy||controlBusy||panel.dataset.scanAllowed!=='true'):(controlBusy||(scanBusy&&b.dataset.action!=='kill'))});
+ buttons.forEach(button=>{button.onclick=async()=>{
+  const action=button.dataset.action;
+  if(button.disabled)return;
+  const prompts={scan:'Run one scan? Approved certified paper/testnet/demo trades may be submitted.',restart:'Enable automation and clear the kill switch? Certified simulation execution resumes only if its existing setting is enabled.',kill:'Activate the kill switch? New automated submissions will stop; existing positions will not be closed.'};
+  if(prompts[action]&&!confirm(prompts[action]))return;
+  if(action==='scan')scanBusy=true;else controlBusy=true;
+  sync();message.textContent=action==='scan'?'Running scan…':'Updating automation…';
+  try{
+   let result;
+   if(action==='pause'){
+    const latest=await api('/automation/state');
+    result=await api('/automation/state',{method:'PUT',body:JSON.stringify({enabled:false,simulation_execution:latest.simulation_execution,interval_seconds:latest.interval_seconds,symbols:latest.symbols})});
+   }else result=await api('/automation/'+(action==='scan'?'scan-now':action),{method:'POST'});
+   const notice=action==='scan'?`Scan ${result.status}: ${result.signals||0} signals, ${result.approved||0} approved, ${result.executed||0} executed.${result.reason?' '+result.reason:''}`:action==='pause'?'Automation paused. Existing positions remain open.':action==='kill'?'Kill switch active. Existing positions remain open.':'Automation enabled; existing simulation execution setting preserved.';
+   // A completed request must not replace a page the operator navigated to.
+   if(document.getElementById('v721-controls')===panel)await operations(notice);
+  }catch(error){message.textContent=`Request failed: ${error.message}. Refresh Operations to confirm state before retrying.`;}
+  finally{if(action==='scan')scanBusy=false;else controlBusy=false;sync();const current=document.getElementById('v721-controls');if(current&&current!==panel)bindControls(current);}
+ }});sync();
+}
+async function operations(notice=''){
  content.innerHTML='<div class="panel empty-state">Loading Operations command center…</div>';
  try{
   const [accounts,auto,actions,portfolio]=await Promise.all([api('/accounts'),api('/automation/state'),api('/automation/actions?limit=100'),api('/portfolio').catch(()=>({positions:[],errors:[]}))]);
@@ -29,11 +54,13 @@ async function operations(){
   const running=auto.enabled&&!auto.killed,connected=execution.filter(a=>String(a.last_connection_status||'').toUpperCase()==='CONNECTED').length,executed=actions.filter(a=>String(a.status||'').toUpperCase()==='EXECUTED').length,blocked=actions.filter(a=>['BLOCK','BLOCKED','RISK_BLOCKED','PROVIDER_UNAVAILABLE'].includes(String(a.status||'').toUpperCase())).length;
   content.innerHTML=`<div class="v721-hero"><div><p class="eyebrow">OPERATIONS COMMAND CENTER</p><h3>Unified execution operations</h3><p class="muted">Bybit Testnet + IBKR Paper readiness, positions and ATLAS activity in one workspace.</p></div><div class="v721-status">${B(running?'AUTOMATION RUNNING':'AUTOMATION STOPPED',running?'good':'warn')}${B(auto.killed?'KILL SWITCH ACTIVE':'KILL SWITCH CLEAR',auto.killed?'warn':'good')}${B(`${connected}/${execution.length} ROUTES CONNECTED`,connected===execution.length?'good':'warn')}</div></div>
   <div class="metric-grid"><div class="metric-card"><span>Scan interval</span><strong>${Number(auto.interval_seconds||0)}s</strong><small>Automation cycle</small></div><div class="metric-card"><span>Execution providers</span><strong>${execution.length}</strong><small>Bybit + IBKR</small></div><div class="metric-card"><span>Open positions</span><strong>${(portfolio.positions||[]).length}</strong><small>Broker-held / managed</small></div><div class="metric-card"><span>Executed · recent</span><strong>${executed}</strong><small>Latest 100 actions</small></div><div class="metric-card"><span>Blocked · recent</span><strong>${blocked}</strong><small>Risk/execution blocks</small></div></div>
+  ${state.user?.role==='ADMIN'?`<section class="panel" id="v721-controls" data-scan-allowed="${!!(running&&auto.simulation_execution)}"><p class="eyebrow">AUTOMATION CONTROLS</p><h3>Engine controls</h3><p class="muted">Certified simulation routes only. Pause and kill stop new submissions; they do not close existing positions.</p><div class="v721-facts"><div class="v721-fact"><span>Simulation execution</span><strong>${auto.simulation_execution?'ON':'OFF'}</strong></div><div class="v721-fact"><span>Next scan</span><strong>${D(auto.next_scan_at)}</strong></div></div><div class="v721-status" style="justify-content:flex-start;margin-top:14px"><button class="primary-button" data-action="scan">Run monitored scan</button><button class="ghost-button" data-action="pause">Pause automation</button><button class="ghost-button" data-action="restart">Enable automation / clear kill</button><button class="danger-button" data-action="kill">Activate kill switch</button></div><p class="muted" role="status" aria-live="polite">${E(notice||(!running?'Enable automation before scanning.':!auto.simulation_execution?'Simulation execution is off; manual execution scan is unavailable.':'Ready for a monitored scan.'))}</p></section>`:''}
   <div class="v721-providers">${execution.map(a=>providerCard(a,actions,portfolio.positions||[],spots[a.id])).join('')||'<div class="panel empty-state">No Bybit or IBKR execution provider configured.</div>'}</div>
   <section class="panel"><div class="page-intro"><div><p class="eyebrow">UNIFIED ACTIVITY</p><h3>Recent ATLAS decisions</h3><p class="muted">Provider, strategy action and execution result remain separate fields.</p></div>${B(actions.length+' ACTIONS',true)}</div><div class="table-wrap v721-actions"><table class="data-table"><thead><tr><th>Time</th><th>Provider</th><th>Symbol</th><th>Decision</th><th>Status</th><th>Reason</th><th>Qty</th></tr></thead><tbody>${actions.map(x=>`<tr><td>${D(x.created_at)}</td><td><strong>${E(x.provider)}</strong></td><td>${E(x.symbol)}</td><td>${E(x.side||'HOLD')}</td><td>${B(x.status,String(x.status).toUpperCase()==='EXECUTED'?'good':'warn')}</td><td>${E(x.reason)}</td><td>${x.quantity==null?'—':E(x.quantity)}</td></tr>`).join('')||'<tr><td colspan="7">No recent actions.</td></tr>'}</tbody></table></div></section>
   <section class="panel"><details><summary><strong>All provider accounts</strong></summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Account</th><th>Environment</th><th>Connection</th><th>Equity</th></tr></thead><tbody>${accounts.map(a=>`<tr><td>${E(a.provider)}</td><td>${E(a.account_label)}</td><td>${E(a.environment)}</td><td>${E(a.last_connection_status||'UNKNOWN')}</td><td>${U(a.equity_usd)}</td></tr>`).join('')}</tbody></table></div></details></section>`;
+  const controls=document.getElementById('v721-controls');if(controls)bindControls(controls);
  }catch(e){content.innerHTML=`<div class="panel empty-state">Operations unavailable: ${E(e.message)}</div>`}
 }
 const previous=renderPage;renderPage=async page=>{if(page==='Operations'){setActive(page);return operations()}return previous(page)};
-window.AtlasOperationsV721={operations};
+window.AtlasOperationsV721={operations,bindControls};
 })();
