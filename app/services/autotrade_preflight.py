@@ -93,6 +93,8 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
             "readiness": row.get("readiness"),
             "execution": "NONE",
         }
+        if row.get("managed_position_slots") is not None:
+            base["managed_position_slots"] = row["managed_position_slots"]
         if row.get("readiness") != "PASS":
             items.append({
                 **base,

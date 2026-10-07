@@ -21,6 +21,7 @@ from app.analysis.strategy_router import route_strategy
 from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal
 from app.services.capital_sizing import capital_policy_payload, capital_sizing_inputs
+from app.services.bybit_spot_execution import managed_position_slots
 
 READINESS_MAX_GROSS_EXPOSURE_PCT = 50.0
 READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT = 5
@@ -219,6 +220,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
     market = BybitPublicMarketData(settings.bybit_public_base_url, settings.market_data_timeout_seconds)
     rows = []
     portfolio_reservations = {}
+    managed_slot_cache = {}
 
     for cfg in sorted(configs, key=lambda x: (x.market, x.symbol)):
         profile = profiles.get(cfg.profile_id)
@@ -268,7 +270,11 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 holdings = broker.spot_holdings_from_wallet(wallet)
                 existing_gross = sum(float(row.get("usd_value") or 0) for row in holdings)
                 managed_rows = list(db.scalars(select(BybitManagedInventory).where(BybitManagedInventory.broker_profile_id == profile.id, BybitManagedInventory.managed_quantity > 1e-12)).all())
-                existing_positions = len(managed_rows)
+                if profile.id not in managed_slot_cache:
+                    managed_slot_cache[profile.id] = await managed_position_slots(broker, managed_rows)
+                slots = managed_slot_cache[profile.id]
+                existing_positions = slots["count"]
+                base["managed_position_slots"] = slots
                 managed = db.scalar(select(BybitManagedInventory).where(BybitManagedInventory.broker_profile_id == profile.id, BybitManagedInventory.symbol == str(cfg.symbol).upper()))
                 existing_qty = float(managed.managed_quantity or 0) if managed else 0.0
                 ticker = await market.get_tickers(category="spot", symbols=(cfg.symbol,))

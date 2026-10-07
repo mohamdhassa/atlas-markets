@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from datetime import datetime, timezone
 
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.brokers.bybit_private import BybitPrivateClient
+from app.brokers.bybit_private import BybitPrivateError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
@@ -17,6 +19,30 @@ BYBIT_SIMULATION_ENVIRONMENTS = {"TESTNET", "DEMO"}
 BYBIT_FILL_VERIFY_ATTEMPTS = 6
 BYBIT_FILL_VERIFY_DELAY_SECONDS = 1.0
 BYBIT_FILLED_STATUSES = {"FILLED", "PARTIALLYFILLED"}
+
+
+async def managed_position_slots(client: BybitPrivateClient, inventories) -> dict:
+    """Exclude only broker-confirmed quantity dust; retain inventory and exposure."""
+    dust = []
+    unknown = []
+    count = 0
+    for inventory in inventories:
+        symbol = _canonical_symbol(inventory.symbol)
+        try:
+            step, minimum = await client._spot_lot_size(symbol)
+            values = (float(step), float(minimum or 0), float(inventory.managed_quantity))
+            if not all(math.isfinite(value) for value in values) or values[0] <= 0 or values[1] < 0 or values[2] <= 0:
+                raise ValueError("INVALID_SLOT_METADATA")
+            client._normalize_spot_qty(inventory.managed_quantity, step, minimum)
+        except BybitPrivateError as exc:
+            if str(exc) == "SPOT_QUANTITY_BELOW_MINIMUM":
+                dust.append(symbol)
+                continue
+            unknown.append(symbol)
+        except Exception:
+            unknown.append(symbol)
+        count += 1
+    return {"count": count, "quantity_dust_symbols": dust, "unverified_symbols": unknown}
 
 
 def _canonical_symbol(value: str) -> str:
