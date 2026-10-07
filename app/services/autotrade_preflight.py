@@ -131,6 +131,15 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
                 if side not in {"BUY", "SELL"}:
                     items.append({**base, "preflight": "BLOCK", "reason": "INVALID_BYBIT_SPOT_SIDE"})
                     continue
+                symbol = _canonical_symbol(row.get("symbol"))
+                dust_symbols = {
+                    _canonical_symbol(value)
+                    for value in (row.get("managed_position_slots") or {}).get("quantity_dust_symbols", [])
+                }
+                if side == "SELL" and symbol in dust_symbols:
+                    items.append({**base, "preflight": "BLOCK", "reason": "BYBIT_MANAGED_QUANTITY_DUST",
+                                  "request": {"side": side, "quantity": quantity}})
+                    continue
                 broker = _bybit_client(profile, settings)
                 open_orders = (await broker.spot_open_orders()).get("list") or []
                 symbol = _canonical_symbol(row.get("symbol"))
