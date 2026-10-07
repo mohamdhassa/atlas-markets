@@ -27,6 +27,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Use and administration
 
+- [Operations automation controls](RELEASE_V1_OPERATIONS_AUTOMATION_CONTROLS.md) — ADMIN scan, pause, enable and kill inside Operations.
+
 - [User and administrator guide](USER_ADMIN_GUIDE.md) — daily use and interpretation.
 - [Developer onboarding](DEVELOPER_ONBOARDING.md) — repository map, workflow and definition of done.
 - [API reference](API_REFERENCE.md) — operational endpoint families and roles.
