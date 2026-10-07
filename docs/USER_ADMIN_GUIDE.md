@@ -41,6 +41,10 @@ presented as an ATLAS-generated trade unless an exact persisted order match exis
 
 ## Automation controls
 
+Open **Operations** as ADMIN to run a monitored scan, pause automation, enable automation
+and clear kill, or activate the kill switch. USER sees status only. Enable preserves the
+existing simulation execution setting; scan is unavailable while that setting is off.
+
 Kill prevents new automated submissions; it does not liquidate positions. Restart resumes
 only after operator review and reconciliation. Scan Now requests a cycle while all safety
 gates remain active.
