@@ -91,7 +91,7 @@ def test_failed_reads_back_off_and_success_resets_cooldown(node, monkeypatch):
 def test_overlapping_orders_fail_fast_and_release_after_timeout(node, monkeypatch):
     calls = []
     with bridge.read_locks['orders']:
-        monkeypatch.setattr(node, 'reqOpenOrders', lambda: calls.append(True))
+        monkeypatch.setattr(node, 'reqAllOpenOrders', lambda: calls.append(True))
         with pytest.raises(HTTPException, match='IBKR_READ_ALREADY_IN_PROGRESS'):
             bridge.orders(None)
     assert not calls
