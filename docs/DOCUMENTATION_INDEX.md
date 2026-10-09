@@ -37,6 +37,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Production operations
 
+- [IBKR native Paper protection](RELEASE_V1_IBKR_NATIVE_PROTECTION.md) — broker-held OCA exits, persistent submission intent and explicit activation.
+
 - [Bybit cancelled outcomes](RELEASE_V1_BYBIT_CANCELLED_OUTCOMES.md) — exact zero-fill cancellation audit and conservative pending reconciliation.
 
 - [Bybit unresolved submissions](RELEASE_V1_BYBIT_PENDING_SUBMISSION.md) — block another order until a persisted submission is reconciled.
