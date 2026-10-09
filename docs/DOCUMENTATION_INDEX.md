@@ -37,6 +37,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Production operations
 
+- [Bybit cancelled outcomes](RELEASE_V1_BYBIT_CANCELLED_OUTCOMES.md) — exact zero-fill cancellation audit and conservative pending reconciliation.
+
 - [Bybit unresolved submissions](RELEASE_V1_BYBIT_PENDING_SUBMISSION.md) — block another order until a persisted submission is reconciled.
 
 - [Bybit dust preflight](RELEASE_V1_BYBIT_DUST_PREFLIGHT.md) — block confirmed quantity-dust sells before execution.
