@@ -13,6 +13,7 @@ from app.brokers.bybit_private import BybitPrivateError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
+from app.db.models.automation import AutomationAction
 from app.db.models.bybit_inventory import BybitManagedInventory
 
 BYBIT_SIMULATION_ENVIRONMENTS = {"TESTNET", "DEMO"}
@@ -197,6 +198,26 @@ async def execute_managed_spot_order(
     if side not in {"BUY", "SELL"} or quantity <= 0:
         return {**base, "status": "BLOCK", "reason": "INVALID_ORDER_PROPOSAL"}
 
+    # Unknown fills must be reconciled, not replaced by a new random order link.
+    pending = db.scalar(
+        select(AutomationAction).where(
+            AutomationAction.user_id == user_id,
+            AutomationAction.broker_profile_id == profile.id,
+            AutomationAction.provider == "BYBIT",
+            AutomationAction.environment == environment,
+            AutomationAction.symbol == symbol,
+            AutomationAction.status == "SUBMITTED",
+        ).order_by(AutomationAction.created_at.asc()).limit(1)
+    )
+    if pending is not None:
+        return {
+            **base,
+            "status": "BLOCK",
+            "reason": "BYBIT_SUBMISSION_RECONCILIATION_REQUIRED",
+            "pending_action_id": str(pending.id),
+            "pending_broker_order_id": pending.broker_order_id,
+        }
+
     inventory = managed_inventory(db, profile.id, symbol)
     managed_before = float(inventory.managed_quantity or 0) if inventory else 0.0
     if side == "BUY" and managed_before > 1e-12:
@@ -246,15 +267,23 @@ async def execute_managed_spot_order(
         qty=quantity,
         order_link_id=order_link_id,
     )
-    fill = await _verify_spot_fill(client, order_link_id)
+    verification_error = None
+    try:
+        fill = await _verify_spot_fill(client, order_link_id)
+    except Exception as exc:
+        # Preserve the accepted identity even if its subsequent read fails.
+        fill = None
+        verification_error = type(exc).__name__
     if fill is None:
         return {
             **base,
             "status": "SUBMITTED",
             "reason": "BROKER_FILL_NOT_CONFIRMED",
             "order_link_id": order_link_id,
+            "broker_order_id": broker_result.get("orderId"),
             "broker_result": broker_result,
             "managed_quantity_before": managed_before,
+            "verification_error": verification_error,
         }
 
     filled_quantity = _fill_quantity(fill, quantity)
