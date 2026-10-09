@@ -37,6 +37,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 ## Production operations
 
+- [Bybit unresolved submissions](RELEASE_V1_BYBIT_PENDING_SUBMISSION.md) — block another order until a persisted submission is reconciled.
+
 - [Bybit dust preflight](RELEASE_V1_BYBIT_DUST_PREFLIGHT.md) — block confirmed quantity-dust sells before execution.
 
 - [Position slots and interrupted scans](RELEASE_V1_POSITION_SLOTS_AND_INTERRUPTED_SCANS.md) — conservative quantity-dust classification and worker cancellation audit.
