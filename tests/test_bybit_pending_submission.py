@@ -24,7 +24,7 @@ def db():
 
 @pytest.fixture
 def profile():
-    return NS(id=uuid.uuid4(), user_id=uuid.uuid4(), environment='TESTNET',
+    return NS(id=uuid.uuid4(), user_id=uuid.uuid4(), provider='BYBIT', environment='TESTNET',
               execution_certified=True, execution_certification_buy_passed=True,
               execution_certification_sell_passed=True, is_enabled=True,
               is_active=True, credentials_configured=True, last_connection_status='CONNECTED')
