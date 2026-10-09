@@ -1,9 +1,10 @@
 from __future__ import annotations
 import argparse,os,threading,time,math
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from functools import wraps
 from datetime import datetime,timedelta,timezone
 from fastapi import FastAPI,HTTPException,Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.contract import Contract
@@ -12,12 +13,12 @@ import uvicorn
 
 class State(EWrapper,EClient):
  def __init__(self):
-  self.account_requests={}
+  self.account_requests={};self.protection_attempts=set()
   self.connection_epoch=0;self.request_epochs={};self.server_connected=None;self.server_changed_at=None;self.read_failures={};self.read_retry_at={};self.read_state_lock=threading.Lock()
   EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self.order_statuses={};self.whatif_results={};self._events={}
  def _event(self,k):return self._events.setdefault(k,threading.Event())
  def nextValidId(self,orderId):
-  self.next_id=orderId
+  self.next_id=max(orderId,self.next_id or orderId)
   if self.server_connected is None:self.server_connected=True
   self._event('connected').set()
  def managedAccounts(self,accountsList):self.accounts=[x for x in accountsList.split(',') if x]
@@ -29,7 +30,9 @@ class State(EWrapper,EClient):
  def position(self,account,contract,pos,avgCost):self.positions.append({'account':account,'symbol':contract.symbol,'sec_type':contract.secType,'exchange':contract.exchange,'currency':contract.currency,'quantity':float(pos),'avg_cost':float(avgCost)})
  def positionEnd(self):self._event('positions').set()
  def openOrder(self,orderId,contract,order,orderState):
-  self.open_orders.append({'order_id':orderId,'symbol':contract.symbol,'sec_type':contract.secType,'side':order.action,'type':order.orderType,'quantity':float(order.totalQuantity),'limit_price':float(order.lmtPrice or 0),'aux_price':float(order.auxPrice or 0),'status':orderState.status})
+  if not getattr(order,'whatIf',False):
+   self.open_orders.append({'order_id':orderId,'symbol':contract.symbol,'sec_type':contract.secType,'side':order.action,'type':order.orderType,'quantity':float(order.totalQuantity),'limit_price':float(order.lmtPrice or 0),'aux_price':float(order.auxPrice or 0),'status':orderState.status,'account':order.account,'client_id':order.clientId,'order_ref':order.orderRef,'oca_group':order.ocaGroup,'oca_type':order.ocaType,'tif':order.tif,'outside_rth':order.outsideRth})
+   self.next_id=max(self.next_id or 0,int(orderId)+1)
   if getattr(order,'whatIf',False):
    def f(name):
     try:
@@ -79,6 +82,14 @@ class State(EWrapper,EClient):
 
 app=FastAPI(title='ATLAS IBKR Bridge');ib=State();cfg={}
 account_lock=threading.Lock();account_cache=None;account_cache_at=0.0
+mutation_lock=threading.RLock()
+def serial_mutation(fn):
+ @wraps(fn)
+ def wrapped(*args,**kwargs):
+  if not mutation_lock.acquire(blocking=False):raise HTTPException(503,'IBKR_MUTATION_ALREADY_IN_PROGRESS')
+  try:return fn(*args,**kwargs)
+  finally:mutation_lock.release()
+ return wrapped
 def auth(x_atlas_bridge_token:str|None):
  token=cfg.get('token')
  if token and x_atlas_bridge_token!=token:raise HTTPException(401,'invalid bridge token')
@@ -153,7 +164,7 @@ def startup():
 def shutdown():ib.disconnect()
 @app.get('/health')
 def health(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);return {'status':'ok' if server_ready() else 'degraded','connected':server_ready(),'socket_connected':ib.isConnected(),'server_connected':ib.server_connected,'server_changed_at':ib.server_changed_at,'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'errors':ib.errors[-12:]}
+ auth(x_atlas_bridge_token);return {'status':'ok' if server_ready() else 'degraded','connected':server_ready(),'socket_connected':ib.isConnected(),'server_connected':ib.server_connected,'server_changed_at':ib.server_changed_at,'accounts':ib.accounts,'host':cfg['host'],'port':cfg['port'],'client_id':cfg['client_id'],'simulation':cfg['simulation'],'native_protection_available':True,'errors':ib.errors[-12:]}
 @app.get('/account')
 def account(x_atlas_bridge_token:str|None=Header(default=None)):
  global account_cache,account_cache_at
@@ -185,7 +196,8 @@ def positions(x_atlas_bridge_token:str|None=Header(default=None)):
 @app.get('/orders')
 @serial_read('orders')
 def orders(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);read_ready('orders');ib.open_orders=[];prepare('orders');ib.reqOpenOrders();wait('orders');return {'list':ib.open_orders}
+ auth(x_atlas_bridge_token);read_ready('orders');ib.open_orders=[];prepare('orders');ib.reqAllOpenOrders();wait('orders')
+ return {'list':[{**row,'filled':float((ib.order_statuses.get(int(row['order_id'])) or {}).get('filled') or 0)} for row in ib.open_orders]}
 @app.get('/orders/{order_id}/status')
 def order_status(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);status=ib.order_statuses.get(int(order_id));errs=[e for e in ib.errors if int(e.get('id') or -1)==int(order_id)]
@@ -245,6 +257,7 @@ def candles(symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',excha
 class OrderPayload(BaseModel):
  symbol:str;side:str;quantity:float;order_type:str='MKT';limit_price:float|None=None;sec_type:str='STK';exchange:str='SMART';currency:str='USD';account_id:str|None=None
 @app.post('/order-check')
+@serial_mutation
 def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);require_server()
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
@@ -267,6 +280,7 @@ def order_check(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None
  margin={k:result.get(k) for k in ('init_margin_before','init_margin_change','init_margin_after','maint_margin_before','maint_margin_change','maint_margin_after','equity_with_loan_before','equity_with_loan_change','equity_with_loan_after')}
  return {'ok':not bool(errs),'what_if':True,'simulation':True,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper(),'margin':margin,'commission':{'estimate':result.get('commission'),'min':result.get('min_commission'),'max':result.get('max_commission'),'currency':result.get('commission_currency')},'warning':result.get('warning'),'errors':errs[-8:]}
 @app.post('/orders')
+@serial_mutation
 def place(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);require_server()
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
@@ -282,10 +296,100 @@ def place(p:OrderPayload,x_atlas_bridge_token:str|None=Header(default=None)):
  ib.placeOrder(oid,contract(p.symbol,p.sec_type,p.exchange,p.currency),o);ib.next_id+=1
  return {'accepted':True,'simulation':True,'order_id':oid,'account_id':p.account_id or cfg.get('account_id'),'symbol':p.symbol.upper(),'side':p.side.upper(),'quantity':p.quantity,'order_type':p.order_type.upper()}
 @app.delete('/orders/{order_id}')
+@serial_mutation
 def cancel(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);require_server()
  if not cfg['simulation']:raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
  ib.cancelOrder(order_id);return {'cancel_requested':True,'order_id':order_id,'simulation':True}
+
+class ProtectionPayload(BaseModel):
+ symbol:str;account_id:str;position_side:str;quantity:float
+ stop_loss:float;take_profit:float
+ entry_key:str=Field(pattern=r'^[0-9a-f]{32}$')
+ allow_submit:bool=False
+
+def protection_prices(side,stop,target,tick):
+ try:values=[Decimal(str(v)) for v in (stop,target,tick)]
+ except Exception:raise HTTPException(400,'INVALID_PROTECTION_PRICES')
+ if any(not v.is_finite() or v<=0 for v in values):raise HTTPException(400,'INVALID_PROTECTION_PRICES')
+ stop,target,tick=values
+ # Move rounding toward the entry, never deepen the saved risk or profit target.
+ sr=ROUND_CEILING if side=='LONG' else ROUND_FLOOR
+ tr=ROUND_FLOOR if side=='LONG' else ROUND_CEILING
+ return float((stop/tick).to_integral_value(rounding=sr)*tick),float((target/tick).to_integral_value(rounding=tr)*tick)
+
+def protection_pair_matches(rows,p,group,stop,target):
+ if len(rows)!=2 or {r.get('type') for r in rows}!={'STP','LMT'}:return False
+ side='SELL' if p.position_side=='LONG' else 'BUY'
+ for row in rows:
+  price=row.get('aux_price') if row.get('type')=='STP' else row.get('limit_price')
+  expected=stop if row.get('type')=='STP' else target
+  if (row.get('account')!=p.account_id or row.get('symbol')!=p.symbol
+      or row.get('sec_type')!='STK' or row.get('side')!=side
+      or row.get('oca_group')!=group or row.get('order_ref')!=group
+      or row.get('oca_type')!=2 or row.get('client_id')!=cfg.get('client_id')
+      or row.get('tif')!='GTC' or row.get('outside_rth') is not False
+      or str(row.get('status') or '').upper() not in {'PRESUBMITTED','SUBMITTED'}
+      or not math.isclose(float(row.get('quantity') or 0)-float(row.get('filled') or 0),p.quantity,rel_tol=0,abs_tol=1e-8)
+      or not math.isclose(float(price or 0),expected,rel_tol=0,abs_tol=1e-8)):return False
+ return True
+
+@app.post('/protection')
+@serial_mutation
+def protection(p:ProtectionPayload,x_atlas_bridge_token:str|None=Header(default=None)):
+ auth(x_atlas_bridge_token);require_server()
+ if not cfg.get('simulation'):raise HTTPException(403,'ATLAS IBKR bridge refuses Live Money execution')
+ p=p.model_copy(update={'symbol':p.symbol.strip().upper(),'position_side':p.position_side.upper()})
+ if (not p.account_id or p.account_id!=cfg.get('account_id') or p.account_id not in ib.accounts
+     or p.position_side not in {'LONG','SHORT'} or not math.isfinite(p.quantity) or p.quantity<=0):
+  raise HTTPException(400,'INVALID_PROTECTION_ACCOUNT_OR_POSITION')
+ live=[r for r in positions(x_atlas_bridge_token)['list'] if r.get('account')==p.account_id and r.get('symbol')==p.symbol and float(r.get('quantity') or 0)!=0]
+ expected=p.quantity if p.position_side=='LONG' else -p.quantity
+ if len(live)!=1 or live[0].get('sec_type')!='STK' or live[0].get('currency')!='USD' or not math.isclose(float(live[0]['quantity']),expected,rel_tol=0,abs_tol=1e-8):
+  raise HTTPException(409,'PROTECTION_POSITION_CHANGED')
+ info=contract_info(p.symbol,x_atlas_bridge_token=x_atlas_bridge_token)
+ if info.get('symbol')!=p.symbol or info.get('sec_type')!='STK' or info.get('currency')!='USD':raise HTTPException(409,'PROTECTION_CONTRACT_MISMATCH')
+ stop,target=protection_prices(p.position_side,p.stop_loss,p.take_profit,info.get('min_tick'))
+ entry=float(live[0].get('avg_cost') or 0)
+ if not math.isfinite(entry) or not (0<stop<entry<target if p.position_side=='LONG' else 0<target<entry<stop):
+  raise HTTPException(400,'PROTECTION_LEVELS_DO_NOT_BRACKET_ENTRY')
+ group='atlas-protect-'+p.entry_key
+ symbol_orders=[r for r in orders(x_atlas_bridge_token)['list'] if r.get('symbol')==p.symbol and str(r.get('status') or '').upper() not in {'FILLED','CANCELLED','CANCELED','INACTIVE','APICANCELLED'}]
+ existing=[r for r in symbol_orders if r.get('oca_group')==group]
+ if protection_pair_matches(existing,p,group,stop,target) and len(symbol_orders)==2:
+  return {'status':'PROTECTED','simulation':True,'oca_group':group,'orders':existing,'stop_loss':stop,'take_profit':target}
+ if symbol_orders:raise HTTPException(409,'PROTECTION_EXISTING_ORDERS_REQUIRE_RECONCILIATION')
+ if not p.allow_submit or group in ib.protection_attempts:raise HTTPException(409,'PROTECTION_SUBMISSION_OUTCOME_UNRESOLVED')
+ side='SELL' if p.position_side=='LONG' else 'BUY'
+ check=order_check(OrderPayload(symbol=p.symbol,side=side,quantity=p.quantity,account_id=p.account_id),x_atlas_bridge_token)
+ if not (check.get('ok') and check.get('what_if') and check.get('simulation')):raise HTTPException(409,'PROTECTION_WHATIF_REJECTED')
+ # Re-read after preflight: a fill/manual action could have changed the position.
+ again=[r for r in positions(x_atlas_bridge_token)['list'] if r.get('account')==p.account_id and r.get('symbol')==p.symbol and float(r.get('quantity') or 0)!=0]
+ if len(again)!=1 or not math.isclose(float(again[0]['quantity']),expected,rel_tol=0,abs_tol=1e-8):raise HTTPException(409,'PROTECTION_POSITION_CHANGED')
+ if any(r.get('symbol')==p.symbol for r in orders(x_atlas_bridge_token)['list']):raise HTTPException(409,'PROTECTION_EXISTING_ORDERS_REQUIRE_RECONCILIATION')
+ oid=ib.next_id
+ if oid is None:raise HTTPException(503,'IBKR next order id unavailable')
+ ib.next_id=int(oid)+2
+ ib.protection_attempts.add(group)
+ identities=[]
+ try:
+  for offset,kind,price in ((0,'STP',stop),(1,'LMT',target)):
+   order=Order();order.action=side;order.totalQuantity=p.quantity;order.orderType=kind
+   order.account=p.account_id;order.tif='GTC';order.outsideRth=False
+   order.ocaGroup=group;order.ocaType=2;order.orderRef=group;order.transmit=offset==1
+   order.eTradeOnly=False;order.firmQuoteOnly=False
+   if kind=='STP':order.auxPrice=price
+   else:order.lmtPrice=price
+   identities.append(int(oid)+offset)
+   ib.placeOrder(int(oid)+offset,contract(p.symbol),order)
+  verified=orders(x_atlas_bridge_token)['list']
+  same=[r for r in verified if r.get('symbol')==p.symbol]
+  if len(same)==2 and protection_pair_matches(same,p,group,stop,target):
+   return {'status':'PROTECTED','simulation':True,'oca_group':group,'orders':same,'stop_loss':stop,'take_profit':target}
+ except Exception:
+  # Do not cancel a surviving stop or silently retry an uncertain broker mutation.
+  pass
+ return {'status':'PROTECTION_PENDING','simulation':True,'reason':'BROKER_PROTECTION_NOT_CONFIRMED','oca_group':group,'order_ids':identities,'stop_loss':stop,'take_profit':target}
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--host',default=os.getenv('ATLAS_IBKR_HOST','127.0.0.1'));p.add_argument('--port',type=int,default=int(os.getenv('ATLAS_IBKR_PORT','7497')));p.add_argument('--client-id',type=int,default=int(os.getenv('ATLAS_IBKR_CLIENT_ID','27')));p.add_argument('--account-id',default=os.getenv('ATLAS_IBKR_ACCOUNT_ID',''));p.add_argument('--bridge-port',type=int,default=int(os.getenv('ATLAS_IBKR_BRIDGE_PORT','8766')));a=p.parse_args();cfg.update(host=a.host,port=a.port,client_id=a.client_id,account_id=a.account_id,token=os.getenv('ATLAS_IBKR_BRIDGE_TOKEN'),simulation=a.port in {7497,4002});uvicorn.run(app,host='0.0.0.0',port=a.bridge_port)
