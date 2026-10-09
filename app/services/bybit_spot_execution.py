@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.brokers.bybit_private import BybitPrivateClient
@@ -112,6 +115,91 @@ def _matching_history_row(history: list[dict], order_link_id: str) -> dict | Non
     return None
 
 
+def _zero_fill_cancellation(row: dict, *, symbol: str, side: str,
+                            order_id: str | None, order_link_id: str | None) -> bool:
+    if not order_id and not order_link_id:
+        return False
+    if order_id and str(row.get("orderId") or "") != str(order_id):
+        return False
+    if order_link_id and row.get("orderLinkId") != order_link_id:
+        return False
+    if _canonical_symbol(row.get("symbol")) != _canonical_symbol(symbol):
+        return False
+    if str(row.get("side") or "").upper() != str(side or "").upper():
+        return False
+    if str(row.get("orderStatus") or "").upper() != "CANCELLED":
+        return False
+    try:
+        filled = Decimal(str(row["cumExecQty"]))
+    except (KeyError, InvalidOperation, TypeError, ValueError):
+        return False
+    return filled.is_finite() and filled == 0
+
+
+async def reconcile_cancelled_submissions(db: Session, *, profile: BrokerProfile,
+                                         user_id: uuid.UUID, symbol: str) -> list[dict]:
+    """Re-read exact broker orders; resolve only proven zero-fill cancellations.
+
+    This does not submit orders or change inventory. The caller commits the audit.
+    """
+    environment = str(profile.environment or "").upper()
+    if (profile.provider != "BYBIT" or environment not in BYBIT_SIMULATION_ENVIRONMENTS
+            or profile.user_id != user_id or not profile.credentials_configured):
+        return []
+    actions = db.scalars(select(AutomationAction).where(
+        AutomationAction.user_id == user_id,
+        AutomationAction.broker_profile_id == profile.id,
+        AutomationAction.provider == "BYBIT",
+        AutomationAction.environment == environment,
+        AutomationAction.symbol == _canonical_symbol(symbol),
+        AutomationAction.status == "SUBMITTED",
+    ).order_by(AutomationAction.created_at.asc()).limit(50)).all()
+    if not actions:
+        return []
+    client = _bybit_client(profile)
+    outcomes = []
+    for action in actions:
+        outcome = {"action_id": str(action.id), "order_id": action.broker_order_id,
+                   "status": "SUBMITTED", "reason": "BROKER_OUTCOME_UNRESOLVED"}
+        try:
+            audit = json.loads(action.raw_json or "{}")
+            if not isinstance(audit, dict):
+                raise ValueError("INVALID_ACTION_AUDIT")
+            result = audit.get("result") or {}
+            order_link_id = result.get("order_link_id") if isinstance(result, dict) else None
+            if not action.broker_order_id:
+                outcomes.append(outcome)
+                continue
+            params = {"category": "spot", "orderId": str(action.broker_order_id), "limit": 50,
+                      "startTime": int((action.created_at - timedelta(days=1)).timestamp() * 1000),
+                      "endTime": int((action.created_at + timedelta(days=1)).timestamp() * 1000)}
+            history = await client.get("/v5/order/history", params)
+            matches = [row for row in history.get("list", []) if _zero_fill_cancellation(
+                row, symbol=action.symbol, side=action.side,
+                order_id=action.broker_order_id, order_link_id=order_link_id)]
+            if len(matches) == 1:
+                evidence = {key: matches[0].get(key) for key in (
+                    "orderId", "orderLinkId", "symbol", "side", "orderStatus",
+                    "cumExecQty", "cancelType", "rejectReason", "updatedTime")}
+                # Do not overwrite a status resolved by another worker during the read.
+                db.refresh(action)
+                if action.status == "SUBMITTED":
+                    audit = json.loads(action.raw_json or "{}")
+                    audit["cancellation_reconciliation"] = {
+                        "broker_order": evidence, "checked_at": datetime.now(timezone.utc).isoformat()}
+                    action.status = "CANCELLED"
+                    action.reason = "BROKER_ZERO_FILL_CANCELLED"
+                    action.raw_json = json.dumps(audit)
+                    db.flush()
+                    outcome.update(status="CANCELLED", reason=action.reason, broker_order=evidence)
+        except SQLAlchemyError:
+            raise
+        except Exception as exc:
+            outcome["read_error"] = type(exc).__name__
+        outcomes.append(outcome)
+    return outcomes
+
+
 async def _verify_spot_fill(client: BybitPrivateClient, order_link_id: str) -> dict | None:
     for attempt in range(BYBIT_FILL_VERIFY_ATTEMPTS):
         if attempt:
@@ -120,6 +208,11 @@ async def _verify_spot_fill(client: BybitPrivateClient, order_link_id: str) -> d
         row = _matching_history_row(history, order_link_id)
         if row is not None:
             return row
+        for candidate in history:
+            if _zero_fill_cancellation(candidate, symbol=candidate.get("symbol"),
+                                       side=candidate.get("side"), order_id=None,
+                                       order_link_id=order_link_id):
+                return candidate
     return None
 
 
@@ -199,8 +292,7 @@ async def execute_managed_spot_order(
         return {**base, "status": "BLOCK", "reason": "INVALID_ORDER_PROPOSAL"}
 
     # Unknown fills must be reconciled, not replaced by a new random order link.
-    pending = db.scalar(
-        select(AutomationAction).where(
+    pending_query = select(AutomationAction).where(
             AutomationAction.user_id == user_id,
             AutomationAction.broker_profile_id == profile.id,
             AutomationAction.provider == "BYBIT",
@@ -208,7 +300,10 @@ async def execute_managed_spot_order(
             AutomationAction.symbol == symbol,
             AutomationAction.status == "SUBMITTED",
         ).order_by(AutomationAction.created_at.asc()).limit(1)
-    )
+    pending = db.scalar(pending_query)
+    if pending is not None and pending.broker_order_id:
+        await reconcile_cancelled_submissions(db, profile=profile, user_id=user_id, symbol=symbol)
+        pending = db.scalar(pending_query)
     if pending is not None:
         return {
             **base,
@@ -284,6 +379,18 @@ async def execute_managed_spot_order(
             "broker_result": broker_result,
             "managed_quantity_before": managed_before,
             "verification_error": verification_error,
+        }
+
+    if str(fill.get("orderStatus") or "").upper() == "CANCELLED":
+        cancelled = _zero_fill_cancellation(fill, symbol=symbol, side=side,
+                                           order_id=broker_result.get("orderId"),
+                                           order_link_id=order_link_id)
+        return {
+            **base, "status": "CANCELLED" if cancelled else "SUBMITTED",
+            "reason": "BROKER_ZERO_FILL_CANCELLED" if cancelled else "BROKER_FILL_NOT_CONFIRMED",
+            "order_link_id": order_link_id, "broker_order_id": broker_result.get("orderId"),
+            "broker_result": {**broker_result, "terminal_order": fill},
+            "managed_quantity_before": managed_before,
         }
 
     filled_quantity = _fill_quantity(fill, quantity)
