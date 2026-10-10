@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,os,threading,time,math
+import argparse,os,threading,time,math,copy
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from functools import wraps
 from datetime import datetime,timedelta,timezone
@@ -13,7 +13,7 @@ import uvicorn
 
 class State(EWrapper,EClient):
  def __init__(self):
-  self.account_requests={};self.protection_attempts=set()
+  self.account_requests={};self.protection_attempts=set();self.open_order_objects={}
   self.connection_epoch=0;self.request_epochs={};self.server_connected=None;self.server_changed_at=None;self.read_failures={};self.read_retry_at={};self.read_state_lock=threading.Lock()
   EClient.__init__(self,self);self.next_id=None;self.accounts=[];self.values={};self.positions=[];self.open_orders=[];self.executions=[];self.commissions={};self.errors=[];self.quotes={};self.bars={};self.contracts={};self.order_statuses={};self.whatif_results={};self._events={}
  def _event(self,k):return self._events.setdefault(k,threading.Event())
@@ -31,7 +31,8 @@ class State(EWrapper,EClient):
  def positionEnd(self):self._event('positions').set()
  def openOrder(self,orderId,contract,order,orderState):
   if not getattr(order,'whatIf',False):
-   self.open_orders.append({'order_id':orderId,'symbol':contract.symbol,'sec_type':contract.secType,'side':order.action,'type':order.orderType,'quantity':float(order.totalQuantity),'limit_price':float(order.lmtPrice or 0),'aux_price':float(order.auxPrice or 0),'status':orderState.status,'account':order.account,'client_id':order.clientId,'order_ref':order.orderRef,'oca_group':order.ocaGroup,'oca_type':order.ocaType,'tif':order.tif,'outside_rth':order.outsideRth})
+   self.open_orders.append({'order_id':orderId,'symbol':contract.symbol,'sec_type':contract.secType,'side':order.action,'type':order.orderType,'quantity':float(order.totalQuantity),'limit_price':float(order.lmtPrice or 0),'aux_price':float(order.auxPrice or 0),'status':orderState.status,'account':order.account,'client_id':order.clientId,'order_ref':order.orderRef,'oca_group':order.ocaGroup,'oca_type':order.ocaType,'tif':order.tif,'outside_rth':order.outsideRth,'transmit':order.transmit,'perm_id':order.permId})
+   self.open_order_objects[(order.clientId,orderId)]=(copy.deepcopy(contract),copy.deepcopy(order))
    self.next_id=max(self.next_id or 0,int(orderId)+1)
   if getattr(order,'whatIf',False):
    def f(name):
@@ -196,8 +197,12 @@ def positions(x_atlas_bridge_token:str|None=Header(default=None)):
 @app.get('/orders')
 @serial_read('orders')
 def orders(x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);read_ready('orders');ib.open_orders=[];prepare('orders');ib.reqAllOpenOrders();wait('orders')
- return {'list':[{**row,'filled':float((ib.order_statuses.get(int(row['order_id'])) or {}).get('filled') or 0)} for row in ib.open_orders]}
+ auth(x_atlas_bridge_token);read_ready('orders');deadline=time.monotonic()+10;ib.open_orders=[];ib.open_order_objects={};prepare('orders');ib.reqAllOpenOrders();wait('orders')
+ # All-client reads omit local untransmitted orders. Read our own client too,
+ # so a staged stop cannot disappear from coverage/conflict checks.
+ prepare('orders');ib.reqOpenOrders();wait('orders',max(.001,deadline-time.monotonic()))
+ rows={(r.get('account'),r.get('client_id'),r['order_id']):r for r in ib.open_orders}
+ return {'list':[{**row,'filled':float((ib.order_statuses.get(int(row['order_id'])) or {}).get('filled') or 0)} for row in rows.values()]}
 @app.get('/orders/{order_id}/status')
 def order_status(order_id:int,x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);status=ib.order_statuses.get(int(order_id));errs=[e for e in ib.errors if int(e.get('id') or -1)==int(order_id)]
@@ -307,6 +312,7 @@ class ProtectionPayload(BaseModel):
  stop_loss:float;take_profit:float
  entry_key:str=Field(pattern=r'^[0-9a-f]{32}$')
  allow_submit:bool=False
+ existing_order_ids:list[int]=Field(default_factory=list,max_length=2)
 
 def protection_prices(side,stop,target,tick):
  try:values=[Decimal(str(v)) for v in (stop,target,tick)]
@@ -358,6 +364,27 @@ def protection(p:ProtectionPayload,x_atlas_bridge_token:str|None=Header(default=
  existing=[r for r in symbol_orders if r.get('oca_group')==group]
  if protection_pair_matches(existing,p,group,stop,target) and len(symbol_orders)==2:
   return {'status':'PROTECTED','simulation':True,'oca_group':group,'orders':existing,'stop_loss':stop,'take_profit':target}
+ # Recovery may only transmit the exact persisted staged stop. It cannot
+ # allocate a new ID, replace a missing leg, or rebuild an unknown order.
+ if not p.allow_submit and len(p.existing_order_ids)==2 and len(set(p.existing_order_ids))==2 and len(symbol_orders)==2:
+  staged=[r for r in existing if r.get('type')=='STP' and r.get('status')=='ApiPending' and r.get('transmit') is False and r.get('perm_id')==0]
+  if len(staged)==1 and {r.get('order_id') for r in existing}==set(p.existing_order_ids):
+   candidate=[{**r,'status':'Submitted'} if r is staged[0] else r for r in existing]
+   if protection_pair_matches(candidate,p,group,stop,target):
+    again=[r for r in positions(x_atlas_bridge_token)['list'] if r.get('account')==p.account_id and r.get('symbol')==p.symbol and float(r.get('quantity') or 0)!=0]
+    if len(again)!=1 or not math.isclose(float(again[0]['quantity']),expected,rel_tol=0,abs_tol=1e-8):raise HTTPException(409,'PROTECTION_POSITION_CHANGED')
+    saved=ib.open_order_objects.get((cfg.get('client_id'),staged[0]['order_id']))
+    if saved is None:raise HTTPException(409,'PROTECTION_STAGED_ORDER_NOT_VERIFIED')
+    c,o=copy.deepcopy(saved)
+    if o.transmit is not False or o.permId!=0:raise HTTPException(409,'PROTECTION_STAGED_ORDER_NOT_VERIFIED')
+    o.transmit=True
+    try:
+     ib.placeOrder(staged[0]['order_id'],c,o)
+     same=[r for r in orders(x_atlas_bridge_token)['list'] if r.get('symbol')==p.symbol]
+     if len(same)==2 and protection_pair_matches(same,p,group,stop,target):
+      return {'status':'PROTECTED','simulation':True,'oca_group':group,'orders':same,'stop_loss':stop,'take_profit':target,'recovery':'EXACT_STAGED_STOP_TRANSMITTED'}
+    except Exception:pass
+    return {'status':'PROTECTION_PENDING','simulation':True,'reason':'BROKER_PROTECTION_NOT_CONFIRMED','oca_group':group,'order_ids':p.existing_order_ids,'stop_loss':stop,'take_profit':target}
  if symbol_orders:raise HTTPException(409,'PROTECTION_EXISTING_ORDERS_REQUIRE_RECONCILIATION')
  if not p.allow_submit or group in ib.protection_attempts:raise HTTPException(409,'PROTECTION_SUBMISSION_OUTCOME_UNRESOLVED')
  side='SELL' if p.position_side=='LONG' else 'BUY'
@@ -374,9 +401,14 @@ def protection(p:ProtectionPayload,x_atlas_bridge_token:str|None=Header(default=
  identities=[]
  try:
   for offset,kind,price in ((0,'STP',stop),(1,'LMT',target)):
+   if offset:
+    current=[r for r in positions(x_atlas_bridge_token)['list'] if r.get('account')==p.account_id and r.get('symbol')==p.symbol and float(r.get('quantity') or 0)!=0]
+    if len(current)!=1 or not math.isclose(float(current[0]['quantity']),expected,rel_tol=0,abs_tol=1e-8):raise HTTPException(409,'PROTECTION_POSITION_CHANGED')
    order=Order();order.action=side;order.totalQuantity=p.quantity;order.orderType=kind
    order.account=p.account_id;order.tif='GTC';order.outsideRth=False
-   order.ocaGroup=group;order.ocaType=2;order.orderRef=group;order.transmit=offset==1
+   # Transmit the stop first and each OCA leg explicitly. This gateway does
+   # not release a staged predecessor when the last OCA leg is transmitted.
+   order.ocaGroup=group;order.ocaType=2;order.orderRef=group;order.transmit=True
    order.eTradeOnly=False;order.firmQuoteOnly=False
    if kind=='STP':order.auxPrice=price
    else:order.lmtPrice=price

@@ -174,7 +174,8 @@ async def _ensure_native_protection(db,entry,broker,item,account_id):
         try:
             result=await broker.ensure_protection({'symbol':item['symbol'],'account_id':account_id,
                 'position_side':item['position_side'],'quantity':item['quantity'],
-                'stop_loss':stop,'take_profit':target,'entry_key':entry.id.hex,'allow_submit':allow_submit})
+                'stop_loss':stop,'take_profit':target,'entry_key':entry.id.hex,'allow_submit':allow_submit,
+                'existing_order_ids':prior.get('order_ids',[]) if isinstance(prior,dict) else []})
         except httpx.HTTPStatusError as exc:
             # These exact bridge responses occur before either protective order is sent.
             # A network timeout, unknown body or post-submit outcome never releases intent.

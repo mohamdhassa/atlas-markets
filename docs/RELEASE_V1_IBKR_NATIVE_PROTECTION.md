@@ -24,8 +24,8 @@ then positions and all clients' open orders are re-read before submission.
 
 Two GTC orders, STP and LMT, share a deterministic entry UUID reference and OCA group.
 OCA type 2 reduces remaining orders proportionately with broker overfill blocking when
-one partially fills. The stop is staged with transmit=false, then the limit is submitted
-with transmit=true to transmit the group. Both use outsideRth=false: this release provides
+one partially fills. Each leg is transmitted explicitly, with the stop first. A position re-read precedes
+the target; an observed quantity change prevents target placement. Both use outsideRth=false: this release provides
 regular-session protection, not an overnight stop guarantee. Stop execution prices are
 not guaranteed. A stop can reject or slip; Paper fills do not certify Live behavior.
 
@@ -42,7 +42,10 @@ All-client open-order reads include ownership and OCA metadata and exclude What-
 ## Retries, exits and audit
 
 The entry audit stores SUBMITTING intent before the broker request. Subsequent checks
-verify the same group and cannot resubmit an unknown outcome. Exact pre-submission busy,
+verify the same group and cannot resubmit an unknown outcome. The exception is exact
+staged-stop recovery: saved pair IDs, an ApiPending stop with transmit=false and no
+permanent ID, an active target, complete matching metadata and a fresh exact position
+allow transmitting that same stop ID. It never allocates a replacement ID. Exact pre-submission busy,
 cooldown or disconnected 503 responses may be retried; generic failures and timeouts do
 not clear intent. If one submission fails, the bridge preserves the identities and never
 cancels a surviving stop or silently creates a replacement pair. A process crash, missing
@@ -97,3 +100,24 @@ never globally cancel or recreate them as part of rollback. Restore the saved ap
 with protection disabled if needed, and preserve broker metadata in the bridge until
 orders are reconciled. Only restore the old bridge script after confirming no outstanding
 native protective orders require its metadata. The saved entry audit is retained.
+
+## Staged-stop transmission correction
+
+The first Paper activation reported active target orders but stops in ApiPending with
+perm_id=0. This gateway did not transmit the staged OCA predecessor when the final leg
+was transmitted. The test fixture incorrectly simulated that behavior; it now models
+independent transmission of each leg. New pairs transmit the stop first, then the target.
+The pair is not atomic: fills/manual changes can race submission; detected position
+changes stop target placement and uncertain outcomes require reconciliation.
+
+All-client order reads are combined with same-client reqOpenOrders, deduplicated by
+account/client/order ID, so local staged orders remain visible. Both reads share the
+existing ten-second deadline and read lock. Recovery uses the fresh broker-returned
+contract/order objects and changes only transmit on the exact staged stop. Missing,
+conflicting, rejected, wrong-client or unverified orders remain blocked.
+
+Do not restart the Gateway/TWS before reconciling staged orders: untransmitted orders
+are local to that session. Restarting the bridge with the same client ID and an unchanged
+Gateway allows same-client retrieval. Deploy only after container tests; verify the
+actual stop and target statuses and quantities after the manager check. App health is
+not evidence of protective coverage.

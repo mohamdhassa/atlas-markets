@@ -41,7 +41,7 @@ def native(monkeypatch):
                      'order_ref':order.orderRef,'oca_group':order.ocaGroup,'oca_type':order.ocaType,
                      'tif':order.tif,'outside_rth':order.outsideRth,'status':'PendingSubmit'})
         if order.transmit:
-            for row in book:row['status']='Submitted'
+            book[-1]['status']='Submitted'
     monkeypatch.setattr(state,'placeOrder',submit)
     payload=bridge.ProtectionPayload(symbol='MSFT',account_id='DU_TEST',position_side='LONG',quantity=3,
         stop_loss=98.003,take_profit=104.009,entry_key=uuid.uuid4().hex,allow_submit=True)
@@ -58,7 +58,7 @@ def test_broker_held_pair_is_gtc_oca_with_partial_fill_block_and_conservative_pr
     result=bridge.protection(p,None)
     assert result['status']=='PROTECTED'
     assert (result['stop_loss'],result['take_profit'])==rounded
-    assert [o.transmit for _,o in native.submitted]==[False,True]
+    assert [o.transmit for _,o in native.submitted]==[True,True]
     assert all(o.ocaType==2 and o.tif=='GTC' and not o.outsideRth and o.action==close_side for _,o in native.submitted)
     assert [oid for oid,_ in native.submitted]==[10,11]
     assert native.state.next_id==12
@@ -121,7 +121,7 @@ def test_partial_fill_verifies_remaining_coverage_without_new_order(native):
 def test_failed_second_submission_retains_identity_and_does_not_cancel_or_retry(native,monkeypatch):
     real=native.state.placeOrder
     def fail_second(oid,contract,order):
-        if order.transmit:raise TimeoutError('sensitive broker URL')
+        if order.orderType=='LMT':raise TimeoutError('sensitive broker URL')
         real(oid,contract,order)
     monkeypatch.setattr(native.state,'placeOrder',fail_second)
     result=bridge.protection(native.payload,None)
@@ -136,6 +136,94 @@ def test_unknown_submission_with_empty_broker_book_is_not_retried(native,monkeyp
     assert bridge.protection(native.payload,None)['status']=='PROTECTION_PENDING'
     with pytest.raises(HTTPException) as exc:bridge.protection(native.payload,None)
     assert exc.value.detail=='PROTECTION_SUBMISSION_OUTCOME_UNRESOLVED'
+
+
+def staged_pair(native):
+    bridge.protection(native.payload,None)
+    stop=native.submitted[0][1]
+    stop.transmit=False;stop.permId=0
+    native.book[0].update(status='ApiPending',transmit=False,perm_id=0)
+    native.state.open_order_objects[(27,10)]=(bridge.contract('MSFT'),stop)
+    return native.payload.model_copy(update={'allow_submit':False,'existing_order_ids':[10,11]})
+
+
+def test_exact_staged_stop_is_transmitted_using_same_id_and_preserved_order(native,monkeypatch):
+    p=staged_pair(native);calls=[]
+    def recover(oid,c,o):
+        calls.append((oid,c,o));native.book[0].update(status='Submitted',transmit=True,perm_id=123)
+    monkeypatch.setattr(native.state,'placeOrder',recover)
+    result=bridge.protection(p,None)
+    assert result['status']=='PROTECTED' and result['recovery']=='EXACT_STAGED_STOP_TRANSMITTED'
+    assert len(calls)==1 and calls[0][0]==10 and calls[0][2].transmit is True
+    assert calls[0][2].auxPrice==98.01 and calls[0][2].ocaGroup==native.book[1]['oca_group']
+    assert native.state.next_id==12 and len(native.book)==2
+    assert bridge.protection(p,None)['status']=='PROTECTED' and len(calls)==1
+
+
+@pytest.mark.parametrize('change',[
+    {'client_id':99},{'account':'OTHER'},{'order_ref':'manual'},
+    {'quantity':4},{'aux_price':97},{'perm_id':123},{'transmit':True},
+    {'status':'Inactive'},{'oca_type':1},
+])
+def test_staged_recovery_refuses_mismatch_without_mutation(native,monkeypatch,change):
+    p=staged_pair(native);native.book[0].update(change);calls=[]
+    monkeypatch.setattr(native.state,'placeOrder',lambda *args:calls.append(args))
+    with pytest.raises(HTTPException):bridge.protection(p,None)
+    assert not calls
+
+
+def test_staged_recovery_requires_persisted_pair_and_fresh_position(native,monkeypatch):
+    p=staged_pair(native);calls=[]
+    monkeypatch.setattr(native.state,'placeOrder',lambda *args:calls.append(args))
+    for ids in ([],[10,12],[10,10]):
+        with pytest.raises(HTTPException):bridge.protection(p.model_copy(update={'existing_order_ids':ids}),None)
+    native.state.open_order_objects.clear()
+    with pytest.raises(HTTPException) as exc:bridge.protection(p,None)
+    assert exc.value.detail=='PROTECTION_STAGED_ORDER_NOT_VERIFIED'
+    count=0
+    def positions(*args):
+        nonlocal count
+        count+=1
+        return {'list':[{**native.live[0],'quantity':3 if count==1 else 2}]}
+    monkeypatch.setattr(bridge,'positions',positions)
+    with pytest.raises(HTTPException) as exc:bridge.protection(p,None)
+    assert exc.value.detail=='PROTECTION_POSITION_CHANGED' and not calls
+
+
+def test_staged_recovery_timeout_never_allocates_another_id(native,monkeypatch):
+    p=staged_pair(native);calls=[]
+    def timeout(oid,c,o):calls.append(oid);raise TimeoutError()
+    monkeypatch.setattr(native.state,'placeOrder',timeout)
+    assert bridge.protection(p,None)['status']=='PROTECTION_PENDING'
+    assert calls==[10] and native.state.next_id==12
+
+
+def test_stop_first_position_change_prevents_target_submission(native,monkeypatch):
+    submit=native.state.placeOrder
+    def fill_stop(oid,c,o):submit(oid,c,o);native.live[0]['quantity']=0
+    monkeypatch.setattr(native.state,'placeOrder',fill_stop)
+    assert bridge.protection(native.payload,None)['status']=='PROTECTION_PENDING'
+    assert len(native.submitted)==1 and native.submitted[0][1].orderType=='STP'
+    assert native.submitted[0][1].transmit is True
+
+
+def test_orders_merge_active_all_client_and_local_staged_without_duplicates(monkeypatch):
+    state=bridge.State();state.server_connected=True
+    monkeypatch.setattr(bridge,'ib',state);monkeypatch.setattr(bridge,'cfg',{'simulation':True,'client_id':27})
+    monkeypatch.setattr(state,'isConnected',lambda:True)
+    c=bridge.contract('MSFT');active=bridge.Order();active.account='DU_TEST';active.clientId=27
+    active.action='SELL';active.totalQuantity=3;active.orderType='LMT';active.transmit=True;active.permId=123
+    stop=bridge.Order();stop.account='DU_TEST';stop.clientId=27
+    stop.action='SELL';stop.totalQuantity=3;stop.orderType='STP';stop.transmit=False;stop.permId=0
+    def all_orders():state.openOrder(11,c,active,NS(status='Submitted'));state.openOrderEnd()
+    def own_orders():
+        state.openOrder(11,c,active,NS(status='Submitted'))
+        state.openOrder(10,c,stop,NS(status='ApiPending'));state.openOrderEnd()
+    monkeypatch.setattr(state,'reqAllOpenOrders',all_orders);monkeypatch.setattr(state,'reqOpenOrders',own_orders)
+    rows=bridge.orders(None)['list']
+    assert len(rows)==2 and {r['order_id'] for r in rows}=={10,11}
+    assert next(r for r in rows if r['order_id']==10)['transmit'] is False
+    assert state.open_order_objects[(27,10)][1].orderType=='STP'
 
 
 def test_whatif_rejection_and_position_change_prevent_submission(native,monkeypatch):
@@ -201,6 +289,21 @@ def test_intent_survives_timeout_and_retry_only_verifies_same_pair(db):
     saved=json.loads(row.raw_json)
     assert saved['result']=={'status':'EXECUTED'}
     assert row.status=='EXECUTED'
+
+
+def test_manager_passes_persisted_pair_ids_without_enabling_new_submission(db):
+    row=entry(db);raw=json.loads(row.raw_json)
+    raw['native_protection']={'status':'PROTECTION_PENDING','order_ids':[216,217]}
+    row.raw_json=json.dumps(raw);db.commit();calls=[]
+    class Broker:
+        async def ensure_protection(self,payload):
+            calls.append(payload)
+            return {'status':'PROTECTED','simulation':True,'oca_group':'atlas-protect-'+row.id.hex}
+    result=asyncio.run(manager._ensure_native_protection(db,row,Broker(),
+        {'symbol':'MSFT','position_side':'LONG','quantity':3},'DU_TEST'))
+    assert result['status']=='PROTECTED'
+    assert calls[0]['existing_order_ids']==[216,217] and calls[0]['allow_submit'] is False
+    assert json.loads(row.raw_json)['native_protection']['order_ids']==[216,217]
 
 
 def test_only_explicit_pre_submission_busy_response_can_release_submission_intent(db):
@@ -331,6 +434,7 @@ def test_orders_read_all_clients_and_excludes_whatif_callbacks(monkeypatch):
         state.order_statuses[23]={'filled':1}
         state.openOrderEnd()
     monkeypatch.setattr(state,'reqAllOpenOrders',read)
+    monkeypatch.setattr(state,'reqOpenOrders',lambda:state.openOrderEnd())
     rows=bridge.orders(None)['list']
     assert len(rows)==1 and rows[0]['client_id']==99 and rows[0]['filled']==1
     assert state.next_id==24
