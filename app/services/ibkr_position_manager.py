@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+import uuid
+import httpx
 from datetime import datetime, timezone
 from sqlalchemy import select
 
@@ -122,6 +125,7 @@ def _latest_entry(db,user_id,profile_id,symbol):
         AutomationAction.user_id==user_id,
         AutomationAction.broker_profile_id==profile_id,
         AutomationAction.provider=='IBKR',
+        AutomationAction.environment=='PAPER',
         AutomationAction.symbol==symbol,
         AutomationAction.status.in_(['EXECUTED','EXIT_EXECUTED']),
     ).order_by(AutomationAction.created_at.desc())).all())
@@ -146,9 +150,117 @@ def _entry_fill_verified(entry, broker_entry, position_side, quantity):
     if entry.status=='EXECUTED' and expected_side==position_side and persisted_qty>0 and ibkr_quantities_match(persisted_qty,quantity):
         return True,'PERSISTED_EXECUTED_LIVE_POSITION_MATCH'
     return False,'ENTRY_FILL_NOT_VERIFIED'
+
+async def _ensure_native_protection(db,entry,broker,item,account_id):
+    """Persist intent before a broker mutation; retries may only verify that same pair."""
+    try:
+        raw=json.loads(entry.raw_json or '{}')
+        request=raw['preflight']['request']
+        stop=float(request['stop_loss']);target=float(request['take_profit'])
+        if not all(math.isfinite(v) and v>0 for v in (stop,target)):
+            raise ValueError('INVALID_PROTECTION_LEVELS')
+        expected='LONG' if entry.side=='BUY' else 'SHORT' if entry.side=='SELL' else None
+        prior=raw.get('native_protection')
+        exact=ibkr_quantities_match(float(entry.quantity or 0),item['quantity'])
+        partial_verify=prior is not None and 0<item['quantity']<float(entry.quantity or 0)
+        if expected!=item['position_side'] or not (exact or partial_verify):
+            return {'status':'PROTECTION_BLOCKED','reason':'PROTECTION_OWNERSHIP_QUANTITY_MISMATCH'}
+        allow_submit=prior is None or (isinstance(prior,dict) and prior.get('status')=='PRE_SUBMISSION_BLOCKED')
+        group='atlas-protect-'+entry.id.hex
+        if allow_submit:
+            raw['native_protection']={'status':'SUBMITTING','oca_group':group,
+                                      'attempted_at':datetime.now(timezone.utc).isoformat()}
+            entry.raw_json=json.dumps(raw);db.commit()
+        try:
+            result=await broker.ensure_protection({'symbol':item['symbol'],'account_id':account_id,
+                'position_side':item['position_side'],'quantity':item['quantity'],
+                'stop_loss':stop,'take_profit':target,'entry_key':entry.id.hex,'allow_submit':allow_submit})
+        except httpx.HTTPStatusError as exc:
+            # These exact bridge responses occur before either protective order is sent.
+            # A network timeout, unknown body or post-submit outcome never releases intent.
+            try:detail=exc.response.json().get('detail')
+            except (ValueError,AttributeError):detail=None
+            retryable={'IBKR_MUTATION_ALREADY_IN_PROGRESS','IBKR_READ_ALREADY_IN_PROGRESS',
+                       'IBKR_READ_RECOVERY_COOLDOWN','IBKR_SERVER_UNAVAILABLE','IBKR_SOCKET_DISCONNECTED'}
+            if allow_submit and exc.response.status_code==503 and detail in retryable:
+                db.refresh(entry);raw=json.loads(entry.raw_json or '{}')
+                raw['native_protection']={**raw['native_protection'],'status':'PRE_SUBMISSION_BLOCKED','reason':detail}
+                entry.raw_json=json.dumps(raw);db.commit()
+                return {'status':'PROTECTION_BLOCKED','reason':detail}
+            raise
+        # Never trust a generic accepted response or another group's protection.
+        if result.get('simulation') is not True or result.get('oca_group')!=group:
+            result={'status':'PROTECTION_PENDING','reason':'BROKER_PROTECTION_NOT_CONFIRMED','oca_group':group}
+        db.refresh(entry)
+        raw=json.loads(entry.raw_json or '{}')
+        raw['native_protection']={**raw.get('native_protection',{}),**result,
+                                  'checked_at':datetime.now(timezone.utc).isoformat()}
+        entry.raw_json=json.dumps(raw);db.commit()
+        return result
+    except (KeyError,TypeError,ValueError):
+        return {'status':'PROTECTION_BLOCKED','reason':'SAVED_PROTECTION_LEVELS_INVALID'}
+
+def _has_pending_exit(db,profile,symbol):
+    return db.scalar(select(AutomationAction.id).where(
+        AutomationAction.user_id==profile.user_id,
+        AutomationAction.broker_profile_id==profile.id,
+        AutomationAction.provider=='IBKR',AutomationAction.environment=='PAPER',
+        AutomationAction.symbol==symbol,AutomationAction.status=='EXIT_SUBMITTED',
+    ).limit(1)) is not None
+
+async def protect_saved_entry(db,entry):
+    """Attach only after the filled entry audit has been committed by the scan."""
+    if entry is None or entry.provider!='IBKR' or entry.environment!='PAPER' or entry.status!='EXECUTED':
+        return {'status':'PROTECTION_BLOCKED','reason':'PROTECTION_ENTRY_NOT_VERIFIED'}
+    profile=db.get(BrokerProfile,entry.broker_profile_id)
+    if (profile is None or profile.user_id!=entry.user_id or profile.provider!='IBKR'
+            or profile.environment!='PAPER' or not profile.is_enabled or not profile.is_active
+            or not profile.credentials_configured or profile.last_connection_status!='CONNECTED'):
+        return {'status':'PROTECTION_BLOCKED','reason':'PROTECTION_PROFILE_NOT_READY'}
+    if _has_pending_exit(db,profile,entry.symbol):
+        return {'status':'PROTECTION_BLOCKED','reason':'PENDING_EXIT_RECONCILIATION_REQUIRED'}
+    creds=_secret(profile)
+    broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),get_settings().market_data_timeout_seconds)
+    item={'symbol':entry.symbol,'position_side':'LONG' if entry.side=='BUY' else 'SHORT','quantity':float(entry.quantity or 0)}
+    try:return await _ensure_native_protection(db,entry,broker,item,creds.get('account_id'))
+    except Exception as exc:return {'status':'PROTECTION_BLOCKED','reason':'PROTECTION_CHECK_FAILED:'+type(exc).__name__}
+
+def _reconcile_native_exits(db,scan,profile,executions,positions,account_id):
+    """A flat broker position plus exact protective executions proves a completed exit."""
+    entries=db.scalars(select(AutomationAction).where(
+        AutomationAction.user_id==profile.user_id,AutomationAction.broker_profile_id==profile.id,
+        AutomationAction.provider=='IBKR',AutomationAction.environment=='PAPER',
+        AutomationAction.status=='EXECUTED',
+    )).all()
+    results=[]
+    for entry in entries:
+        try:
+            protection=json.loads(entry.raw_json or '{}').get('native_protection') or {}
+            ids={str(row['order_id']) for row in protection.get('orders',[])}|{str(i) for i in protection.get('order_ids',[])}
+        except (TypeError,KeyError,ValueError):continue
+        latest=_latest_entry(db,profile.user_id,profile.id,entry.symbol)
+        exit_id=uuid.uuid5(entry.id,'IBKR_NATIVE_PROTECTIVE_EXIT')
+        if not ids or latest is None or latest.id!=entry.id or db.get(AutomationAction,exit_id) is not None:continue
+        if any(p.get('account')==account_id and _canonical(p.get('symbol'))==entry.symbol and float(p.get('quantity') or 0)!=0 for p in positions):continue
+        side='SLD' if entry.side=='BUY' else 'BOT'
+        rows=[e for e in executions if str(e.get('order_id')) in ids and e.get('account')==account_id
+              and _canonical(e.get('symbol'))==entry.symbol and e.get('side')==side]
+        # Deduplicate execution callbacks before proving the aggregate close quantity.
+        unique={e.get('execution_id'):e for e in rows if e.get('execution_id')}
+        if not ibkr_quantities_match(sum(float(e.get('quantity') or 0) for e in unique.values()),float(entry.quantity or 0)):continue
+        if not unique or float(entry.quantity or 0)<=0:continue
+        evidence=list(unique.values())
+        item={'market':entry.market,'symbol':entry.symbol,'quantity':entry.quantity,'entry_order_id':entry.broker_order_id,'entry_action_id':str(entry.id),
+              'protection':protection,'executions':evidence}
+        result={'status':'EXIT_EXECUTED','reason':'BROKER_NATIVE_PROTECTIVE_EXIT','audit_action_id':exit_id,'close_side':'SELL' if entry.side=='BUY' else 'BUY',
+                'broker_result':{'order_id':evidence[-1]['order_id'],'execution_ids':list(unique)}}
+        _persist(db,scan,profile.user_id,profile,item,result);db.flush()
+        scan.executed_count+=1;results.append({**item,**result})
+    return results
+
 def _persist(db,scan,user_id,profile,item,result):
     broker_result=result.get('broker_result') or {};order_id=broker_result.get('order_id')
-    db.add(AutomationAction(scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id,provider='IBKR',environment='PAPER',market=_short(item.get('market'),24),symbol=_short(item.get('symbol'),32),side=_short(result.get('close_side'),8),status=_short(result.get('status') or 'UNKNOWN',24),reason=_short(result.get('reason'),128),quantity=float(item.get('quantity') or 0),sizing_policy='POSITION_LIFECYCLE_EXIT',broker_order_id=_short(order_id,128),broker_position_id=None,raw_json=json.dumps({'position':item,'result':result},default=str)))
+    db.add(AutomationAction(id=result.get('audit_action_id'),scan_id=scan.id,user_id=user_id,broker_profile_id=profile.id,provider='IBKR',environment='PAPER',market=_short(item.get('market'),24),symbol=_short(item.get('symbol'),32),side=_short(result.get('close_side'),8),status=_short(result.get('status') or 'UNKNOWN',24),reason=_short(result.get('reason'),128),quantity=float(item.get('quantity') or 0),sizing_policy='POSITION_LIFECYCLE_EXIT',broker_order_id=_short(order_id,128),broker_position_id=None,raw_json=json.dumps({'position':item,'result':result},default=str)))
 
 async def _verify_fill(broker,order_id,quantity):
     latest=None
@@ -181,6 +293,8 @@ async def run_ibkr_position_manager():
                 _reconcile_submitted_entries(db,profile,executions,creds.get('account_id'))
                 positions=(await broker.positions()).get('list',[])
                 _reconcile_submitted_entries_from_positions(db,profile,positions,creds.get('account_id'))
+                if get_settings().ibkr_native_protection_enabled:
+                    results.extend(_reconcile_native_exits(db,scan,profile,executions,positions,creds.get('account_id')))
                 for p in positions:
                     qty=float(p.get('quantity') or 0)
                     if qty==0:continue
@@ -200,6 +314,19 @@ async def run_ibkr_position_manager():
                     item['entry_fill_source']=fill_source
                     if not fill_verified:
                         result={'status':'EXIT_BLOCKED','reason':'ENTRY_FILL_NOT_VERIFIED'};results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result);continue
+                    if get_settings().ibkr_native_protection_enabled:
+                        if _has_pending_exit(db,profile,symbol):
+                            result={'status':'PROTECTION_BLOCKED','reason':'PENDING_EXIT_RECONCILIATION_REQUIRED'}
+                            results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result);db.commit();continue
+                        try:
+                            protection=await _ensure_native_protection(db,entry,broker,item,creds.get('account_id'))
+                        except Exception as exc:
+                            protection={'status':'PROTECTION_BLOCKED','reason':'PROTECTION_CHECK_FAILED:'+type(exc).__name__}
+                        result={**protection,'reason':protection.get('reason') or 'BROKER_HELD_OCA_PROTECTION'}
+                        results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result)
+                        # Broker-held exits own this lifecycle. Never race an opposite-signal close
+                        # against a live, pending or unverified protective pair.
+                        db.commit();continue
                     timeframe=_timeframe(cfg,default);minimum=_minimum_strength(cfg,default);candles=(await broker.candles(symbol,timeframe,200,sec_type='STK')).get('list',[]);signal=generate_signal(candles,timeframe=timeframe,market=market or 'STOCK');should_exit=_opposite(position_side,str(signal.decision).upper()) and float(signal.strength)>=minimum
                     item.update({'signal_decision':signal.decision,'signal_strength':signal.strength,'minimum_signal_strength':minimum})
                     if not should_exit:

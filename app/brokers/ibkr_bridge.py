@@ -15,8 +15,8 @@ class IbkrBridgeClient:
     async def _get(self,path:str,params:dict|None=None):
         async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.get(self.base_url+path,params=params,headers=self._headers());r.raise_for_status();return r.json()
     @observed_provider('IBKR', 'POST')
-    async def _post(self,path:str,payload:dict):
-        async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.post(self.base_url+path,json=payload,headers=self._headers());r.raise_for_status();return r.json()
+    async def _post(self,path:str,payload:dict,timeout:float|None=None):
+        async with httpx.AsyncClient(timeout=self.timeout if timeout is None else timeout) as c:r=await c.post(self.base_url+path,json=payload,headers=self._headers());r.raise_for_status();return r.json()
     async def health(self):return await self._get('/health')
     async def account(self):
         # Wait for the competing summary's fresh result, within this client's
@@ -46,6 +46,13 @@ class IbkrBridgeClient:
     async def quote(self,symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/quote',{'symbol':symbol,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def candles(self,symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',exchange:str='SMART',currency:str='USD'):return await self._get('/candles',{'symbol':symbol,'timeframe':timeframe,'limit':limit,'sec_type':sec_type,'exchange':exchange,'currency':currency})
     async def order_check(self,payload:dict):return await self._post('/order-check',payload)
+    async def ensure_protection(self,payload:dict):
+        async with reserve_execution(f"IBKR:{payload['account_id']}",payload['symbol']) as reservation:
+            if reservation is None:raise RuntimeError('EXECUTION_ALREADY_IN_PROGRESS')
+            health=await self.health()
+            if not health.get('connected') or not health.get('simulation'):
+                raise RuntimeError('IBKR_PAPER_BRIDGE_REQUIRED')
+            return await self._post('/protection',payload,timeout=90.0)
     async def place_order(self,payload:dict):
         payload=dict(payload);symbol=str(payload.get('symbol') or '').strip().upper().replace('/','').replace(' ','');payload['symbol']=symbol
         account_key=payload.get('account_id') or self.base_url

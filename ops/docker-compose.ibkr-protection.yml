@@ -1,0 +1,6 @@
+# Include this override only after the updated Paper bridge passes its capability check.
+# Retain it on subsequent application recreations while native protection is enabled.
+services:
+  app:
+    environment:
+      IBKR_NATIVE_PROTECTION_ENABLED: "true"

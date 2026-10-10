@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
@@ -113,8 +114,7 @@ def _persist_action(db, scan, user_id, item, result):
          symbol=result.get('symbol') or item.get('symbol'), decision=result.get('side') or request.get('side') or 'HOLD',
          status=result.get('status'), reason=result.get('reason'), quantity=qty, scan_id=scan.id,
          readiness=item.get('readiness'), preflight=item.get('preflight'), order_id=order_id)
-    db.add(
-        AutomationAction(
+    action = AutomationAction(
             scan_id=scan.id,
             user_id=user_id,
             broker_profile_id=profile.id if profile else None,
@@ -130,8 +130,9 @@ def _persist_action(db, scan, user_id, item, result):
             broker_order_id=_short(order_id, 128),
             broker_position_id=_short(position_id, 128),
             raw_json=json.dumps({"preflight": item, "result": result}, default=str),
-        )
     )
+    db.add(action)
+    return action
 
 
 async def _execute_bybit(db, *, user_id, item):
@@ -254,6 +255,13 @@ async def _execute_ibkr(db, *, user_id, item):
     requested = normalize_ibkr_shares(proposed.get("shares") or proposed.get("quantity"))
     if side not in {"BUY", "SELL"} or requested <= 0:
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "INVALID_ORDER_PROPOSAL"}
+    if getattr(get_settings(), 'ibkr_native_protection_enabled', False):
+        try:
+            stop=float(proposed['stop_loss']);target=float(proposed['take_profit'])
+            valid=math.isfinite(stop) and math.isfinite(target) and stop>0 and target>0 and (stop<target if side=='BUY' else target<stop)
+        except (KeyError,TypeError,ValueError):valid=False
+        if not valid:
+            return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "SAVED_PROTECTION_LEVELS_INVALID"}
     if ibkr_quantity_is_fractional(requested) and not get_settings().ibkr_fractional_api_enabled:
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_FRACTIONAL_API_UNSUPPORTED"}
     shares = requested
@@ -262,10 +270,16 @@ async def _execute_ibkr(db, *, user_id, item):
     health = await broker.health()
     if not health.get("connected") or not health.get("simulation"):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_PAPER_BRIDGE_REQUIRED"}
+    if getattr(get_settings(), 'ibkr_native_protection_enabled', False) and health.get('native_protection_available') is not True:
+        return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_PROTECTION_BRIDGE_UPGRADE_REQUIRED"}
     positions = (await broker.positions()).get("list", [])
     if any(_canonical_symbol(x.get("symbol")) == symbol and float(x.get("quantity") or 0) != 0 for x in positions):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "status": "BLOCK", "reason": "SYMBOL_ALREADY_HAS_POSITION"}
     orders = (await broker.orders()).get("list", [])
+    if getattr(get_settings(), 'ibkr_native_protection_enabled', False):
+        from app.services.ibkr_protection import position_has_native_protection
+        if any(float(p.get('quantity') or 0)!=0 and not position_has_native_protection(p,orders,creds.get('account_id')) for p in positions):
+            return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_EXISTING_POSITION_PROTECTION_UNVERIFIED"}
     if any(_canonical_symbol(x.get("symbol")) == symbol and str(x.get("status") or "").upper() not in {"FILLED", "CANCELLED", "CANCELED", "INACTIVE"} for x in orders):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "status": "BLOCK", "reason": "SYMBOL_ALREADY_HAS_OPEN_ORDER"}
     payload = {"symbol": symbol, "side": side, "quantity": shares, "order_type": "MKT", "sec_type": "STK", "exchange": "SMART", "currency": "USD", "account_id": creds.get("account_id")}
@@ -353,10 +367,17 @@ async def run_safe_scan():
                             "reason": f"EXECUTION_ERROR:{_short(exc, 100)}",
                         }
                     results.append(result)
-                    _persist_action(db, scan, user_id, item, result)
+                    saved_action = _persist_action(db, scan, user_id, item, result)
                     if result.get("status") == "EXECUTED":
                         scan.executed_count += 1
                     db.commit()
+                    if provider == 'IBKR' and result.get('status') == 'EXECUTED' and get_settings().ibkr_native_protection_enabled:
+                        from app.services.ibkr_position_manager import protect_saved_entry
+                        protection = await protect_saved_entry(db, saved_action)
+                        result['native_protection'] = protection
+                        emit('TRADING', 'PROTECTION_OUTCOME', message='Broker-held protection outcome',
+                             status=protection.get('status'), reason=protection.get('reason'),
+                             order_id=result.get('broker_result',{}).get('order_id'))
 
             finished = datetime.now(timezone.utc)
             scan.status = "COMPLETED"
