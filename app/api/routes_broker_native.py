@@ -16,10 +16,10 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.bybit_inventory import BybitManagedInventory
 from app.db.models.automation import AutomationAction
 from app.db.models.symbol_strategy import SymbolStrategy
-from app.db.models.news import NewsArticle
 from app.db.session import get_db
 from app.services.provider_reads import isolated_provider_read
 from app.services.ibkr_ledger_history import merge_saved_fills
+from app.services.trade_news_context import attach_trade_news
 
 router=APIRouter(tags=['portfolio','performance'])
 MARKETS=['CRYPTO','FX','STOCK','ETF','METAL','COMMODITY']
@@ -107,7 +107,6 @@ def _trade_context(db,user,rows):
  by_order={(str(x.broker_profile_id),str(x.broker_order_id)):x for x in actions if x.broker_order_id}
  by_symbol=defaultdict(list)
  for x in actions:by_symbol[(str(x.broker_profile_id),str(x.symbol).upper())].append(x)
- news=list(db.scalars(select(NewsArticle).order_by(NewsArticle.published_at.desc()).limit(500)).all()) if symbols else []
  for row in rows:
   key=(str(row.get('profile_id')),str(row.get('symbol') or '').upper());action=by_order.get((key[0],str(row.get('broker_order_id') or '')))
   if action is None:
@@ -117,16 +116,8 @@ def _trade_context(db,user,rows):
   row['attribution']='ATLAS_EXACT_ORDER' if exact else 'BROKER_REPORTED'
   row['strategy']={'id':str(strategy.id),'mode':strategy.mode,'timeframe':strategy.timeframe,'risk_per_trade_pct':strategy.risk_per_trade_pct,'minimum_signal_strength':strategy.minimum_signal_strength} if strategy else None
   row['decision']={'side':action.side,'status':action.status,'reason':action.reason,'sizing_policy':action.sizing_policy,'created_at':action.created_at.isoformat()} if action else None
-  closed=int(row.get('time') or 0);articles=[]
-  for item in news:
-   published=item.published_at or item.created_at
-   if not published or key[1] not in {s.strip().upper() for s in str(item.symbols_csv or '').split(',')}:continue
-   delta=closed-int(published.timestamp()*1000) if closed else 0
-   if closed and 0<=delta<=24*60*60*1000:
-    articles.append({'title':item.title,'source':item.source,'url':item.url if str(item.url or '').lower().startswith(('http://','https://')) else '#','published_at':published.isoformat(),'sentiment_score':item.sentiment_score,'relevance_score':item.relevance_score})
-   if len(articles)>=3:break
-  row['news']=articles;row['news_attribution']='TIME_AND_SYMBOL_CONTEXT' if articles else 'NO_STORED_CONTEXT'
- return rows
+
+ return attach_trade_news(db, rows)
 
 @router.get('/portfolio')
 @isolated_provider_read

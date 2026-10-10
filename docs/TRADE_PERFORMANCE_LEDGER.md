@@ -32,8 +32,12 @@ blank rather than being invented.
 automation action. `BROKER_REPORTED` means the trade is real broker history but ATLAS cannot
 claim exact order attribution.
 
-News is included only for the same symbol and only when published during the 24 hours before
-the execution. It is decision context, not proof that the article caused the trade.
+News is shown separately for entry and exit, matching the exact stored symbol tag during
+the preceding 24 hours at each stage. Historical queries are not restricted to the newest
+500 articles. A missing entry timestamp remains unavailable. These matches are historical
+context assembled afterward, not proof of strategy use or causation. Certified automatic
+execution uses technical signals; this reporting change does not add news inputs. Articles
+that were never collected cannot be reconstructed.
 
 ## Workspace ownership
 
