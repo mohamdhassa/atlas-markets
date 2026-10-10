@@ -19,6 +19,7 @@ from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.models.news import NewsArticle
 from app.db.session import get_db
 from app.services.provider_reads import isolated_provider_read
+from app.services.ibkr_ledger_history import merge_saved_fills
 
 router=APIRouter(tags=['portfolio','performance'])
 MARKETS=['CRYPTO','FX','STOCK','ETF','METAL','COMMODITY']
@@ -78,7 +79,7 @@ def _pair_execution_lots(rows):
   side=_side(row.get('side')); qty=_f(row.get('quantity')); price=_f(row.get('execution_price'))
   if side not in {'BUY','SELL'} or qty<=0 or price<=0:continue
   opposite='SELL' if side=='BUY' else 'BUY'
-  if not row.get('pnl_available'):
+  if not row.get('pnl_available') and not row.get('closed_trade'):
    inventory[key][side].append([qty,price,int(row.get('time') or 0)])
    continue
   remaining=qty;cost=0.0;matched=0.0;opened=[]
@@ -103,12 +104,12 @@ def _trade_context(db,user,rows):
  aq=select(AutomationAction).where(AutomationAction.broker_profile_id.in_(profile_ids)) if profile_ids else None
  if aq is not None and user.role!='ADMIN':aq=aq.where(AutomationAction.user_id==user.id)
  actions=list(db.scalars(aq.order_by(AutomationAction.created_at.desc())).all()) if aq is not None else []
- by_order={str(x.broker_order_id):x for x in actions if x.broker_order_id}
+ by_order={(str(x.broker_profile_id),str(x.broker_order_id)):x for x in actions if x.broker_order_id}
  by_symbol=defaultdict(list)
  for x in actions:by_symbol[(str(x.broker_profile_id),str(x.symbol).upper())].append(x)
  news=list(db.scalars(select(NewsArticle).order_by(NewsArticle.published_at.desc()).limit(500)).all()) if symbols else []
  for row in rows:
-  key=(str(row.get('profile_id')),str(row.get('symbol') or '').upper());action=by_order.get(str(row.get('broker_order_id') or ''))
+  key=(str(row.get('profile_id')),str(row.get('symbol') or '').upper());action=by_order.get((key[0],str(row.get('broker_order_id') or '')))
   if action is None:
    candidates=by_symbol.get(key,[]);stamp=int(row.get('time') or 0)
    action=min(candidates,key=lambda x:abs(int(x.created_at.timestamp()*1000)-stamp)) if candidates and stamp else None
@@ -243,6 +244,12 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
      symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':_execution_time_ms(x),'side':x.get('side'),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
    account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'broker_equity':equity,'equity':equity,'available':available,'starting_capital':_f(p.simulation_capital_override_usd) if p.simulation_capital_override_usd is not None else None})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
+ for p in _accounts(db,user):
+  if p.provider!='IBKR' or not p.credentials_configured:continue
+  actions=list(db.scalars(select(AutomationAction).where(AutomationAction.broker_profile_id==p.id,AutomationAction.user_id==p.user_id,AutomationAction.provider=='IBKR',AutomationAction.environment==p.environment,AutomationAction.status.in_(['EXECUTED','EXIT_EXECUTED'])).order_by(AutomationAction.created_at)).all())
+  try:account_id=_creds(p).get('account_id')
+  except Exception:continue
+  merge_saved_fills(trade_rows,actions,p,account_id)
  _pair_execution_lots(trade_rows)
  _trade_context(db,user,trade_rows)
  for row in trade_rows:
