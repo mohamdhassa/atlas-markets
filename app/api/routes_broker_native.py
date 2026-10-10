@@ -2,10 +2,12 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from datetime import datetime,timezone
-from fastapi import APIRouter,Depends,Query
+from fastapi import APIRouter,Depends,Query,HTTPException
+from pydantic import BaseModel, Field
+from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, require_admin
 from app.brokers.bybit_private import BybitPrivateClient
 from app.brokers.mt5_bridge import Mt5BridgeClient
 from app.brokers.ibkr_bridge import IbkrBridgeClient
@@ -15,6 +17,7 @@ from app.db.models.auth import User
 from app.db.models.broker import BrokerProfile
 from app.db.models.bybit_inventory import BybitManagedInventory
 from app.db.models.automation import AutomationAction
+from app.db.models.ibkr_statement import IbkrStatementEvidence
 from app.db.models.symbol_strategy import SymbolStrategy
 from app.db.session import get_db
 from app.services.provider_reads import isolated_provider_read
@@ -240,7 +243,14 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
   actions=list(db.scalars(select(AutomationAction).where(AutomationAction.broker_profile_id==p.id,AutomationAction.user_id==p.user_id,AutomationAction.provider=='IBKR',AutomationAction.environment==p.environment,AutomationAction.status.in_(['EXECUTED','EXIT_EXECUTED'])).order_by(AutomationAction.created_at)).all())
   try:account_id=_creds(p).get('account_id')
   except Exception:continue
-  merge_saved_fills(trade_rows,actions,p,account_id)
+  statement_rows=list(db.scalars(select(IbkrStatementEvidence).where(
+   IbkrStatementEvidence.broker_profile_id==p.id,IbkrStatementEvidence.user_id==p.user_id)).all())
+  statements={}
+  for evidence in statement_rows:
+   if not isinstance(evidence,IbkrStatementEvidence):continue
+   try:statements[str(evidence.action_id)]=json.loads(evidence.evidence_json)
+   except (ValueError,TypeError):continue
+  merge_saved_fills(trade_rows,actions,p,account_id,statements)
  _pair_execution_lots(trade_rows)
  _trade_context(db,user,trade_rows)
  for row in trade_rows:
@@ -266,3 +276,31 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
 async def execution_readiness(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  accounts=_accounts(db,user);by=lambda p:[a for a in accounts if a.provider==p and a.last_connection_status=='CONNECTED'];mt5=by('MT5');ibkr=by('IBKR');bybit=by('BYBIT')
  return {'CRYPTO':{'market_data':True,'broker':bool(bybit),'simulation_execution':any(a.environment in {'DEMO','TESTNET'} for a in bybit)},'FX':{'market_data':bool(mt5),'broker':bool(mt5),'simulation_execution':any(a.environment=='DEMO' for a in mt5)},'STOCK':{'market_data':bool(ibkr),'broker':bool(ibkr),'simulation_execution':any(a.environment=='PAPER' for a in ibkr)},'ETF':{'market_data':bool(ibkr),'broker':bool(ibkr),'simulation_execution':any(a.environment=='PAPER' for a in ibkr)},'METAL':{'market_data':bool(mt5),'broker':bool(mt5),'simulation_execution':any(a.environment=='DEMO' for a in mt5)},'COMMODITY':{'market_data':bool(mt5),'broker':bool(mt5),'simulation_execution':any(a.environment=='DEMO' for a in mt5)}}
+
+
+class IbkrStatementImport(BaseModel):
+ profile_id: UUID
+ xml: str = Field(min_length=1, max_length=5_000_000)
+ timezone: str = Field(min_length=1, max_length=64)
+ mapping: dict[UUID, list[str]] = Field(default_factory=dict, max_length=1000)
+ apply: bool = False
+
+
+@router.post('/performance/ibkr-statement/import')
+def import_ibkr_statement(payload: IbkrStatementImport, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+ from app.services.ibkr_statement_import import reconcile_statement
+ profile = db.get(BrokerProfile, payload.profile_id, with_for_update=payload.apply)
+ if profile is None or profile.provider != 'IBKR' or profile.environment != 'PAPER':
+  raise HTTPException(404, 'IBKR Paper profile not found')
+ try:
+  account_id = _creds(profile).get('account_id')
+ except Exception:
+  raise HTTPException(422, 'Profile account configuration unavailable') from None
+ try:
+  result = reconcile_statement(db, profile, account_id, payload.xml, payload.timezone,
+                               payload.mapping, user.id, apply=payload.apply)
+  if payload.apply: db.commit()
+  return result
+ except ValueError as exc:
+  db.rollback()
+  raise HTTPException(422, str(exc)) from None

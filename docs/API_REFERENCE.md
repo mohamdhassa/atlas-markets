@@ -64,3 +64,12 @@ preflight; it never guarantees execution.
 | 409 | Duplicate or lifecycle conflict |
 | 502 | Provider or bridge failure |
 | 503 | Required dependency/configuration unavailable |
+
+## IBKR statement import
+
+`POST /performance/ibkr-statement/import` is authenticated ADMIN-only. Request: `profile_id`,
+Activity Flex `xml` (maximum 5 MB), report `timezone`, `mapping` (action UUID → trade ID list),
+and `apply` (default false). Preview returns statement trades, accessible profile audit actions,
+validated matches and unmapped IDs; apply commits reviewed matches atomically. Wrong profile
+returns 404, unauthorized roles 403, validation/conflicting evidence 422. See
+[statement import](IBKR_STATEMENT_IMPORT.md) for exact supported fields and restrictions.

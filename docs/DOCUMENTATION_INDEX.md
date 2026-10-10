@@ -24,6 +24,8 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 - [Starter-capital readiness release](RELEASE_V1_STARTER_CAPITAL_READINESS.md) — delivered controls and verification status.
 - [Historical trade news](RELEASE_V1_TRADE_NEWS_CONTEXT.md) — separate entry and exit context without claiming strategy use.
 - [Trade and performance ledger](TRADE_PERFORMANCE_LEDGER.md) — provider capital, closed trades, attribution and news context.
+- [IBKR statement import](IBKR_STATEMENT_IMPORT.md) — ADMIN preview, reviewed mappings, commissions and broker FIFO P&L.
+- [IBKR statement import release](RELEASE_V1_IBKR_STATEMENT_IMPORT.md) — durable statement evidence and deduplicated ledger reconciliation.
 - [IBKR durable ledger history](RELEASE_V1_IBKR_LEDGER_HISTORY.md) — verified saved fills and explicit pending net P&L after bridge restarts.
 - [Trade ledger release](RELEASE_V1_TRADE_PERFORMANCE_LEDGER.md) — delivered frontend consolidation and reporting scope.
 
