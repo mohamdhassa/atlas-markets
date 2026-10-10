@@ -67,4 +67,4 @@ def test_empty_windows_do_not_query_and_frontend_keeps_existing_table():
     assert "render('Exit',trade.exit_news" in script
     assert 'Historical context · not evidence of strategy use' in script
     assert '<th>News context</th>' in script
-    assert 'live-pages.js?v=84.2' in Path('app/static/index.html').read_text()
+    assert 'live-pages.js?v=84.3' in Path('app/static/index.html').read_text()

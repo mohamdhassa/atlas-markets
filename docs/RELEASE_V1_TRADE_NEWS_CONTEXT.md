@@ -16,3 +16,10 @@ No schema migration, bridge restart or order changes are required. Recreate only
 retaining the IBKR protection Compose overlay. Verify health, migration head, existing broker
 protection orders and entry/exit news in Performance. Roll back to the prior app image with
 the same overlay if needed.
+
+## Renderer scope correction
+
+The news renderer resides inside the live-pages closure alongside its escaping and number
+formatting helpers. Asset version 84.3 refreshes browser caches. Regression coverage executes
+the full workspace script and Performance renderer, with populated, empty and failed API
+responses, instead of supplying helpers that do not exist in the global browser scope.
