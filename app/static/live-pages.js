@@ -72,9 +72,9 @@ renderPage=async function(page){
  return priorRender(page);
 };
 window.AtlasLivePages={liveDashboard,livePositions,liveOrders,livePerformance,liveStrategy,liveRisk,liveIntegrations,liveSystem};
-})();
-
 function tradeNewsLive(trade){
  const render=(label,articles,known)=>`<strong>${label}</strong><br>${(articles||[]).map(n=>`<a href="${escLive(n.url)}" target="_blank" rel="noopener">${escLive(n.title)}</a><br><small>${escLive(n.source)} · sentiment ${nLive(n.sentiment_score,2)}</small>`).join('<br>')||(known?'No stored news in this window':'Time unavailable')}`;
  return `${render('Entry',trade.entry_news,trade.opened_at)}<br>${render('Exit',trade.exit_news,trade.closed_at||trade.time)}<br><small>Historical context · not evidence of strategy use</small>`;
 }
+
+})();
