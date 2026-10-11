@@ -269,8 +269,11 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
  for r in trade_rows:
   if r.get('pnl_available') and r.get('time'):
    d=datetime.fromtimestamp(r['time']/1000,tz=timezone.utc).date().isoformat();series[d]+=_f(r['pnl'])
- starting=sum(a.get('starting_capital') or 0 for a in accounts);overall_stats=_stats(trade_rows)
- return {'days':days,'overall':{'broker_equity':round(sum(a['equity'] for a in account_rows),2),'equity':round(sum(a['equity'] for a in account_rows),2),'starting_capital':round(starting,2),'strategy_value':round(starting+overall_stats['realized_pnl'],2),**overall_stats},'markets':markets,'accounts':accounts,'symbols':symbols,'daily':[{'date':d,'realized_pnl':round(v,2)} for d,v in sorted(series.items())],'trades':sorted(trade_rows,key=lambda x:x.get('time') or 0,reverse=True)[:200],'errors':errors,'notes':{'IBKR':'Broker-reported P&L is authoritative. Entry, duration, strategy and news context are attached only when matching evidence exists.','attribution':'ATLAS_EXACT_ORDER requires an exact persisted broker order match; other rows remain BROKER_REPORTED.','news':'News is contextual when stored for the same symbol within 24 hours before execution; it is not claimed as causal.'}}
+ # An incomplete allocation cannot produce a meaningful combined strategy value.
+ capital_known=bool(accounts) and not errors and all(a.get('starting_capital') is not None for a in accounts)
+ starting=round(sum(a['starting_capital'] for a in accounts),2) if capital_known else None
+ overall_stats=_stats(trade_rows)
+ return {'days':days,'overall':{'broker_equity':round(sum(a['equity'] for a in account_rows),2),'equity':round(sum(a['equity'] for a in account_rows),2),'starting_capital':starting,'strategy_value':round(starting+overall_stats['realized_pnl'],2) if starting is not None else None,**overall_stats},'markets':markets,'accounts':accounts,'symbols':symbols,'daily':[{'date':d,'realized_pnl':round(v,2)} for d,v in sorted(series.items())],'trades':sorted(trade_rows,key=lambda x:x.get('time') or 0,reverse=True)[:200],'errors':errors,'notes':{'IBKR':'Broker-reported P&L is authoritative. Entry, duration, strategy and news context are attached only when matching evidence exists.','attribution':'ATLAS_EXACT_ORDER requires an exact persisted broker order match; other rows remain BROKER_REPORTED.','news':'News is contextual when stored for the same symbol within 24 hours before execution; it is not claimed as causal.'}}
 
 @router.get('/execution-readiness')
 async def execution_readiness(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
