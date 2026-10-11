@@ -76,3 +76,5 @@ OpenAPI document at `/docs` is authoritative for exact request and response sche
 
 Repository contributors also follow root `CONTRIBUTING.md`; automated coding and AI tools
 follow root `AGENTS.md` before making changes.
+
+- [Performance unknown capital](RELEASE_V1_PERFORMANCE_UNKNOWN_CAPITAL.md) — preserve unknown combined allocations and strategy values.
