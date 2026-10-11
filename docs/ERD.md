@@ -2,9 +2,9 @@
 
 Canonical baseline: `v1.0.0` at `5ef08db6426876be6019541c45c0b3b3851f85eb`
 
-Database head: `20261001_0022`
+Database head: `20261010_0023`
 
-Production database: `atlas_markets` (25 tables including `alembic_version`). The separate
+Production database: `atlas_markets` (26 tables including `alembic_version`). The separate
 `atlas` database on the Oracle host belongs to the earlier project and is not part of this ERD.
 
 ## Ownership and execution lineage
@@ -16,6 +16,9 @@ erDiagram
     USERS ||--o{ BROKER_PROFILES : owns
     USERS ||--o{ SYMBOL_STRATEGIES : configures
     USERS ||--o{ AUTOMATION_ACTIONS : owns
+    USERS ||--o{ IBKR_STATEMENT_EVIDENCE : owns
+    BROKER_PROFILES ||--o{ IBKR_STATEMENT_EVIDENCE : scopes
+    AUTOMATION_ACTIONS ||--o| IBKR_STATEMENT_EVIDENCE : reconciles
     USERS ||--o{ BYBIT_MANAGED_INVENTORY : owns
     USERS ||--o{ SHADOW_OBSERVATIONS : owns
     USERS ||--o{ SHADOW_SCAN_EVENTS : owns
@@ -49,6 +52,7 @@ erDiagram
 | `symbol_strategies` | Per-account instrument mode and overrides | unique user/profile/market/symbol |
 | `automation_state` | Engine, kill switch, interval and universe | singleton by name |
 | `automation_scans` | One automation-cycle header | parent of actions |
+| `ibkr_statement_evidence` | Reviewed Paper statement executions and FIFO P&L | action → at most one evidence record; profile/owner/operator scope |
 | `automation_actions` | Decision, block, submission and broker lineage | scan/user/profile linked |
 | `signals` | BUY/SELL/HOLD analytical result | broker-profile scoped |
 | `risk_profiles` | Risk defaults and portfolio limits | active configuration |
@@ -205,3 +209,11 @@ bar. Shadow records are analytical evidence and never broker orders.
   provider, strategy, automation, reporting and shadow evidence.
 - Verify `current_database()` and `alembic_version` before inspection or migration. See
   `DATABASE_OPERATIONS.md` for the canonical procedure.
+
+## IBKR statement evidence
+
+`ibkr_statement_evidence` is a new entity keyed by `automation_actions.id`, with profile/owner
+and operator foreign keys. It holds normalized reviewed Activity
+Flex executions with account/profile/owner scope, trade IDs, commissions, FIFO P&L and import
+operator/hash/timezone metadata. Original fill/protection audit data remains intact. This metadata
+is included in normal database backups; earlier application builds ignore it during rollback.

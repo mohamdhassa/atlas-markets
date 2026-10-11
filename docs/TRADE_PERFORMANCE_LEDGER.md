@@ -47,3 +47,10 @@ that were never collected cannot be reconstructed.
 
 This separation removes repeated tables and makes future changes safer for developers and AI
 tools.
+
+## Imported IBKR statements
+
+Reviewed Activity Flex execution imports can replace matching saved orders with actual broker
+execution times, closing-order commissions and FIFO realized P&L. FIFO P&L includes commissions;
+they are not subtracted again. Missing broker P&L stays pending. Imports are ADMIN-only, preview
+first, and scoped to the selected Paper profile and owner. See [statement import](IBKR_STATEMENT_IMPORT.md).

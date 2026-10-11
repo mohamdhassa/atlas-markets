@@ -1,6 +1,7 @@
 """Recover broker-confirmed fills from durable ATLAS audits; never estimate net P&L."""
 import json
 import math
+from datetime import timezone
 
 
 def saved_fill(action, profile, account_id=None):
@@ -32,7 +33,7 @@ def saved_fill(action, profile, account_id=None):
             "provider": "IBKR", "market": action.market or "STOCK",
             "symbol": action.symbol, "side": action.side, "quantity": quantity,
             "execution_price": price, "broker_order_id": order_id,
-            "time": int(action.created_at.timestamp() * 1000),
+            "time": int((action.created_at if action.created_at.tzinfo else action.created_at.replace(tzinfo=timezone.utc)).timestamp() * 1000),
             "time_source": "ATLAS_ACTION_RECORDED_AT",
             "execution_source": "PERSISTED_BROKER_FILL_STATUS",
             "commission": None, "pnl": None, "pnl_available": False,
@@ -43,11 +44,22 @@ def saved_fill(action, profile, account_id=None):
         return None
 
 
-def merge_saved_fills(rows, actions, profile, account_id=None):
-    """Live execution IDs win; never add an order aggregate beside its live fills."""
+def merge_saved_fills(rows, actions, profile, account_id=None, statements=None):
+    """Reviewed statements take precedence; otherwise live fills win over saved audits."""
     existing = {str(row.get("broker_order_id")) for row in rows
                 if str(row.get("profile_id")) == str(profile.id)}
+    from app.services.ibkr_statement_import import imported_fill
     for action in actions:
+        statement = imported_fill(action, profile, account_id, (statements or {}).get(str(getattr(action, "id", ""))))
+        if statement is not None:
+            # A complete reviewed statement order replaces its live execution fragments.
+            # Never sum an order aggregate alongside those fragments.
+            rows[:] = [r for r in rows if not (
+                str(r.get("profile_id")) == str(profile.id)
+                and str(r.get("broker_order_id")) == statement["broker_order_id"])]
+            rows.append(statement)
+            existing.add(statement["broker_order_id"])
+            continue
         saved = saved_fill(action, profile, account_id)
         if saved is None:
             continue
