@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from datetime import datetime,timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter,Depends,Query,HTTPException
 from pydantic import BaseModel, Field
 from uuid import UUID
@@ -45,17 +46,38 @@ def _f(v):
  try:return float(v or 0)
  except:return 0.0
 
-def _execution_time_ms(row):
+def _execution_time_ms(row,default_timezone='Etc/UTC'):
  for key in ('time','executed_at','execution_time','timestamp','datetime'):
   value=row.get(key)
   if value in (None,''):continue
   if isinstance(value,(int,float)):
    number=int(value);return number*1000 if number and number<10_000_000_000 else number
-  text=str(value).strip()
+  text=' '.join(str(value).split())
   if text.isdigit():
    number=int(text);return number*1000 if number and number<10_000_000_000 else number
-  try:return int(datetime.fromisoformat(text.replace('Z','+00:00')).timestamp()*1000)
-  except ValueError:continue
+  try:
+   parsed=datetime.fromisoformat(text.replace('Z','+00:00'))
+  except ValueError:
+   parts=text.split(' ')
+   zone_name=parts.pop() if len(parts)==3 else None
+   parsed=None
+   for fmt in ('%Y%m%d %H:%M:%S','%Y%m%d-%H:%M:%S'):
+    try:parsed=datetime.strptime(' '.join(parts),fmt);break
+    except ValueError:pass
+   if parsed is None:continue
+   if zone_name:
+    try:parsed=parsed.replace(tzinfo=ZoneInfo({'US/Eastern':'America/New_York'}.get(zone_name,zone_name)))
+    except ZoneInfoNotFoundError:continue
+  if parsed.tzinfo is None:
+   # Legacy execution callbacks omit a zone; use the declared Gateway zone,
+   # never the web server's local timezone. Hyphen format explicitly means UTC.
+   zone_name='UTC' if len(text)>8 and text[8]=='-' else row.get('time_timezone') or default_timezone
+   try:parsed=parsed.replace(tzinfo=ZoneInfo({'US/Eastern':'America/New_York'}.get(zone_name,zone_name)))
+   except ZoneInfoNotFoundError:continue
+  if parsed.utcoffset()!=parsed.replace(fold=1).utcoffset():continue
+  utc=parsed.astimezone(timezone.utc)
+  if utc.astimezone(parsed.tzinfo).replace(tzinfo=None)!=parsed.replace(tzinfo=None):continue
+  return int(utc.timestamp()*1000)
  return 0
 def _mt5_market(symbol):
  s=str(symbol or '').upper().replace('/','')
@@ -235,7 +257,7 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
    else:
     c=_ibkr(p);a=await c.account();hist=await c.executions(days);equity=_f(a.get('equity'));available=_f(a.get('available'));account_market='STOCK+ETF'
     for x in hist.get('list',[]):
-     symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':_execution_time_ms(x),'side':x.get('side'),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
+     symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':_execution_time_ms(x,get_settings().ibkr_execution_timezone),'side':_side(x.get('side')),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
    account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'broker_equity':equity,'equity':equity,'available':available,'starting_capital':_f(p.simulation_capital_override_usd) if p.simulation_capital_override_usd is not None else None})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
  for p in _accounts(db,user):
