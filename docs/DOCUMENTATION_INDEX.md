@@ -80,3 +80,5 @@ follow root `AGENTS.md` before making changes.
 - [Performance unknown capital](RELEASE_V1_PERFORMANCE_UNKNOWN_CAPITAL.md) — preserve unknown combined allocations and strategy values.
 
 - [IBKR execution format](RELEASE_V1_IBKR_EXECUTION_FORMAT.md) — explicit fill timestamps and canonical BUY/SELL reporting.
+
+- [Native exit ledger history](RELEASE_V1_NATIVE_EXIT_LEDGER_HISTORY.md) — durable protective fills and exact saved-entry context.

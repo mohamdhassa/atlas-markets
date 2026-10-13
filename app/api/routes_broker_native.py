@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from datetime import datetime,timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from app.services.ibkr_execution_format import execution_time_ms as _execution_time_ms
 from fastapi import APIRouter,Depends,Query,HTTPException
 from pydantic import BaseModel, Field
 from uuid import UUID
@@ -46,39 +46,6 @@ def _f(v):
  try:return float(v or 0)
  except:return 0.0
 
-def _execution_time_ms(row,default_timezone='Etc/UTC'):
- for key in ('time','executed_at','execution_time','timestamp','datetime'):
-  value=row.get(key)
-  if value in (None,''):continue
-  if isinstance(value,(int,float)):
-   number=int(value);return number*1000 if number and number<10_000_000_000 else number
-  text=' '.join(str(value).split())
-  if text.isdigit():
-   number=int(text);return number*1000 if number and number<10_000_000_000 else number
-  try:
-   parsed=datetime.fromisoformat(text.replace('Z','+00:00'))
-  except ValueError:
-   parts=text.split(' ')
-   zone_name=parts.pop() if len(parts)==3 else None
-   parsed=None
-   for fmt in ('%Y%m%d %H:%M:%S','%Y%m%d-%H:%M:%S'):
-    try:parsed=datetime.strptime(' '.join(parts),fmt);break
-    except ValueError:pass
-   if parsed is None:continue
-   if zone_name:
-    try:parsed=parsed.replace(tzinfo=ZoneInfo({'US/Eastern':'America/New_York'}.get(zone_name,zone_name)))
-    except ZoneInfoNotFoundError:continue
-  if parsed.tzinfo is None:
-   # Legacy execution callbacks omit a zone; use the declared Gateway zone,
-   # never the web server's local timezone. Hyphen format explicitly means UTC.
-   zone_name='UTC' if len(text)>8 and text[8]=='-' else row.get('time_timezone') or default_timezone
-   try:parsed=parsed.replace(tzinfo=ZoneInfo({'US/Eastern':'America/New_York'}.get(zone_name,zone_name)))
-   except ZoneInfoNotFoundError:continue
-  if parsed.utcoffset()!=parsed.replace(fold=1).utcoffset():continue
-  utc=parsed.astimezone(timezone.utc)
-  if utc.astimezone(parsed.tzinfo).replace(tzinfo=None)!=parsed.replace(tzinfo=None):continue
-  return int(utc.timestamp()*1000)
- return 0
 def _mt5_market(symbol):
  s=str(symbol or '').upper().replace('/','')
  if s.startswith(('XAU','XAG','XPT','XPD')):return 'METAL'
@@ -105,9 +72,20 @@ def _pair_execution_lots(rows):
   if side not in {'BUY','SELL'} or qty<=0 or price<=0:continue
   opposite='SELL' if side=='BUY' else 'BUY'
   if not row.get('pnl_available') and not row.get('closed_trade'):
-   inventory[key][side].append([qty,price,int(row.get('time') or 0)])
+   inventory[key][side].append([qty,price,int(row.get('time') or 0),row.get('audit_action_id')])
    continue
   remaining=qty;cost=0.0;matched=0.0;opened=[]
+  if row.get('entry_action_id') and row.get('linked_entry_price') and row.get('linked_entry_time'):
+   # A native protective exit has an exact saved entry. Never consume an older
+   # same-symbol orphan lot merely because earlier callbacks are unavailable.
+   for lot in list(inventory[key][opposite]):
+    if lot[3] != row['entry_action_id']:continue
+    take=min(remaining,lot[0]);lot[0]-=take;remaining-=take
+    if lot[0]<=1e-12:inventory[key][opposite].remove(lot)
+    if remaining<=1e-12:break
+   row['entry_price']=row['linked_entry_price'];row['invested_amount']=qty*row['entry_price']
+   row['opened_at']=row['linked_entry_time'];row['opened_time_source']=row['linked_entry_time_source']
+   remaining=0
   while remaining>1e-12 and inventory[key][opposite]:
    lot=inventory[key][opposite][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;opened.append(lot[2]);lot[0]-=take;remaining-=take
    if lot[0]<=1e-12:inventory[key][opposite].pop(0)
@@ -130,10 +108,11 @@ def _trade_context(db,user,rows):
  if aq is not None and user.role!='ADMIN':aq=aq.where(AutomationAction.user_id==user.id)
  actions=list(db.scalars(aq.order_by(AutomationAction.created_at.desc())).all()) if aq is not None else []
  by_order={(str(x.broker_profile_id),str(x.broker_order_id)):x for x in actions if x.broker_order_id}
+ by_id={(str(x.broker_profile_id),str(x.id)):x for x in actions}
  by_symbol=defaultdict(list)
  for x in actions:by_symbol[(str(x.broker_profile_id),str(x.symbol).upper())].append(x)
  for row in rows:
-  key=(str(row.get('profile_id')),str(row.get('symbol') or '').upper());action=by_order.get((key[0],str(row.get('broker_order_id') or '')))
+  key=(str(row.get('profile_id')),str(row.get('symbol') or '').upper());action=by_id.get((key[0],str(row.get('audit_action_id') or ''))) or by_order.get((key[0],str(row.get('broker_order_id') or '')))
   if action is None:
    candidates=by_symbol.get(key,[]);stamp=int(row.get('time') or 0)
    action=min(candidates,key=lambda x:abs(int(x.created_at.timestamp()*1000)-stamp)) if candidates and stamp else None
@@ -272,7 +251,7 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
    if not isinstance(evidence,IbkrStatementEvidence):continue
    try:statements[str(evidence.action_id)]=json.loads(evidence.evidence_json)
    except (ValueError,TypeError):continue
-  merge_saved_fills(trade_rows,actions,p,account_id,statements)
+  merge_saved_fills(trade_rows,actions,p,account_id,statements,get_settings().ibkr_execution_timezone)
  _pair_execution_lots(trade_rows)
  _trade_context(db,user,trade_rows)
  for row in trade_rows:
