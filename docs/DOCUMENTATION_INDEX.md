@@ -84,3 +84,5 @@ follow root `AGENTS.md` before making changes.
 - [Native exit ledger history](RELEASE_V1_NATIVE_EXIT_LEDGER_HISTORY.md) — durable protective fills and exact saved-entry context.
 
 - [Strategy execution evidence](RELEASE_V1_STRATEGY_EXECUTION_EVIDENCE.md) — preserve entry-route filters and decision-time effective settings for future evaluation.
+
+- [Strategy evaluation](RELEASE_V1_STRATEGY_EVALUATION.md) — read-only entry-evidence cohorts, complete closing-order metrics and unknown historical strategies.

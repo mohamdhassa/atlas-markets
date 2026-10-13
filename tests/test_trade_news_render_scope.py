@@ -32,6 +32,21 @@ vm.runInContext(fs.readFileSync('app/static/live-pages.js', 'utf8'), context);
   assert(context.content.innerHTML.includes('<strong>Entry</strong>'));
   assert(context.content.innerHTML.includes('<strong>Exit</strong>'));
   assert(!context.content.innerHTML.includes('Data unavailable'));
+  data.strategy_evaluation = {known_closed_orders: 1, unknown_closed_orders: 0,
+    provider_errors: 1, excluded: {PNL_PENDING: 1}, cohorts: [{
+      account: '<unsafe account>', provider: 'IBKR', environment: 'PAPER', symbol: 'META',
+      strategy: 'trend', entry_side: 'SELL', settings: {timeframe: '5m'},
+      closed_orders: 1, net_pnl: -868.36, win_rate: 0, profit_factor: 0,
+      expectancy_per_close: -868.36, max_realized_drawdown: 868.36, evaluation: 'VALIDATING'}]};
+  await context.renderPage('Performance');
+  assert(context.content.innerHTML.includes('Strategy evaluation'));
+  assert(context.content.innerHTML.includes('&lt;unsafe account&gt;'));
+  assert(context.content.innerHTML.includes('PNL_PENDING: 1'));
+  assert(context.content.innerHTML.includes('coverage may be incomplete'));
+  assert(context.content.innerHTML.includes('VALIDATING'));
+  data.strategy_evaluation = {cohorts: []};
+  await context.renderPage('Performance');
+  assert(context.content.innerHTML.includes('No closed orders with supported net'));
   data = {trades: [{closed_trade: true}]};
   await context.renderPage('Performance');
   assert(context.content.innerHTML.includes('Time unavailable'));

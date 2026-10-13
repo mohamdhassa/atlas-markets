@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 from collections import defaultdict
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from app.services.ibkr_execution_format import execution_time_ms as _execution_time_ms
 from fastapi import APIRouter,Depends,Query,HTTPException
 from pydantic import BaseModel, Field
@@ -24,6 +24,7 @@ from app.db.session import get_db
 from app.services.provider_reads import isolated_provider_read
 from app.services.ibkr_ledger_history import merge_saved_fills
 from app.services.trade_news_context import attach_trade_news
+from app.services.strategy_evaluation import attach_entry_strategies, strategy_evaluation
 
 router=APIRouter(tags=['portfolio','performance'])
 MARKETS=['CRYPTO','FX','STOCK','ETF','METAL','COMMODITY']
@@ -74,7 +75,7 @@ def _pair_execution_lots(rows):
   if not row.get('pnl_available') and not row.get('closed_trade'):
    inventory[key][side].append([qty,price,int(row.get('time') or 0),row.get('audit_action_id')])
    continue
-  remaining=qty;cost=0.0;matched=0.0;opened=[]
+  remaining=qty;cost=0.0;matched=0.0;opened=[];entry_ids=[]
   if row.get('entry_action_id') and row.get('linked_entry_price') and row.get('linked_entry_time'):
    # A native protective exit has an exact saved entry. Never consume an older
    # same-symbol orphan lot merely because earlier callbacks are unavailable.
@@ -85,12 +86,14 @@ def _pair_execution_lots(rows):
     if remaining<=1e-12:break
    row['entry_price']=row['linked_entry_price'];row['invested_amount']=qty*row['entry_price']
    row['opened_at']=row['linked_entry_time'];row['opened_time_source']=row['linked_entry_time_source']
+   row['entry_action_ids']=[row['entry_action_id']]
    remaining=0
   while remaining>1e-12 and inventory[key][opposite]:
-   lot=inventory[key][opposite][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;opened.append(lot[2]);lot[0]-=take;remaining-=take
+   lot=inventory[key][opposite][0];take=min(remaining,lot[0]);cost+=take*lot[1];matched+=take;opened.append(lot[2]);entry_ids.append(lot[3]);lot[0]-=take;remaining-=take
    if lot[0]<=1e-12:inventory[key][opposite].pop(0)
   if matched>0:
    row['entry_price']=cost/matched;row['invested_amount']=cost;row['opened_at']=min(opened) if opened else 0
+   if remaining<=1e-12 and all(entry_ids):row['entry_action_ids']=sorted(set(entry_ids))
   elif row.get('entry_price'):
    row['invested_amount']=qty*_f(row.get('entry_price'))
   row['closed_at']=int(row.get('time') or 0)
@@ -121,6 +124,7 @@ def _trade_context(db,user,rows):
   row['strategy']={'id':str(strategy.id),'mode':strategy.mode,'timeframe':strategy.timeframe,'risk_per_trade_pct':strategy.risk_per_trade_pct,'minimum_signal_strength':strategy.minimum_signal_strength} if strategy else None
   row['decision']={'side':action.side,'status':action.status,'reason':action.reason,'sizing_policy':action.sizing_policy,'created_at':action.created_at.isoformat()} if action else None
 
+ attach_entry_strategies(rows, actions)
  return attach_trade_news(db, rows)
 
 @router.get('/portfolio')
@@ -274,7 +278,8 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
  capital_known=bool(accounts) and not errors and all(a.get('starting_capital') is not None for a in accounts)
  starting=round(sum(a['starting_capital'] for a in accounts),2) if capital_known else None
  overall_stats=_stats(trade_rows)
- return {'days':days,'overall':{'broker_equity':round(sum(a['equity'] for a in account_rows),2),'equity':round(sum(a['equity'] for a in account_rows),2),'starting_capital':starting,'strategy_value':round(starting+overall_stats['realized_pnl'],2) if starting is not None else None,**overall_stats},'markets':markets,'accounts':accounts,'symbols':symbols,'daily':[{'date':d,'realized_pnl':round(v,2)} for d,v in sorted(series.items())],'trades':sorted(trade_rows,key=lambda x:x.get('time') or 0,reverse=True)[:200],'errors':errors,'notes':{'IBKR':'Broker-reported P&L is authoritative. Entry, duration, strategy and news context are attached only when matching evidence exists.','attribution':'ATLAS_EXACT_ORDER requires an exact persisted broker order match; other rows remain BROKER_REPORTED.','news':'News is contextual when stored for the same symbol within 24 hours before execution; it is not claimed as causal.'}}
+ evaluation=strategy_evaluation(trade_rows,int((datetime.now(timezone.utc)-timedelta(days=days)).timestamp()*1000),errors)
+ return {'days':days,'strategy_evaluation':evaluation,'overall':{'broker_equity':round(sum(a['equity'] for a in account_rows),2),'equity':round(sum(a['equity'] for a in account_rows),2),'starting_capital':starting,'strategy_value':round(starting+overall_stats['realized_pnl'],2) if starting is not None else None,**overall_stats},'markets':markets,'accounts':accounts,'symbols':symbols,'daily':[{'date':d,'realized_pnl':round(v,2)} for d,v in sorted(series.items())],'trades':sorted(trade_rows,key=lambda x:x.get('time') or 0,reverse=True)[:200],'errors':errors,'notes':{'IBKR':'Broker-reported P&L is authoritative. Entry, duration, strategy and news context are attached only when matching evidence exists.','attribution':'ATLAS_EXACT_ORDER requires an exact persisted broker order match; other rows remain BROKER_REPORTED.','news':'News is contextual when stored for the same symbol within 24 hours before execution; it is not claimed as causal.'}}
 
 @router.get('/execution-readiness')
 async def execution_readiness(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
