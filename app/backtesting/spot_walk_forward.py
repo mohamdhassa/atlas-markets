@@ -28,7 +28,12 @@ def validate_bundle(bundle):
     if not 1 <= len(rows) <= 30_000 or digest(rows) != bundle['candles_sha256']:
         raise ValueError('Candle integrity or size check failed')
     start, end = bundle['start_ms'], bundle['end_ms_exclusive']
-    if (start % STEP_MS or end % STEP_MS or end > bundle['collected_at_ms']
+    observed_time = bundle.get('exchange_time_ms')
+    if observed_time is None:
+        observed_time = bundle['collected_at_ms']
+    if type(observed_time) is not int or observed_time <= 0:
+        raise ValueError('Invalid closed-bar observation time')
+    if (start % STEP_MS or end % STEP_MS or end > observed_time
             or len(rows) != (end - start) // STEP_MS):
         raise ValueError('Incomplete or forming-bar data window')
     for i, row in enumerate(rows):
