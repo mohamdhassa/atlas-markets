@@ -13,6 +13,8 @@ def attach_entry_strategies(rows, actions):
     for row in rows:
         if not (row.get('pnl_available') or row.get('closed_trade')):
             continue
+        row.pop('entry_strategy', None)
+        row.pop('expected_close_quantity', None)
         row['entry_strategy_status'] = 'UNKNOWN'
         scope = str(row.get('profile_id'))
         close = by_id.get((scope, str(row.get('audit_action_id') or '')))
@@ -23,6 +25,7 @@ def attach_entry_strategies(rows, actions):
                 or close.provider != row.get('provider') or close.symbol != row.get('symbol')
                 or close.market != row.get('market')
                 or close.side != row.get('side')
+                or (row.get('environment') and close.environment != row['environment'])
                 or str(close.broker_order_id) != str(row.get('broker_order_id'))):
             continue
         row['environment'] = close.environment

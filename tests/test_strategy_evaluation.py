@@ -128,3 +128,24 @@ def test_fifo_preserves_entry_ids_only_for_complete_unambiguous_lots():
     for row in rows: row.pop('entry_action_ids')
     _pair_execution_lots([unknown,*rows])
     assert all('entry_action_ids' not in row for row in rows)
+
+
+def test_profile_environment_is_preserved_when_closing_audit_is_unavailable():
+    rows, actions = fixture_rows()
+    for row in rows: row['environment'] = 'PAPER'
+    attach_entry_strategies(rows, actions)
+    unmatched = dict(rows[0], broker_order_id='999', audit_action_id=None,
+                     execution_id='other-close', quantity=1, pnl=-10)
+    attach_entry_strategies([unmatched], actions)
+    report = strategy_evaluation([unmatched])
+    assert report['cohorts'][0]['environment'] == 'PAPER'
+    assert report['cohorts'][0]['strategy'] == 'UNKNOWN'
+
+
+def test_closing_audit_cannot_override_authorized_profile_environment():
+    rows, actions = fixture_rows()
+    for row in rows: row['environment'] = 'PAPER'
+    for action in actions: action.environment = 'LIVE'
+    attach_entry_strategies(rows, actions)
+    assert all(row['environment'] == 'PAPER' for row in rows)
+    assert strategy_evaluation(rows)['known_closed_orders'] == 0

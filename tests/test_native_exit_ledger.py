@@ -171,3 +171,10 @@ def test_performance_endpoint_restores_prior_day_fills_and_daily_pnl(monkeypatch
     today = next(r for r in closes if r['quantity'] == 63)
     assert today['entry_price'] == 741.48 and today['duration_seconds'] == 847
     assert today['side'] == 'BUY'
+    assert all(row['environment'] == 'PAPER' for row in result['trades'])
+    # Missing strategy/closing-action context does not erase the account scope.
+    report = result['strategy_evaluation']
+    assert len(report['cohorts']) == 1
+    assert report['cohorts'][0]['environment'] == 'PAPER'
+    assert report['cohorts'][0]['strategy'] == 'UNKNOWN'
+    assert report['unknown_closed_orders'] == 2

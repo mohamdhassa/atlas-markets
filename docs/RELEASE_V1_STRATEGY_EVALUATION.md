@@ -37,3 +37,11 @@ No schema migration, provider execution change, Gateway restart or backfill is
 required. Deployment requires the full container suite and app-only rollout
 with rollback and native-protection checks. Refresh Performance after deployment;
 unknown cohorts are expected until entries with saved route evidence close.
+
+## Account environment correction
+
+Every execution row now retains the environment from its accessible broker
+profile, even when no matching closing audit or entry snapshot exists. Missing
+strategy evidence must not split one Paper account into PAPER and UNKNOWN
+environment cohorts. An audit with a conflicting environment cannot override
+the profile scope. This correction changes grouping only, not broker P&L.

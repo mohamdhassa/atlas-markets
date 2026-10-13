@@ -191,7 +191,8 @@ async def broker_orders(limit:int=Query(default=100,ge=1,le=200),user:User=Depen
 @isolated_provider_read
 async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
  account_rows=[];trade_rows=[];errors=[]
- for p in _accounts(db,user):
+ profiles=_accounts(db,user)
+ for p in profiles:
   if not p.credentials_configured:continue
   try:
    symmap=_symbol_market_map(db,p.id)
@@ -243,7 +244,7 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
      symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':_execution_time_ms(x,get_settings().ibkr_execution_timezone),'side':_side(x.get('side')),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
    account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'broker_equity':equity,'equity':equity,'available':available,'starting_capital':_f(p.simulation_capital_override_usd) if p.simulation_capital_override_usd is not None else None})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
- for p in _accounts(db,user):
+ for p in profiles:
   if p.provider!='IBKR' or not p.credentials_configured:continue
   actions=list(db.scalars(select(AutomationAction).where(AutomationAction.broker_profile_id==p.id,AutomationAction.user_id==p.user_id,AutomationAction.provider=='IBKR',AutomationAction.environment==p.environment,AutomationAction.status.in_(['EXECUTED','EXIT_EXECUTED'])).order_by(AutomationAction.created_at)).all())
   try:account_id=_creds(p).get('account_id')
@@ -256,6 +257,9 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
    try:statements[str(evidence.action_id)]=json.loads(evidence.evidence_json)
    except (ValueError,TypeError):continue
   merge_saved_fills(trade_rows,actions,p,account_id,statements,get_settings().ibkr_execution_timezone)
+ environments={str(p.id):p.environment for p in profiles}
+ for row in trade_rows:
+  if str(row.get('profile_id')) in environments:row['environment']=environments[str(row['profile_id'])]
  _pair_execution_lots(trade_rows)
  _trade_context(db,user,trade_rows)
  for row in trade_rows:
