@@ -83,3 +83,20 @@ mount. No application deployment or Gateway restart is required. Production-
 equivalent full-suite validation precedes merge; then collect actual Spot data,
 verify coverage and run the baseline and cost stress cases. IBKR stock/ETF testing
 is a separate dataset and execution-model task.
+
+## Public-read recovery
+
+The first production collection attempt returned Bybit `10016` on a candle GET.
+Bybit documents this as a server error; the code alone does not establish its
+underlying trigger: https://bybit-exchange.github.io/docs/v5/error
+The collector now retries public timeouts, connection errors, HTTP 429/5xx and
+API 10000/10006/10016 at most three times, with one- and two-second waits.
+Permanent errors fail immediately. Persistent failures retain the public error
+message for diagnosis and do not produce successful research results.
+
+Each candle request spans at most 500 bars rather than repeatedly supplying the
+entire six-week start/end range. Pagination still preserves exact Spot scope,
+duplicate checks and complete-window validation. The dataset cutoff uses
+Bybit's public server time; exchange and VM observation times are recorded
+separately. Existing bundles retain their original VM-time cutoff check.
+https://bybit-exchange.github.io/docs/v5/market/time

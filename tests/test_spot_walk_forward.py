@@ -172,8 +172,10 @@ def test_public_collector_rejects_futures_response(monkeypatch):
         asyncio.run(history.collect_spot(None,'BTCUSDT',b['start_ms'],b['end_ms_exclusive']))
 
 
-def test_public_get_never_uses_private_endpoints_and_timeout_does_not_fallback():
+def test_public_get_never_uses_private_endpoints_and_timeout_does_not_fallback(monkeypatch):
     calls=[]
+    async def pause(*args): pass
+    monkeypatch.setattr(history.asyncio,'sleep',pause)
     async def get(path,params):
         calls.append(path)
         raise httpx.ReadTimeout('public read timed out')
@@ -183,7 +185,7 @@ def test_public_get_never_uses_private_endpoints_and_timeout_does_not_fallback()
     assert calls == []
     with pytest.raises(httpx.ReadTimeout):
         asyncio.run(history.public_get(client,'/v5/market/kline',{'category':'spot'}))
-    assert calls == ['/v5/market/kline']
+    assert calls == ['/v5/market/kline'] * 3
 
 
 def test_public_rate_limit_retries_only_bounded_gets(monkeypatch):
@@ -210,3 +212,66 @@ def test_collector_detects_conflicting_duplicate_candles(monkeypatch):
     monkeypatch.setattr(history,'public_get',get)
     with pytest.raises(ValueError,match='Conflicting'):
         asyncio.run(history.collect_spot(None,'BTCUSDT',b['start_ms'],b['end_ms_exclusive']))
+
+
+@pytest.mark.parametrize('code,recover,attempts', [(10016,True,3),(10016,False,3),
+    (10006,True,3),(10000,True,3),(10001,False,1),(10009,False,1)])
+def test_transient_api_codes_retry_but_permanent_errors_stop(monkeypatch,code,recover,attempts):
+    calls=[]
+    async def pause(*args): pass
+    monkeypatch.setattr(history.asyncio,'sleep',pause)
+    def handler(request):
+        calls.append(request)
+        if recover and len(calls)==3:
+            return httpx.Response(200,json={'retCode':0,'result':{'category':'spot'}})
+        return httpx.Response(200,json={'retCode':code,'retMsg':'public server message'})
+    async def run():
+        async with httpx.AsyncClient(base_url=history.BASE_URL,transport=httpx.MockTransport(handler)) as client:
+            return await history.public_get(client,'/v5/market/kline',{'category':'spot'})
+    if recover: assert asyncio.run(run()) == {'category':'spot'}
+    else:
+        with pytest.raises(ValueError,match=f'{code} public server message'): asyncio.run(run())
+    assert len(calls)==attempts and all(r.method=='GET' for r in calls)
+
+
+def test_each_history_request_has_at_most_one_page_time_span(monkeypatch):
+    b=bundle(1200); calls=[]
+    async def pause(*args): pass
+    monkeypatch.setattr(history.asyncio,'sleep',pause)
+    async def get(client,path,params):
+        if path.endswith('instruments-info'): return {'category':'spot','list':[b['instrument']]}
+        calls.append(params)
+        rows=[r for r in b['candles'] if params['start'] <= r['timestamp_ms'] <= params['end']]
+        return {'category':'spot','symbol':'BTCUSDT','list':[
+            [str(r['timestamp_ms']),str(r['open']),str(r['high']),str(r['low']),str(r['close']),str(r['volume'])]
+            for r in reversed(rows)]}
+    monkeypatch.setattr(history,'public_get',get)
+    result=asyncio.run(history.collect_spot(None,'BTCUSDT',b['start_ms'],b['end_ms_exclusive']))
+    assert result['candles']==b['candles'] and len(calls)==3
+    assert all(p['limit']==500 and p['end']-p['start'] < 500*history.STEP_MS for p in calls)
+
+
+def test_exchange_clock_controls_closed_bar_cutoff_even_if_vm_clock_is_behind(monkeypatch):
+    b=bundle()
+    b['exchange_time_ms']=b['end_ms_exclusive']+1000
+    b['collected_at_ms']=b['end_ms_exclusive']-3_600_000
+    assert len(model.validate_bundle(b)[0])==800
+    async def get(client,path,params):
+        assert path=='/v5/market/time'
+        return {'timeNano':str(b['exchange_time_ms']*1_000_000)}
+    monkeypatch.setattr(history,'public_get',get)
+    assert asyncio.run(history.exchange_time_ms(None))==b['exchange_time_ms']
+    b['exchange_time_ms']=b['end_ms_exclusive']-1
+    with pytest.raises(ValueError,match='forming'): model.validate_bundle(b)
+
+
+def test_http_server_error_retry_is_bounded(monkeypatch):
+    calls=[]
+    async def pause(*args): pass
+    monkeypatch.setattr(history.asyncio,'sleep',pause)
+    def handler(request): calls.append(request); return httpx.Response(503)
+    async def run():
+        async with httpx.AsyncClient(base_url=history.BASE_URL,transport=httpx.MockTransport(handler)) as client:
+            return await history.public_get(client,'/v5/market/time',{})
+    with pytest.raises(httpx.HTTPStatusError): asyncio.run(run())
+    assert len(calls)==3
