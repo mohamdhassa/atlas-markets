@@ -53,6 +53,30 @@ def _params(cfg, default, risk):
     return cfg.timeframe or default.timeframe, minimum, risk_pct, stop, rr, max_pos
 
 
+def _strategy_snapshot(cfg, params):
+    """Record resolved entry settings, rather than reconstruct them after edits."""
+    timeframe, minimum, risk_pct, stop, rr, max_pos = params
+    strategy_id = getattr(cfg, "id", None)
+    return {
+        "schema_version": 1,
+        "strategy_id": str(strategy_id) if strategy_id is not None else None,
+        "profile_id": str(cfg.profile_id),
+        "market": cfg.market,
+        "symbol": cfg.symbol,
+        "mode": cfg.mode,
+        "signal_engine": "app.services.signal_risk.generate_signal",
+        "router_role": "ENTRY_FILTER",
+        "effective_parameters": {
+            "timeframe": timeframe,
+            "minimum_signal_strength": minimum,
+            "risk_per_trade_pct": risk_pct,
+            "stop_atr_multiplier": stop,
+            "take_profit_rr": rr,
+            "max_position_notional_pct": max_pos,
+        },
+    }
+
+
 def _round_volume(raw, info):
     mn = float(info.get("volume_min") or 0.01)
     mx = float(info.get("volume_max") or raw)
@@ -239,6 +263,9 @@ async def autotrade_readiness(db, *, user_id) -> dict:
 
         try:
             timeframe, minimum, risk_pct, stop, rr, max_pos = _params(cfg, default, risk)
+            base["strategy_snapshot"] = _strategy_snapshot(
+                cfg, (timeframe, minimum, risk_pct, stop, rr, max_pos)
+            )
             existing_qty = 0.0
             existing_positions = 0
             existing_gross = equity = available = price = 0.0
