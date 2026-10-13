@@ -86,3 +86,5 @@ follow root `AGENTS.md` before making changes.
 - [Strategy execution evidence](RELEASE_V1_STRATEGY_EXECUTION_EVIDENCE.md) — preserve entry-route filters and decision-time effective settings for future evaluation.
 
 - [Strategy evaluation](RELEASE_V1_STRATEGY_EVALUATION.md) — read-only entry-evidence cohorts, complete closing-order metrics and unknown historical strategies.
+
+- [Spot walk-forward baseline](SPOT_WALK_FORWARD_BASELINE.md) — provenance-tagged public Spot data and frozen-policy, cost-aware offline research.
