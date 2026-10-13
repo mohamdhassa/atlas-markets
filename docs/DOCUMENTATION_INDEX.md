@@ -82,3 +82,5 @@ follow root `AGENTS.md` before making changes.
 - [IBKR execution format](RELEASE_V1_IBKR_EXECUTION_FORMAT.md) — explicit fill timestamps and canonical BUY/SELL reporting.
 
 - [Native exit ledger history](RELEASE_V1_NATIVE_EXIT_LEDGER_HISTORY.md) — durable protective fills and exact saved-entry context.
+
+- [Strategy execution evidence](RELEASE_V1_STRATEGY_EXECUTION_EVIDENCE.md) — preserve entry-route filters and decision-time effective settings for future evaluation.

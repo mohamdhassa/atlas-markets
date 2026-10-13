@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from copy import deepcopy
 from sqlalchemy import select
 
 from app.brokers.bybit_private import BybitPrivateClient
@@ -93,6 +94,12 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
             "readiness": row.get("readiness"),
             "execution": "NONE",
         }
+        # Preserve the decision-time evidence through every preflight outcome.
+        # Copy only attribution fields, never account/credential payloads.
+        for field in ("strategy_snapshot", "strategy_route", "timeframe",
+                      "decision", "classification", "strength", "signal_reason"):
+            if field in row:
+                base[field] = deepcopy(row[field])
         if row.get("managed_position_slots") is not None:
             base["managed_position_slots"] = row["managed_position_slots"]
         if row.get("readiness") != "PASS":

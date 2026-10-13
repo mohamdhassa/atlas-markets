@@ -50,6 +50,7 @@ def test_readiness_rounds_entry_and_preflight_uses_exact_whole_quantity(route, m
     report = asyncio.run(readiness.autotrade_readiness(DB(), user_id=1))
     row = report['items'][0]
     assert row['readiness'] == 'PASS', row.get('reason')
+    assert row['strategy_snapshot']['effective_parameters']['timeframe'] == '5m'
     proposal = row['proposed_order']
     assert proposal['shares'] == proposal['quantity'] == 12
     assert proposal['notional'] == 1200
@@ -59,6 +60,8 @@ def test_readiness_rounds_entry_and_preflight_uses_exact_whole_quantity(route, m
     monkeypatch.setattr(preflight, 'autotrade_readiness', fake_readiness)
     checked = asyncio.run(preflight.autotrade_preflight(DB(), user_id=1))
     assert checked['items'][0]['preflight'] == 'PASS'
+    assert checked['items'][0]['strategy_snapshot'] == row['strategy_snapshot']
+    assert checked['items'][0]['strategy_route'] == row['strategy_route']
     assert Broker.checks[-1]['quantity'] == 12
 
 
