@@ -55,3 +55,13 @@ native protection, current broker orders/positions, chart response and a new
 readiness candle_integrity record. Never recreate protective orders merely
 because the application was restarted. The change does not establish profits
 or live-money readiness.
+
+## Evidence persistence correction
+
+The first deployment produced candle_integrity in readiness but the preflight
+attribution allowlist omitted it, so automation_actions did not retain that
+field. The completion filter was active; absence of this field alone did not
+prove an unfiltered decision. Preflight now deep-copies candle_integrity into
+every PASS/SKIP/BLOCK/error outcome before action persistence. Regression checks
+cover all four outcomes and mutation isolation. Old audit rows remain unchanged
+and are not backfilled from current data. No broker or execution behavior changes.
