@@ -94,3 +94,5 @@ follow root `AGENTS.md` before making changes.
 - [Spot entry-cost diagnostics](SPOT_ENTRY_COST_DIAGNOSTICS.md) — descriptive trade-cost decomposition and entry-route cohorts without changing strategy filters.
 
 - [Spot timeframe comparison](SPOT_TIMEFRAME_COMPARISON.md) — frozen 5m versus completed 15m signals on one common calendar and execution grid.
+
+- [Signal/router audit](SIGNAL_ROUTER_AUDIT.md) — verified score, route, exit and candle-timeframe gaps before further strategy changes.
