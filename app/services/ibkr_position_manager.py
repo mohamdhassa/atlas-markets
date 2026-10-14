@@ -19,6 +19,7 @@ from app.services.scan_lifecycle import interrupt_scan
 from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.signal_risk import generate_signal
+from app.services.trading_candles import completed_ibkr_candles
 from app.services.ibkr_fractional import ibkr_fill_is_complete, ibkr_quantities_match
 
 
@@ -328,7 +329,7 @@ async def run_ibkr_position_manager():
                         # Broker-held exits own this lifecycle. Never race an opposite-signal close
                         # against a live, pending or unverified protective pair.
                         db.commit();continue
-                    timeframe=_timeframe(cfg,default);minimum=_minimum_strength(cfg,default);candles=(await broker.candles(symbol,timeframe,200,sec_type='STK')).get('list',[]);signal=generate_signal(candles,timeframe=timeframe,market=market or 'STOCK');should_exit=_opposite(position_side,str(signal.decision).upper()) and float(signal.strength)>=minimum
+                    timeframe=_timeframe(cfg,default);minimum=_minimum_strength(cfg,default);candles=completed_ibkr_candles(await broker.candles(symbol,timeframe,201,sec_type='STK'),timeframe);signal=generate_signal(candles,timeframe=timeframe,market=market or 'STOCK');should_exit=_opposite(position_side,str(signal.decision).upper()) and float(signal.strength)>=minimum
                     item.update({'signal_decision':signal.decision,'signal_strength':signal.strength,'minimum_signal_strength':minimum})
                     if not should_exit:
                         result={'status':'HOLD','reason':'NO_EXIT_SIGNAL'};results.append({**item,**result});continue

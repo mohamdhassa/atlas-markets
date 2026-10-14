@@ -3,6 +3,7 @@ import argparse,os,threading,time,math,copy
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from functools import wraps
 from datetime import datetime,timedelta,timezone
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI,HTTPException,Header
 from pydantic import BaseModel, Field
 from ibapi.client import EClient
@@ -131,11 +132,29 @@ def wait(key,seconds=10):
 def rid():return int(time.time()*1000000)%2000000000
 def contract(symbol,sec_type='STK',exchange='SMART',currency='USD'):
  c=Contract();c.symbol=symbol.upper();c.secType=sec_type;c.exchange=exchange;c.currency=currency;return c
-def bar_size(tf):return {'1m':'1 min','5m':'5 mins','15m':'15 mins','30m':'30 mins','1h':'1 hour','4h':'4 hours','1d':'1 day'}.get(tf,'5 mins')
+def bar_size(tf):
+ sizes={'1m':'1 min','3m':'3 mins','5m':'5 mins','15m':'15 mins','30m':'30 mins','1h':'1 hour','4h':'4 hours','1d':'1 day'}
+ if tf not in sizes:raise HTTPException(400,'IBKR_CANDLE_INTERVAL_UNSUPPORTED')
+ return sizes[tf]
 def duration(tf,limit):
+ bar_size(tf)
  if tf=='1d':return f'{max(1,min(limit,365))} D'
- minutes={'1m':1,'5m':5,'15m':15,'30m':30,'1h':60,'4h':240}.get(tf,5)*max(limit,10)
+ minutes={'1m':1,'3m':3,'5m':5,'15m':15,'30m':30,'1h':60,'4h':240}[tf]*max(limit,10)
  return f'{max(1,min(365,(minutes//1440)+2))} D'
+def timestamped_candle(row,tf):
+ raw=str(row.get('time',''))
+ try:
+  if tf=='1d':
+   start=datetime.strptime(raw,'%Y%m%d').replace(tzinfo=ZoneInfo('America/New_York'))
+   stamp=int(start.timestamp()*1000);end=int((start+timedelta(days=1)).timestamp()*1000)
+  else:
+   stamp=int(raw)*1000
+   if stamp<=0:raise ValueError('invalid epoch')
+   minutes={'1m':1,'3m':3,'5m':5,'15m':15,'30m':30,'1h':60,'4h':240}[tf]
+   end=stamp+minutes*60_000
+ except (ValueError,KeyError,OverflowError):raise HTTPException(502,'IBKR_CANDLE_TIMESTAMP_INVALID')
+ chart_time=raw if tf=='1d' else datetime.fromtimestamp(stamp/1000,timezone.utc).strftime('%Y%m%d  %H:%M:%S')
+ return {**row,'time':chart_time,'source_time':raw,'interval':tf,'timestamp_ms':stamp,'bar_end_ms':end}
 def _connect_once():
  global account_cache,account_cache_at
  account_cache=None;account_cache_at=0.0
@@ -253,12 +272,14 @@ def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',
  return {'symbol':symbol.upper(),'sec_type':sec_type,'currency':currency,'last':last,'source':'HISTORICAL_FALLBACK','bar_time':rows[-1].get('time')}
 @app.get('/candles')
 def candles(symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
- auth(x_atlas_bridge_token);read_ready('bars');limit=max(10,min(limit,1000));r=rid();key=f'bars:{r}';ib.bars[r]=[];prepare(key);ib.reqHistoricalData(r,contract(symbol,sec_type,exchange,currency),'',duration(timeframe,limit),bar_size(timeframe),'TRADES',1,1,False,[]);
+ auth(x_atlas_bridge_token);size=bar_size(timeframe)
+ if timeframe=='1d' and (sec_type!='STK' or currency!='USD'):raise HTTPException(400,'IBKR_DAILY_CALENDAR_UNSUPPORTED')
+ read_ready('bars');limit=max(10,min(limit,1000));r=rid();key=f'bars:{r}';ib.bars[r]=[];prepare(key);ib.reqHistoricalData(r,contract(symbol,sec_type,exchange,currency),'',duration(timeframe,limit),size,'TRADES',1,2,False,[]);
  try:wait(key,15);rows=ib.bars.pop(r,[])
  finally:
   ib.cancelHistoricalData(r);ib.bars.pop(r,None);ib._events.pop(key,None);ib.request_epochs.pop(key,None)
  if not rows:raise HTTPException(502,f'No IBKR candles returned for {symbol}')
- return {'symbol':symbol.upper(),'timeframe':timeframe,'list':rows[-limit:]}
+ return {'symbol':symbol.upper(),'timeframe':timeframe,'actual_timeframe':timeframe,'bar_size':size,'list':[timestamped_candle(row,timeframe) for row in rows[-limit:]]}
 class OrderPayload(BaseModel):
  symbol:str;side:str;quantity:float;order_type:str='MKT';limit_price:float|None=None;sec_type:str='STK';exchange:str='SMART';currency:str='USD';account_id:str|None=None
 @app.post('/order-check')

@@ -77,7 +77,9 @@ def test_ibkr_existing_position_exit_bypasses_entry_readiness_limits(monkeypatch
     async def executions(*args): return {'list':[]}
     async def positions(): return {'list':[{'symbol':'MSFT','quantity':quantity}]}
     async def status(*args): return {'status':{'status':'Filled','filled':3,'remaining':0}}
-    async def candles(*args, **kwargs): return {'list':[]}
+    async def candles(*args, **kwargs):
+        return {'actual_timeframe':'5m','list':[dict(timestamp_ms=1_700_000_000_000+i*300_000,
+            interval='5m',open=100,high=101,low=99,close=100) for i in range(30)]}
     closes = []
     async def close(**kwargs): closes.append(kwargs); return {'accepted':True,'order_id':128}
     broker.health, broker.executions, broker.positions = health, executions, positions
