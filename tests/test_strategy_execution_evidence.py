@@ -41,12 +41,16 @@ def test_preflight_and_persisted_action_keep_decision_evidence(monkeypatch, outc
                  execution_certification_sell_passed=True)
     cfg = NS(market='CRYPTO', symbol='BTCUSDT', profile_id=1)
     snapshot = {'schema_version': 1, 'effective_parameters': {'timeframe': '5m'}}
+    candles = {'policy': 'COMPLETED_TIMESTAMPED_CANDLES', 'timeframe': '5m',
+               'count': 200, 'last_timestamp_ms': 1792000000000,
+               'last_end_ms': 1792000300000}
     route = {'strategy': 'darvas_box', 'regime': 'BOX_BREAKOUT',
              'box': {'breakout': 'UP'}, 'confidence': 75}
     row = {'market': 'CRYPTO', 'symbol': 'BTCUSDT', 'provider': 'BYBIT',
            'environment': 'TESTNET', 'readiness': 'BLOCK' if outcome == 'SKIP' else 'PASS',
            'blockers': ['SIGNAL_SCORE_BELOW_MINIMUM'],
            'strategy_snapshot': snapshot, 'strategy_route': route,
+           'candle_integrity': candles,
            'timeframe': '5m', 'decision': 'BUY', 'classification': 'SIGNAL',
            'strength': 75, 'signal_reason': 'APPROVED_FOR_SIMULATION',
            'account': {'private': 'must not copy'},
@@ -73,6 +77,7 @@ def test_preflight_and_persisted_action_keep_decision_evidence(monkeypatch, outc
     # The preflight snapshot remains independent of later readiness mutations.
     row['strategy_route']['confidence'] = 0
     row['strategy_snapshot']['effective_parameters']['timeframe'] = '1h'
+    row['candle_integrity']['count'] = 0
     action = execution._persist_action(db, NS(id=1), 1, item,
                                      {'status': 'EXECUTED', 'quantity': .01})
     saved = json.loads(action.raw_json)['preflight']
@@ -81,6 +86,10 @@ def test_preflight_and_persisted_action_keep_decision_evidence(monkeypatch, outc
     assert saved['strategy_snapshot']['effective_parameters']['timeframe'] == '5m'
     assert saved['decision'] == 'BUY'
     assert saved['strength'] == 75
+    assert saved['candle_integrity'] == {
+        'policy': 'COMPLETED_TIMESTAMPED_CANDLES', 'timeframe': '5m',
+        'count': 200, 'last_timestamp_ms': 1792000000000,
+        'last_end_ms': 1792000300000}
     assert db.actions == [action]
 
 
@@ -93,3 +102,4 @@ def test_snapshot_does_not_read_current_configuration_for_historical_actions(mon
     saved = json.loads(action.raw_json)['preflight']
     assert 'strategy_route' not in saved
     assert 'strategy_snapshot' not in saved
+    assert 'candle_integrity' not in saved
