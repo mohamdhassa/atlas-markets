@@ -225,6 +225,7 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
                     else "BROKER_PREFLIGHT_REJECTED"
                 ),
                 "request": {
+                    "reference_price": proposed.get("price"),
                     "side": proposed.get("side"),
                     "notional": proposed.get("notional"),
                     "quantity": proposed.get("quantity"),

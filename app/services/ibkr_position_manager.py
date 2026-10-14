@@ -20,6 +20,7 @@ from app.db.session import SessionLocal
 from app.services.automation import get_or_create_state
 from app.services.signal_risk import generate_signal
 from app.services.trading_candles import completed_ibkr_candles
+from app.services.ibkr_protection_levels import fill_anchored_levels
 from app.services.ibkr_fractional import ibkr_fill_is_complete, ibkr_quantities_match
 
 
@@ -157,11 +158,15 @@ async def _ensure_native_protection(db,entry,broker,item,account_id):
     try:
         raw=json.loads(entry.raw_json or '{}')
         request=raw['preflight']['request']
-        stop=float(request['stop_loss']);target=float(request['take_profit'])
+        prior=raw.get('native_protection')
+        levels=raw.get('native_protection_levels')
+        if levels is None and prior is None:
+            levels=fill_anchored_levels(entry)
+            raw['native_protection_levels']=levels
+        stop=float((levels or request)['stop_loss']);target=float((levels or request)['take_profit'])
         if not all(math.isfinite(v) and v>0 for v in (stop,target)):
             raise ValueError('INVALID_PROTECTION_LEVELS')
         expected='LONG' if entry.side=='BUY' else 'SHORT' if entry.side=='SELL' else None
-        prior=raw.get('native_protection')
         exact=ibkr_quantities_match(float(entry.quantity or 0),item['quantity'])
         partial_verify=prior is not None and 0<item['quantity']<float(entry.quantity or 0)
         if expected!=item['position_side'] or not (exact or partial_verify):
@@ -199,8 +204,9 @@ async def _ensure_native_protection(db,entry,broker,item,account_id):
                                   'checked_at':datetime.now(timezone.utc).isoformat()}
         entry.raw_json=json.dumps(raw);db.commit()
         return result
-    except (KeyError,TypeError,ValueError):
-        return {'status':'PROTECTION_BLOCKED','reason':'SAVED_PROTECTION_LEVELS_INVALID'}
+    except (KeyError,TypeError,ValueError) as exc:
+        reason=str(exc) if str(exc).startswith('PROTECTION_') else 'SAVED_PROTECTION_LEVELS_INVALID'
+        return {'status':'PROTECTION_BLOCKED','reason':reason}
 
 def _has_pending_exit(db,profile,symbol):
     return db.scalar(select(AutomationAction.id).where(
@@ -209,6 +215,16 @@ def _has_pending_exit(db,profile,symbol):
         AutomationAction.provider=='IBKR',AutomationAction.environment=='PAPER',
         AutomationAction.symbol==symbol,AutomationAction.status=='EXIT_SUBMITTED',
     ).limit(1)) is not None
+
+def _protection_error_reason(exc):
+    if isinstance(exc,httpx.HTTPStatusError):
+        try:detail=exc.response.json().get('detail')
+        except (ValueError,AttributeError):detail=None
+        known={'PROTECTION_LEVELS_DO_NOT_BRACKET_ENTRY','PROTECTION_SUBMISSION_OUTCOME_UNRESOLVED',
+               'PROTECTION_EXISTING_ORDERS_REQUIRE_RECONCILIATION','PROTECTION_POSITION_CHANGED',
+               'PROTECTION_WHATIF_REJECTED'}
+        if isinstance(detail,str) and detail in known:return detail
+    return 'PROTECTION_CHECK_FAILED:'+type(exc).__name__
 
 async def protect_saved_entry(db,entry):
     """Attach only after the filled entry audit has been committed by the scan."""
@@ -225,7 +241,7 @@ async def protect_saved_entry(db,entry):
     broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),get_settings().market_data_timeout_seconds)
     item={'symbol':entry.symbol,'position_side':'LONG' if entry.side=='BUY' else 'SHORT','quantity':float(entry.quantity or 0)}
     try:return await _ensure_native_protection(db,entry,broker,item,creds.get('account_id'))
-    except Exception as exc:return {'status':'PROTECTION_BLOCKED','reason':'PROTECTION_CHECK_FAILED:'+type(exc).__name__}
+    except Exception as exc:return {'status':'PROTECTION_BLOCKED','reason':_protection_error_reason(exc)}
 
 def _reconcile_native_exits(db,scan,profile,executions,positions,account_id):
     """A flat broker position plus exact protective executions proves a completed exit."""
@@ -323,7 +339,7 @@ async def run_ibkr_position_manager():
                         try:
                             protection=await _ensure_native_protection(db,entry,broker,item,creds.get('account_id'))
                         except Exception as exc:
-                            protection={'status':'PROTECTION_BLOCKED','reason':'PROTECTION_CHECK_FAILED:'+type(exc).__name__}
+                            protection={'status':'PROTECTION_BLOCKED','reason':_protection_error_reason(exc)}
                         result={**protection,'reason':protection.get('reason') or 'BROKER_HELD_OCA_PROTECTION'}
                         results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result)
                         # Broker-held exits own this lifecycle. Never race an opposite-signal close
