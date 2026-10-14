@@ -96,3 +96,5 @@ follow root `AGENTS.md` before making changes.
 - [Spot timeframe comparison](SPOT_TIMEFRAME_COMPARISON.md) — frozen 5m versus completed 15m signals on one common calendar and execution grid.
 
 - [Signal/router audit](SIGNAL_ROUTER_AUDIT.md) — verified score, route, exit and candle-timeframe gaps before further strategy changes.
+
+- [Trading candle integrity](RELEASE_V1_TRADING_CANDLE_INTEGRITY.md) — accurate IBKR intervals and completed candle inputs at Bybit/IBKR trading boundaries.

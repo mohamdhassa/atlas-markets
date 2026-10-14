@@ -22,7 +22,9 @@ def route(monkeypatch):
         def get(self, model, key): return profile
     class Broker:
         checks = []
-        async def candles(self, *args, **kwargs): return {'list': []}
+        async def candles(self, *args, **kwargs):
+            return {'actual_timeframe':'5m','list':[dict(timestamp_ms=1_700_000_000_000+i*300_000,
+                interval='5m',open=100,high=101,low=99,close=100) for i in range(30)]}
         async def account(self): return {'equity': 252677.49, 'available': 252677.49}
         async def positions(self): return {'list': []}
         async def quote(self, *args, **kwargs): return {'last': 100}

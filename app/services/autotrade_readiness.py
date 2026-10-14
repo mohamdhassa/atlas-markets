@@ -22,6 +22,7 @@ from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal
 from app.services.capital_sizing import capital_policy_payload, capital_sizing_inputs
 from app.services.bybit_spot_execution import managed_position_slots
+from app.services.trading_candles import INTERVAL_MS, completed_trading_candles, completed_ibkr_candles
 
 READINESS_MAX_GROSS_EXPOSURE_PCT = 50.0
 READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT = 5
@@ -274,8 +275,8 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             signal_market = str(cfg.market or "CRYPTO").upper()
 
             if profile.provider == "BYBIT":
-                candles = await market.get_candles(symbol=cfg.symbol, interval=timeframe, category="spot", limit=200)
-                normalized_candles = [x.model_dump() for x in candles]
+                candles = await market.get_candles(symbol=cfg.symbol, interval=timeframe, category="spot", limit=201)
+                normalized_candles = completed_trading_candles([x.model_dump() for x in candles], timeframe)
                 generated = generate_signal(normalized_candles, timeframe=timeframe, market=signal_market)
                 environment = str(profile.environment or "").upper()
                 if environment == "DEMO":
@@ -327,7 +328,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             elif profile.provider == "IBKR":
                 c = _secret(profile)
                 broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)
-                normalized_candles = (await broker.candles(cfg.symbol, timeframe, 200, sec_type="STK")).get("list", [])
+                normalized_candles = completed_ibkr_candles(await broker.candles(cfg.symbol, timeframe, 201, sec_type="STK"), timeframe)
                 generated = generate_signal(normalized_candles, timeframe=timeframe, market=signal_market)
                 acct = await broker.account()
                 positions = [p for p in (await broker.positions()).get("list", []) if float(p.get("quantity") or 0) != 0]
@@ -340,6 +341,15 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             else:
                 rows.append({**base, "readiness": "BLOCK", "reason": "UNSUPPORTED_PROVIDER"})
                 continue
+
+            if profile.provider in {'BYBIT', 'IBKR'}:
+                base['candle_integrity'] = {
+                    'policy': 'COMPLETED_TIMESTAMPED_CANDLES', 'timeframe': timeframe,
+                    'count': len(normalized_candles),
+                    'last_timestamp_ms': normalized_candles[-1]['timestamp_ms'],
+                    'last_end_ms': normalized_candles[-1].get('bar_end_ms',
+                        normalized_candles[-1]['timestamp_ms'] + INTERVAL_MS[timeframe]),
+                }
 
             approved, reason, details = evaluate_risk(
                 generated,
