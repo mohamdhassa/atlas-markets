@@ -92,3 +92,5 @@ follow root `AGENTS.md` before making changes.
 - [Spot ATR exit comparison](SPOT_ATR_EXIT_COMPARISON.md) — exploratory fixed protective exits versus the unchanged signal baseline, using saved datasets.
 
 - [Spot entry-cost diagnostics](SPOT_ENTRY_COST_DIAGNOSTICS.md) — descriptive trade-cost decomposition and entry-route cohorts without changing strategy filters.
+
+- [Spot timeframe comparison](SPOT_TIMEFRAME_COMPARISON.md) — frozen 5m versus completed 15m signals on one common calendar and execution grid.
