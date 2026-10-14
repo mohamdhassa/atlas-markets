@@ -90,3 +90,5 @@ follow root `AGENTS.md` before making changes.
 - [Spot walk-forward baseline](SPOT_WALK_FORWARD_BASELINE.md) — provenance-tagged public Spot data and frozen-policy, cost-aware offline research.
 
 - [Spot ATR exit comparison](SPOT_ATR_EXIT_COMPARISON.md) — exploratory fixed protective exits versus the unchanged signal baseline, using saved datasets.
+
+- [Spot entry-cost diagnostics](SPOT_ENTRY_COST_DIAGNOSTICS.md) — descriptive trade-cost decomposition and entry-route cohorts without changing strategy filters.
