@@ -88,3 +88,5 @@ follow root `AGENTS.md` before making changes.
 - [Strategy evaluation](RELEASE_V1_STRATEGY_EVALUATION.md) — read-only entry-evidence cohorts, complete closing-order metrics and unknown historical strategies.
 
 - [Spot walk-forward baseline](SPOT_WALK_FORWARD_BASELINE.md) — provenance-tagged public Spot data and frozen-policy, cost-aware offline research.
+
+- [Spot ATR exit comparison](SPOT_ATR_EXIT_COMPARISON.md) — exploratory fixed protective exits versus the unchanged signal baseline, using saved datasets.
