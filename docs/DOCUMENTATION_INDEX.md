@@ -98,3 +98,5 @@ follow root `AGENTS.md` before making changes.
 - [Signal/router audit](SIGNAL_ROUTER_AUDIT.md) — verified score, route, exit and candle-timeframe gaps before further strategy changes.
 
 - [Trading candle integrity](RELEASE_V1_TRADING_CANDLE_INTEGRITY.md) — accurate IBKR intervals and completed candle inputs at Bybit/IBKR trading boundaries.
+
+- [IBKR fill-anchored protection](RELEASE_V1_IBKR_FILL_ANCHORED_PROTECTION.md) — preserve intended risk distances at verified fills and explicitly recover rejected Paper geometry.

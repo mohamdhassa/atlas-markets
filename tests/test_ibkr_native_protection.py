@@ -269,7 +269,9 @@ def entry(db):
     row=AutomationAction(id=uuid.uuid4(),scan_id=uuid.uuid4(),user_id=uuid.uuid4(),broker_profile_id=uuid.uuid4(),
         provider='IBKR',environment='PAPER',market='STOCK',symbol='MSFT',side='BUY',status='EXECUTED',
         quantity=3,broker_order_id='1',created_at=datetime.now(timezone.utc),
-        raw_json=json.dumps({'preflight':{'request':{'stop_loss':98,'take_profit':104}},'result':{'status':'EXECUTED'}}))
+        raw_json=json.dumps({'preflight':{'request':{'reference_price':100,'stop_loss':98,'take_profit':104}},
+            'result':{'status':'EXECUTED','broker_result':{'final_status':{'order_id':1,
+                'status':{'order_id':1,'status':'Filled','filled':3,'remaining':0,'avg_fill_price':100}}}}}))
     db.add(row);db.commit();return row
 
 
@@ -287,7 +289,8 @@ def test_intent_survives_timeout_and_retry_only_verifies_same_pair(db):
     assert [p['allow_submit'] for p in calls]==[True,False]
     assert calls[0]['entry_key']==calls[1]['entry_key']==row.id.hex
     saved=json.loads(row.raw_json)
-    assert saved['result']=={'status':'EXECUTED'}
+    assert saved['result']['status']=='EXECUTED'
+    assert saved['result']['broker_result']['final_status']['status']['avg_fill_price']==100
     assert row.status=='EXECUTED'
 
 
