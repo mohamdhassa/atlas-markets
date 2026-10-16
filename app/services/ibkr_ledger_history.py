@@ -140,16 +140,29 @@ def merge_saved_fills(rows, actions, profile, account_id=None, statements=None, 
                 if str(row.get("profile_id")) == str(profile.id)}
     from app.services.ibkr_statement_import import imported_fill
     actions = list(actions)
+    from app.services.ibkr_closed_recovery import recovered_row
     entries = {str(getattr(a, 'id', '')): a for a in actions}
     entry_rows = {}
     for action in actions:
-        statement = imported_fill(action, profile, account_id, (statements or {}).get(str(getattr(action, "id", ""))))
+        retained = (statements or {}).get(str(getattr(action, 'id', '')))
+        statement = (recovered_row(action, profile, account_id, retained, actions)
+                     if retained and retained.get('source') == 'REVIEWED_IBKR_CLOSED_ROUND_TRIP'
+                     else imported_fill(action, profile, account_id, retained))
         if statement is not None:
             # A complete reviewed statement order replaces its live execution fragments.
             # Never sum an order aggregate alongside those fragments.
-            rows[:] = [r for r in rows if not (
-                str(r.get("profile_id")) == str(profile.id)
-                and str(r.get("broker_order_id")) == statement["broker_order_id"])]
+            if statement.get('execution_source') == 'REVIEWED_IBKR_CLOSED_ROUND_TRIP':
+                identities = ({t['execution_id'] for t in retained['opening_trades']}
+                              if retained['kind'] == 'opening'
+                              else set(statement['execution_ids']))
+                rows[:] = [r for r in rows if not (
+                    str(r.get('profile_id')) == str(profile.id)
+                    and (r.get('execution_id') in identities
+                         or r.get('audit_action_id') == str(action.id)))]
+            else:
+                rows[:] = [r for r in rows if not (
+                    str(r.get("profile_id")) == str(profile.id)
+                    and str(r.get("broker_order_id")) == statement["broker_order_id"])]
             rows.append(statement)
             statement['audit_action_id'] = str(getattr(action, 'id', ''))
             entry_rows[str(getattr(action, 'id', ''))] = statement
