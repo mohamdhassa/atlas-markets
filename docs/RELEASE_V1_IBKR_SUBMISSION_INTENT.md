@@ -70,6 +70,15 @@ migration failure cleanup and rejection of an unpinned ref. They do not establis
 the actual image or migrations pass. CI invokes the same runner. An unavailable or
 billing-blocked Actions job is not a pass; run it on a Docker host instead.
 
+Server validation of `117b1b98abbfe0d9cf38311f9ac7529b4d2f6231` built successfully,
+upgraded an empty PostgreSQL database to `20261010_0023`, and ran 788 tests successfully.
+Six frontend tests skipped because the Python image lacked Node, so the runner correctly
+stopped before its app smoke stage. That is not a passing acceptance result.
+The corrected runner builds a separate test-only layer from the exact app image using
+`ops/Dockerfile.validation`, which installs Debian's Node.js package. Full tests run in
+that layer; migrations and web smoke use the unchanged production image. Both temporary
+images are cleaned up. The zero-skip gate is retained.
+
 After the full candidate container check passes and the PR is merged, deploy only app
 with the recorded rollback image and existing protection override. Verify pending
 audits, exact broker state and one monitored reconciliation. No forced trade, broker

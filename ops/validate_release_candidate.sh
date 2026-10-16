@@ -14,8 +14,10 @@ git -C "$repo" cat-file -e "$candidate^{commit}"
 scratch=$(mktemp -d /tmp/atlas-release-validation.XXXXXXXX)
 run_name="atlas-verify-${candidate:0:10}-$$"
 image="$run_name:verify"
+app_image="$run_name:app"
 network_id=''
 image_built=false
+app_image_built=false
 owned_containers=()
 cleanup() {
   result=$?
@@ -25,6 +27,7 @@ cleanup() {
   done
   if [[ -n $network_id ]]; then docker network rm "$network_id" >/dev/null 2>&1 || true; fi
   if $image_built; then docker image rm "$image" >/dev/null 2>&1 || true; fi
+  if $app_image_built; then docker image rm "$app_image" >/dev/null 2>&1 || true; fi
   rm -rf -- "$scratch"
   exit "$result"
 }
@@ -34,7 +37,10 @@ trap 'exit 143' TERM
 mkdir "$scratch/source" "$scratch/results"
 git -C "$repo" archive "$candidate" | tar -x -C "$scratch/source"
 echo "Validating immutable commit $candidate"
-docker build --tag "$image" "$scratch/source"
+docker build --tag "$app_image" "$scratch/source"
+app_image_built=true
+docker build --build-arg "APP_IMAGE=$app_image" --tag "$image" \
+  --file "$scratch/source/ops/Dockerfile.validation" "$scratch/source"
 image_built=true
 network_id=$(docker network create --internal "$run_name")
 
@@ -65,8 +71,8 @@ TEST_REDIS_URL=$REDIS_URL
 export DATABASE_URL TEST_DATABASE_URL REDIS_URL TEST_REDIS_URL
 runtime_env=(-e DATABASE_URL -e TEST_DATABASE_URL -e REDIS_URL -e TEST_REDIS_URL \
   -e ALLOW_LIVE_TRADING=false -e ENVIRONMENT=release_validation)
-docker run --rm --network "$network_id" "${runtime_env[@]}" "$image" alembic upgrade head
-docker run --rm --network "$network_id" "${runtime_env[@]}" "$image" alembic current
+docker run --rm --network "$network_id" "${runtime_env[@]}" "$app_image" alembic upgrade head
+docker run --rm --network "$network_id" "${runtime_env[@]}" "$app_image" alembic current
 docker run --rm --network "$network_id" "${runtime_env[@]}" \
   -v "$scratch/source/tools:/app/tools:ro" -v "$scratch/results:/validation" \
   "$image" python -m pytest -o addopts='' -q -rs --junitxml=/validation/results.xml
@@ -74,9 +80,9 @@ docker run --rm --network "$network_id" -v "$scratch/results:/validation:ro" "$i
   python -c 'import xml.etree.ElementTree as E; r=E.parse("/validation/results.xml"); suites=list(r.iter("testsuite")); assert suites; assert sum(int(s.get("skipped",0)) for s in suites)==0, "Skipped tests do not satisfy release acceptance"; print("Full suite completed without skipped tests")'
 
 # Disable automation in the disposable DB before starting the web process.
-docker run --rm --network "$network_id" "${runtime_env[@]}" "$image" python -c \
+docker run --rm --network "$network_id" "${runtime_env[@]}" "$app_image" python -c \
   'from app.db.session import SessionLocal; from app.services.automation import get_or_create_state; db=SessionLocal(); s=get_or_create_state(db); s.enabled=False; s.killed=True; s.auto_execute_paper=False; db.commit(); db.close()'
-app_id=$(docker create --network "$network_id" "${runtime_env[@]}" "$image")
+app_id=$(docker create --network "$network_id" "${runtime_env[@]}" "$app_image")
 owned_containers+=("$app_id")
 docker start "$app_id" >/dev/null
 healthy=false

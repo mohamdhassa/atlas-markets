@@ -52,6 +52,15 @@ elif 'archive' in args:
     assert removed==({'owned-postgres','owned-redis'} if fail_migration else {'owned-postgres','owned-redis','owned-app'})
     assert all('-v' in c for c in removals)  # Remove only disposable anonymous volumes too.
     assert ['network','rm','owned-network'] in calls
+    builds=[c for c in calls if c and c[0]=='build']
+    assert len(builds)==2
+    assert any('--build-arg' in c and any('Dockerfile.validation' in a for a in c) for c in builds)
+    image_removals=[c[-1] for c in calls if c[:2]==['image','rm']]
+    assert len(image_removals)==2
+    migrations=[c for c in calls if 'alembic' in c]
+    assert all(any(a.endswith(':app') for a in c) for c in migrations)
+    tests=[c for c in calls if 'pytest' in c]
+    if not fail_migration:assert len(tests)==1 and any(a.endswith(':verify') for a in tests[0])
     assert not any('compose' in c for c in calls)
     assert '.env.oracle' not in '\n'.join(' '.join(c) for c in calls)
     assert ('PASS:' in result.stdout) is not fail_migration
