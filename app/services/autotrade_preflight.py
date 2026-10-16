@@ -98,7 +98,7 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
         # Copy only attribution fields, never account/credential payloads.
         for field in ("strategy_snapshot", "strategy_route", "timeframe",
                       "decision", "classification", "strength", "signal_reason",
-                      "candle_integrity"):
+                      "candle_integrity", "market_data_quality"):
             if field in row:
                 base[field] = deepcopy(row[field])
         if row.get("managed_position_slots") is not None:

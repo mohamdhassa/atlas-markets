@@ -22,7 +22,7 @@ from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal
 from app.services.capital_sizing import capital_policy_payload, capital_sizing_inputs
 from app.services.bybit_spot_execution import managed_position_slots
-from app.services.trading_candles import INTERVAL_MS, completed_trading_candles, completed_ibkr_candles
+from app.services.trading_candles import INTERVAL_MS, completed_trading_candles, completed_ibkr_candles, entry_candle_quality, ibkr_entry_quote_quality
 
 READINESS_MAX_GROSS_EXPOSURE_PCT = 50.0
 READINESS_MAX_NEW_POSITIONS_PER_ACCOUNT = 5
@@ -329,6 +329,9 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 c = _secret(profile)
                 broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)
                 normalized_candles = completed_ibkr_candles(await broker.candles(cfg.symbol, timeframe, 201, sec_type="STK"), timeframe)
+                base['market_data_quality'] = {'candles':entry_candle_quality(normalized_candles,timeframe)}
+                if base['market_data_quality']['candles']['reason']:
+                    raise ValueError(base['market_data_quality']['candles']['reason'])
                 generated = generate_signal(normalized_candles, timeframe=timeframe, market=signal_market)
                 acct = await broker.account()
                 positions = [p for p in (await broker.positions()).get("list", []) if float(p.get("quantity") or 0) != 0]
@@ -337,7 +340,11 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 existing_positions = len(positions)
                 existing_gross = sum(_position_notional(p) for p in positions)
                 existing_qty = sum(float(p.get("quantity") or 0) for p in positions if str(p.get("symbol") or "").upper() == cfg.symbol.upper())
-                price = _ibkr_quote_price(await broker.quote(cfg.symbol, sec_type="STK"), generated.decision)
+                quote = await broker.quote(cfg.symbol, sec_type="STK")
+                base['market_data_quality']['quote'] = ibkr_entry_quote_quality(quote,side=generated.decision)
+                if base['market_data_quality']['quote']['reason']:
+                    raise ValueError(base['market_data_quality']['quote']['reason'])
+                price = _ibkr_quote_price(quote, generated.decision)
             else:
                 rows.append({**base, "readiness": "BLOCK", "reason": "UNSUPPORTED_PROVIDER"})
                 continue

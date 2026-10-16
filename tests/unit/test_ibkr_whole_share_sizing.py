@@ -1,4 +1,5 @@
 import asyncio
+import time
 from types import SimpleNamespace as NS
 
 import pytest
@@ -11,7 +12,7 @@ from app.services import safe_automation as execution
 def route(monkeypatch):
     profile = NS(id=1, provider='IBKR', environment='PAPER', is_enabled=True, is_active=True,
                  credentials_configured=True, last_connection_status='CONNECTED', simulation_capital_override_usd=None)
-    cfg = NS(profile_id=1, market='STOCK', symbol='TSLA', mode='AUTO_TRADE')
+    cfg = NS(profile_id=1, market='STOCK', symbol='TSLA', mode='AUTO_TRADE', timeframe='5m')
     settings = NS(ibkr_fractional_api_enabled=False, bybit_public_base_url='unused', market_data_timeout_seconds=1)
     class DB:
         def __init__(self): self.calls = 0
@@ -23,11 +24,12 @@ def route(monkeypatch):
     class Broker:
         checks = []
         async def candles(self, *args, **kwargs):
-            return {'actual_timeframe':'5m','list':[dict(timestamp_ms=1_700_000_000_000+i*300_000,
-                interval='5m',open=100,high=101,low=99,close=100) for i in range(30)]}
+            end = int(time.time()*1000)//300_000*300_000
+            return {'actual_timeframe':'5m','list':[dict(timestamp_ms=end-(200-i)*300_000,
+                interval='5m',open=100,high=101,low=99,close=100) for i in range(200)]}
         async def account(self): return {'equity': 252677.49, 'available': 252677.49}
         async def positions(self): return {'list': []}
-        async def quote(self, *args, **kwargs): return {'last': 100}
+        async def quote(self, *args, **kwargs): return {'bid':100,'ask':100,'bid_received_at_ms':int(time.time()*1000),'ask_received_at_ms':int(time.time()*1000),'last':100,'source':'SNAPSHOT','market_data_type':1,'received_at_ms':int(time.time()*1000)}
         async def order_check(self, payload):
             self.checks.append(payload)
             return {'ok': True, 'what_if': True, 'simulation': True}

@@ -18,7 +18,7 @@ from app.services.historical_intelligence import db_candles,historical_probabili
 from app.services.news_intelligence import apply_news_context,context_for_symbol,refresh_news
 from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import GeneratedSignal,evaluate_risk,generate_signal,reasons_json
-from app.services.trading_candles import completed_trading_candles, completed_ibkr_candles
+from app.services.trading_candles import completed_trading_candles, completed_ibkr_candles, entry_candle_quality, ibkr_entry_quote_quality
 
 def get_or_create_state(db):
  s=db.scalar(select(AutomationState).where(AutomationState.name=='default'))
@@ -116,7 +116,10 @@ async def run_scan()->dict:
       if cfg.mode=='WATCH':continue
       approved,reason,details=evaluate_risk(generated,minimum_signal_score=minimum,account_enabled=account.is_enabled,allow_live_trading=False,account_environment=account.environment);details.update({'execution_environment':'SIMULATION','provider_environment':'PAPER','broker':'IBKR','strategy_mode':cfg.mode,'market':cfg.market,'market_data_provider':'IBKR'});sig=_record(db,scan,account,cfg,generated,approved,reason,details,timeframe)
       if cfg.mode=='AUTO_TRADE' and approved and state.auto_execute_paper and generated.decision in {'BUY','SELL'} and len(open_symbols)<risk.max_open_positions and not _has_exposure(open_symbols,symbol):
-       quote=await broker.quote(symbol,sec_type='STK');price=float(quote.get('ask') if generated.decision=='BUY' else quote.get('bid') or quote.get('last'));plan=build_execution_plan(decision=generated.decision,price=price,equity=equity,available_cash=available,risk_per_trade_pct=risk_pct,stop_atr_multiplier=stop,take_profit_rr=rr,max_position_notional_pct=max_pos);shares=math.floor(plan.quantity)
+       if entry_candle_quality(raw,timeframe)['reason']:continue
+       quote=await broker.quote(symbol,sec_type='STK')
+       if ibkr_entry_quote_quality(quote,side=generated.decision)['reason']:continue
+       price=float(quote.get('ask') if generated.decision=='BUY' else quote.get('bid') or quote.get('last'));plan=build_execution_plan(decision=generated.decision,price=price,equity=equity,available_cash=available,risk_per_trade_pct=risk_pct,stop_atr_multiplier=stop,take_profit_rr=rr,max_position_notional_pct=max_pos);shares=math.floor(plan.quantity)
        if shares>=1 and shares*price<=available:
         payload={'symbol':symbol,'side':generated.decision,'quantity':shares,'order_type':'MKT','sec_type':'STK','exchange':'SMART','currency':'USD','account_id':acct.get('account_id')};await broker.order_check(payload);await broker.place_order(payload);scan.executed_count+=1;open_symbols.add(_canonical_symbol(symbol));available=max(0,available-shares*price)
     db.flush()

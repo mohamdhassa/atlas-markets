@@ -59,7 +59,7 @@ def test_ibkr_metadata_required_old_or_mislabeled_bridge_cannot_pass(monkeypatch
 
 def test_real_3m_size_and_duration_no_silent_unknown_fallback():
     assert bridge.bar_size('3m')=='3 mins'
-    assert bridge.duration('3m',600)=='3 D'
+    assert bridge.duration('3m',600)=='7 D'
     for fn,args in ((bridge.bar_size,('7m',)),(bridge.duration,('7m',200))):
         with pytest.raises(HTTPException) as exc:fn(*args)
         assert exc.value.status_code==400
@@ -103,7 +103,7 @@ def test_bridge_request_uses_actual_interval_epoch_format_and_preserves_forming_
 
 def test_readiness_blocks_unverified_candles_before_signal_or_broker_order(monkeypatch):
     import asyncio
-    from test_ibkr_whole_share_sizing import route
+    from unit.test_ibkr_whole_share_sizing import route
     # Reuse the established readiness fixture directly with this monkeypatch.
     DB,Broker,_=route.__wrapped__(monkeypatch)
     async def wrong(*args,**kwargs):return {'actual_timeframe':'3m','list':bars()}
@@ -118,7 +118,7 @@ def test_readiness_blocks_unverified_candles_before_signal_or_broker_order(monke
 
 def test_readiness_signal_and_router_receive_only_completed_window(monkeypatch):
     import asyncio
-    from test_ibkr_whole_share_sizing import route
+    from unit.test_ibkr_whole_share_sizing import route
     DB,Broker,_=route.__wrapped__(monkeypatch)
     raw=bars()
     async def candles(*args,**kwargs):return {'actual_timeframe':'5m','list':raw}
@@ -141,7 +141,7 @@ def test_readiness_signal_and_router_receive_only_completed_window(monkeypatch):
 
 def test_bybit_readiness_blocks_missing_timestamp_before_signal(monkeypatch):
     import asyncio
-    from test_ibkr_whole_share_sizing import route
+    from unit.test_ibkr_whole_share_sizing import route
     DB,_,_=route.__wrapped__(monkeypatch)
     db=DB();profile=db.get(None,None)
     profile.provider='BYBIT';profile.environment='TESTNET'

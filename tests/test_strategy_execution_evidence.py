@@ -51,6 +51,7 @@ def test_preflight_and_persisted_action_keep_decision_evidence(monkeypatch, outc
            'blockers': ['SIGNAL_SCORE_BELOW_MINIMUM'],
            'strategy_snapshot': snapshot, 'strategy_route': route,
            'candle_integrity': candles,
+           'market_data_quality': {'quote':{'market_data_type':1}},
            'timeframe': '5m', 'decision': 'BUY', 'classification': 'SIGNAL',
            'strength': 75, 'signal_reason': 'APPROVED_FOR_SIMULATION',
            'account': {'private': 'must not copy'},
@@ -78,6 +79,7 @@ def test_preflight_and_persisted_action_keep_decision_evidence(monkeypatch, outc
     row['strategy_route']['confidence'] = 0
     row['strategy_snapshot']['effective_parameters']['timeframe'] = '1h'
     row['candle_integrity']['count'] = 0
+    row['market_data_quality']['quote']['market_data_type'] = 3
     action = execution._persist_action(db, NS(id=1), 1, item,
                                      {'status': 'EXECUTED', 'quantity': .01})
     saved = json.loads(action.raw_json)['preflight']
@@ -90,6 +92,7 @@ def test_preflight_and_persisted_action_keep_decision_evidence(monkeypatch, outc
         'policy': 'COMPLETED_TIMESTAMPED_CANDLES', 'timeframe': '5m',
         'count': 200, 'last_timestamp_ms': 1792000000000,
         'last_end_ms': 1792000300000}
+    assert saved['market_data_quality'] == {'quote':{'market_data_type':1}}
     assert db.actions == [action]
 
 

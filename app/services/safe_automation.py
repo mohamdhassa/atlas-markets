@@ -20,6 +20,8 @@ from app.services.autotrade_preflight import autotrade_preflight
 from app.services.bybit_spot_execution import execute_managed_spot_order
 from app.services.ibkr_fractional import ibkr_fill_is_complete, normalize_ibkr_shares, ibkr_quantity_is_fractional, ibkr_fractional_policy_payload
 
+from app.services.trading_candles import completed_ibkr_candles, entry_candle_quality, ibkr_entry_quote_quality
+
 CERTIFIED_AUTOMATION_ROUTES = {
     ("MT5", "DEMO"),
     ("IBKR", "PAPER"),
@@ -282,6 +284,19 @@ async def _execute_ibkr(db, *, user_id, item):
             return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_EXISTING_POSITION_PROTECTION_UNVERIFIED"}
     if any(_canonical_symbol(x.get("symbol")) == symbol and str(x.get("status") or "").upper() not in {"FILLED", "CANCELLED", "CANCELED", "INACTIVE"} for x in orders):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "status": "BLOCK", "reason": "SYMBOL_ALREADY_HAS_OPEN_ORDER"}
+    # Recheck provider data at the submission boundary; this path only opens positions.
+    timeframe = (item.get('strategy_snapshot') or {}).get('effective_parameters', {}).get('timeframe')
+    timeframe = timeframe or getattr(cfg, 'timeframe', None)
+    if not timeframe:
+        return {"market":market,"symbol":symbol,"provider":"IBKR","status":"BLOCK","reason":"IBKR_ENTRY_TIMEFRAME_REQUIRED"}
+    candles = completed_ibkr_candles(await broker.candles(symbol,timeframe,201,sec_type='STK'),timeframe)
+    quality = {'candles':entry_candle_quality(candles,timeframe)}
+    reason = quality['candles']['reason']
+    if not reason:
+        quality['quote'] = ibkr_entry_quote_quality(await broker.quote(symbol,sec_type='STK'),side=side)
+        reason = quality['quote']['reason']
+    if reason:
+        return {"market":market,"symbol":symbol,"provider":"IBKR","status":"BLOCK","reason":reason,"market_data_quality":quality}
     payload = {"symbol": symbol, "side": side, "quantity": shares, "order_type": "MKT", "sec_type": "STK", "exchange": "SMART", "currency": "USD", "account_id": creds.get("account_id")}
     check = await broker.order_check(payload)
     if not (check.get("ok") and check.get("what_if") and check.get("simulation")):
@@ -290,7 +305,7 @@ async def _execute_ibkr(db, *, user_id, item):
     if not result.get("accepted"):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "BROKER_ORDER_REJECTED", "broker_result": result}
     order_id = result.get("order_id")
-    base = {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "side": side, "shares": shares, "strategy_requested_shares": proposed.get("strategy_requested_shares") or requested, "sizing_policy": "RISK_SIZED_" + ibkr_fractional_policy_payload()["quantity_mode"], **ibkr_fractional_policy_payload(), "broker_check": check, "broker_result": result}
+    base = {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "side": side, "shares": shares, "strategy_requested_shares": proposed.get("strategy_requested_shares") or requested, "sizing_policy": "RISK_SIZED_" + ibkr_fractional_policy_payload()["quantity_mode"], **ibkr_fractional_policy_payload(), "broker_check": check, "broker_result": result, "market_data_quality": quality}
     if order_id is None:
         return {**base, "status": "SUBMITTED", "reason": "BROKER_ORDER_ID_MISSING"}
     verification, final_status = await _verify_ibkr_fill(broker, order_id, shares)

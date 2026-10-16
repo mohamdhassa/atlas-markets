@@ -57,13 +57,21 @@ def test_accepted_entry_retains_broker_id_when_fill_read_fails(monkeypatch):
     profile = NS(id=1, provider='IBKR', environment='PAPER', is_enabled=True,
                  is_active=True, credentials_configured=True, last_connection_status='CONNECTED')
     class DB:
-        def scalar(self, query): return NS(profile_id=1)
+        def scalar(self, query): return NS(profile_id=1,timeframe='5m')
         def get(self, model, key): return profile
     class Broker:
         submissions = 0
         async def health(self): return {'connected':True,'simulation':True}
         async def positions(self): return {'list':[]}
         async def orders(self): return {'list':[]}
+        async def candles(self,*args,**kwargs):
+            import time
+            end=int(time.time()*1000)//300_000*300_000
+            return {'actual_timeframe':'5m','list':[dict(timestamp_ms=end-(200-i)*300_000,
+                open=100,high=101,low=99,close=100) for i in range(200)]}
+        async def quote(self,*args,**kwargs):
+            import time
+            return {'bid':100,'ask':100,'bid_received_at_ms':int(time.time()*1000),'ask_received_at_ms':int(time.time()*1000),'last':100,'source':'SNAPSHOT','market_data_type':1,'received_at_ms':int(time.time()*1000)}
         async def order_check(self, payload): return {'ok':True,'what_if':True,'simulation':True}
         async def place_order(self, payload):
             self.submissions += 1
