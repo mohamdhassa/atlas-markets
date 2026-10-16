@@ -43,3 +43,45 @@ def completed_ibkr_candles(payload, timeframe):
     if payload.get('actual_timeframe') != timeframe:
         raise ValueError('IBKR_CANDLE_TIMEFRAME_UNVERIFIED')
     return completed_trading_candles(payload.get('list', []), timeframe)
+
+
+def entry_candle_quality(rows, timeframe, *, now_ms=None):
+    """Additional entry-only coverage/freshness gate, after completion validation."""
+    now_ms = int(time.time()*1000) if now_ms is None else now_ms
+    duration = INTERVAL_MS[timeframe]
+    end = rows[-1].get('bar_end_ms', rows[-1]['timestamp_ms']+duration) if rows else None
+    age = now_ms-end if end is not None else None
+    reason = ('ENTRY_CANDLE_HISTORY_INSUFFICIENT' if len(rows)<200 else
+              'ENTRY_CANDLES_STALE' if age is None or not 0<=age<=duration+90_000 else None)
+    return {'count':len(rows), 'required_count':200, 'timeframe':timeframe,
+            'last_end_ms':end, 'age_ms':age, 'maximum_age_ms':duration+90_000,
+            'reason':reason}
+
+
+def ibkr_entry_quote_quality(quote, *, side=None, now_ms=None):
+    """Arrival freshness is not a claim about the age of a market event."""
+    now_ms = int(time.time()*1000) if now_ms is None else now_ms
+    fields = ('ask','last','bid') if side=='BUY' else ('bid','last','ask')
+    field = next((k for k in fields if isinstance(quote.get(k),(int,float))
+                  and math.isfinite(quote[k]) and quote[k]>0), None)
+    received = quote.get(str(field)+'_received_at_ms')
+    age = now_ms-received if type(received) is int else None
+    trade = quote.get('last_trade_at_ms')
+    trade_age = now_ms-trade if type(trade) is int else None
+    reason = None
+    if (quote.get('source')!='SNAPSHOT' or quote.get('market_data_type')!=1
+            or quote.get('delayed_ticks')):
+        reason = 'IBKR_ENTRY_REALTIME_QUOTE_REQUIRED'
+    elif field is None:
+        reason = 'IBKR_ENTRY_QUOTE_PRICE_INVALID'
+    elif age is None or not 0<=age<=30_000:
+        reason = 'IBKR_ENTRY_QUOTE_STALE'
+    elif field=='last' and trade is None:
+        reason = 'IBKR_ENTRY_LAST_TRADE_TIME_REQUIRED'
+    elif field=='last' and (trade_age is None or not -2_000<=trade_age<=30_000):
+        reason = 'IBKR_ENTRY_LAST_TRADE_STALE'
+    return {'source':quote.get('source'), 'market_data_type':quote.get('market_data_type'),
+            'data_status':{1:'LIVE',2:'FROZEN',3:'DELAYED',4:'DELAYED_FROZEN'}.get(quote.get('market_data_type'),'UNKNOWN'),
+            'price_field':field, 'received_age_ms':age,
+            'last_trade_age_ms':trade_age, 'maximum_age_ms':30_000,
+            'source_timestamp_available':trade is not None, 'reason':reason}

@@ -49,11 +49,22 @@ class State(EWrapper,EClient):
  def commissionReport(self,report):
   realized=float(report.realizedPNL);realized=None if not math.isfinite(realized) or abs(realized)>1e100 else realized
   self.commissions[str(report.execId)]={'commission':float(report.commission or 0),'commission_currency':report.currency,'realized_pnl':realized}
- def tickPrice(self,reqId,tickType,price,attrib):
+ def marketDataType(self,reqId,marketDataType):
+  self.quotes.setdefault(reqId,{})['market_data_type']=int(marketDataType)
+ def tickString(self,reqId,tickType,value):
+  if tickType not in {45,88}:return
+  try:stamp=int(value)*1000
+  except (ValueError,TypeError):return
   q=self.quotes.setdefault(reqId,{})
-  if tickType in {1,66}:q['bid']=float(price)
-  elif tickType in {2,67}:q['ask']=float(price)
-  elif tickType in {4,68}:q['last']=float(price)
+  if stamp>0:q['last_trade_at_ms']=stamp
+  if tickType==88:q['delayed_ticks']=True
+ def tickPrice(self,reqId,tickType,price,attrib):
+  if tickType not in {1,2,4,66,67,68} or not math.isfinite(float(price)) or price<=0:return
+  q=self.quotes.setdefault(reqId,{})
+  field={1:'bid',66:'bid',2:'ask',67:'ask',4:'last',68:'last'}[tickType]
+  q[field]=float(price);q['received_at_ms']=int(time.time()*1000)
+  q[field+'_received_at_ms']=q['received_at_ms']
+  if tickType in {66,67,68}:q['delayed_ticks']=True
   if q.get('last') or (q.get('bid') and q.get('ask')):self._event(f'quote:{reqId}').set()
  def tickSnapshotEnd(self,reqId):self._event(f'quote:{reqId}').set()
  def historicalData(self,reqId,bar):self.bars.setdefault(reqId,[]).append({'time':bar.date,'open':float(bar.open),'high':float(bar.high),'low':float(bar.low),'close':float(bar.close),'volume':float(bar.volume or 0)})
@@ -138,9 +149,13 @@ def bar_size(tf):
  return sizes[tf]
 def duration(tf,limit):
  bar_size(tf)
- if tf=='1d':return f'{max(1,min(limit,365))} D'
+ if tf=='1d':return f'{max(1,min(365,math.ceil(limit*7/5)+7))} D'
  minutes={'1m':1,'3m':3,'5m':5,'15m':15,'30m':30,'1h':60,'4h':240}[tf]*max(limit,10)
- return f'{max(1,min(365,(minutes//1440)+2))} D'
+ # RTH has 390 minutes/session. Allow weekends/holidays, with bounded
+ # duration/bar-size combinations; missing coverage still blocks entries.
+ days=math.ceil(math.ceil(minutes/390)*7/5)+3
+ cap=1 if tf=='1m' else 7 if tf in {'3m','5m','15m'} else 31 if tf=='30m' else 365
+ return f'{max(1,min(cap,days))} D'
 def timestamped_candle(row,tf):
  raw=str(row.get('time',''))
  try:
@@ -255,7 +270,7 @@ def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',
  if not q.get('last') and q.get('bid') and q.get('ask'):
   q['last']=(q['bid']+q['ask'])/2
  if q.get('last') or q.get('bid') or q.get('ask'):
-  return {'symbol':symbol.upper(),'sec_type':sec_type,'currency':currency,'source':'SNAPSHOT',**q}
+  return {'symbol':symbol.upper(),'sec_type':sec_type,'currency':currency,'source':'SNAPSHOT','data_status':{1:'LIVE',2:'FROZEN',3:'DELAYED',4:'DELAYED_FROZEN'}.get(q.get('market_data_type'),'UNKNOWN'),**q}
  # Safe fallback: use the most recent completed historical trade bar. This is
  # market-data retrieval only; it does not change any execution/risk gate.
  hr=rid();hkey=f'bars:{hr}';ib.bars[hr]=[];prepare(hkey)
@@ -269,7 +284,7 @@ def quote(symbol:str,sec_type:str='STK',exchange:str='SMART',currency:str='USD',
  if not rows:
   raise HTTPException(502,f'No IBKR quote or historical fallback returned for {symbol}')
  last=float(rows[-1]['close'])
- return {'symbol':symbol.upper(),'sec_type':sec_type,'currency':currency,'last':last,'source':'HISTORICAL_FALLBACK','bar_time':rows[-1].get('time')}
+ return {'symbol':symbol.upper(),'sec_type':sec_type,'currency':currency,'last':last,'source':'HISTORICAL_FALLBACK','data_status':'HISTORICAL','bar_time':rows[-1].get('time')}
 @app.get('/candles')
 def candles(symbol:str,timeframe:str='5m',limit:int=200,sec_type:str='STK',exchange:str='SMART',currency:str='USD',x_atlas_bridge_token:str|None=Header(default=None)):
  auth(x_atlas_bridge_token);size=bar_size(timeframe)

@@ -100,3 +100,5 @@ follow root `AGENTS.md` before making changes.
 - [Trading candle integrity](RELEASE_V1_TRADING_CANDLE_INTEGRITY.md) — accurate IBKR intervals and completed candle inputs at Bybit/IBKR trading boundaries.
 
 - [IBKR fill-anchored protection](RELEASE_V1_IBKR_FILL_ANCHORED_PROTECTION.md) — preserve intended risk distances at verified fills and explicitly recover rejected Paper geometry.
+
+- [IBKR entry data quality and release closeout](RELEASE_V1_IBKR_ENTRY_DATA_QUALITY.md) — bounded RTH history, quote provenance and entry-only freshness gates; fixed Paper milestone acceptance.
