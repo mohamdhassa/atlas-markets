@@ -4,6 +4,7 @@ import math
 import uuid
 from datetime import timezone
 from app.services.ibkr_execution_format import execution_time_ms
+from app.services.ibkr_entry_fill import saved_execution_fill
 
 
 def saved_fill(action, profile, account_id=None):
@@ -27,7 +28,20 @@ def saved_fill(action, profile, account_id=None):
                 or not math.isclose(quantity, expected, rel_tol=0, abs_tol=1e-8)
                 or float(status.get("remaining", -1)) != 0
                 or action.side not in {"BUY", "SELL"}):
-            return None
+            proof = saved_execution_fill(action, raw, account_id)
+            if proof is None or action.status != 'EXECUTED':
+                return None
+            return {
+                'profile_id': str(profile.id), 'account': profile.account_label,
+                'provider': 'IBKR', 'market': action.market or 'STOCK',
+                'symbol': action.symbol, 'side': action.side,
+                'quantity': proof['quantity'], 'execution_price': proof['price'],
+                'broker_order_id': order_id, 'time': proof['time'],
+                'time_source': 'PERSISTED_BROKER_EXECUTION_TIME',
+                'execution_source': proof['source'], 'execution_ids': proof['execution_ids'],
+                'commission': None, 'pnl': None, 'pnl_available': False,
+                'closed_trade': False, 'pnl_status': 'BROKER_PNL_PENDING',
+            }
         if broker.get("account_id") not in (None, "", account_id):
             return None
         return {

@@ -2,6 +2,11 @@
 
 Last verified: 2026-10-02
 
+Source reviewed 2026-10-16: current integration main is `30ddccf655abb20a631346104a152b1944cef11d`;
+the source migration head is `20261010_0023`. The runtime assertions below are historical,
+not a fresh production verification. See [Project closeout](PROJECT_CLOSEOUT.md) for current
+candidate evidence, fixed acceptance checks and live-money blockers.
+
 ## Canonical baseline
 
 - Git branch: `main`

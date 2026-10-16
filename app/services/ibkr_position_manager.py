@@ -22,6 +22,7 @@ from app.services.signal_risk import generate_signal
 from app.services.trading_candles import completed_ibkr_candles
 from app.services.ibkr_protection_levels import fill_anchored_levels
 from app.services.ibkr_fractional import ibkr_fill_is_complete, ibkr_quantities_match
+from app.services.ibkr_entry_fill import execution_fill
 
 
 def _canonical(value):return str(value or '').strip().upper().replace('/','').replace(' ','')
@@ -49,10 +50,35 @@ def _execution_matches_action(action, execution, account_id):
 
 def _reconciliation_evidence(action, executions, account_id):
     matches=[x for x in executions if _execution_matches_action(action,x,account_id)]
-    expected=float(action.quantity or 0)
-    filled=sum(float(x.get('quantity') or 0) for x in matches)
+    unique={}
+    try:
+        for row in matches:
+            identity=row.get('execution_id')
+            quantity=float(row.get('quantity') or 0)
+            if not identity or not math.isfinite(quantity) or quantity<=0:return None
+            if identity in unique and unique[identity]!=row:return None
+            unique[identity]=row
+        expected=float(action.quantity or 0)
+        filled=sum(float(x['quantity']) for x in unique.values())
+    except (TypeError,ValueError):return None
     if expected<=0 or not ibkr_quantities_match(filled,expected):return None
+    matches=list(unique.values())
     return {'order_id':str(action.broker_order_id),'symbol':_canonical(action.symbol),'side':str(action.side or '').upper(),'quantity':expected,'execution_ids':[str(x.get('execution_id') or '') for x in matches if x.get('execution_id')]}
+
+def _save_entry_execution_evidence(entry,executions,account_id):
+    """Retain actual priced fills for delayed and previously position-reconciled entries."""
+    if not executions:return False
+    zone=get_settings().ibkr_execution_timezone
+    proof=execution_fill(entry,executions,account_id,zone)
+    if proof is None:return False
+    try:raw=json.loads(entry.raw_json or '{}')
+    except (TypeError,ValueError):return False
+    rows=[dict(row) for row in executions if row.get('account')==account_id
+          and str(row.get('order_id'))==str(entry.broker_order_id)]
+    raw['entry_execution_evidence']={'account_id':account_id,'execution_timezone':zone,
+        'executions':rows,'verified_at':datetime.now(timezone.utc).isoformat()}
+    entry.raw_json=json.dumps(raw,default=str)
+    return True
 
 def _submitted_entries(db,profile):
     return list(db.scalars(select(AutomationAction).where(
@@ -79,6 +105,7 @@ def _reconcile_submitted_entries(db,profile,executions,account_id):
     for action in _submitted_entries(db,profile):
         evidence=_reconciliation_evidence(action,executions,account_id)
         if evidence is None:continue
+        if not _save_entry_execution_evidence(action,executions,account_id):continue
         _mark_reconciled(action,'IBKR_EXECUTIONS',evidence)
         reconciled.append(action)
     if reconciled:db.flush()
@@ -314,6 +341,7 @@ async def run_ibkr_position_manager():
                 if get_settings().ibkr_native_protection_enabled:
                     results.extend(_reconcile_native_exits(db,scan,profile,executions,positions,creds.get('account_id')))
                 for p in positions:
+                    if not creds.get('account_id') or p.get('account')!=creds['account_id']:continue
                     qty=float(p.get('quantity') or 0)
                     if qty==0:continue
                     scan.symbols_count+=1;symbol=_canonical(p.get('symbol'));position_side='LONG' if qty>0 else 'SHORT';entry=_latest_entry(db,profile.user_id,profile.id,symbol)
@@ -332,6 +360,7 @@ async def run_ibkr_position_manager():
                     item['entry_fill_source']=fill_source
                     if not fill_verified:
                         result={'status':'EXIT_BLOCKED','reason':'ENTRY_FILL_NOT_VERIFIED'};results.append({**item,**result});_persist(db,scan,profile.user_id,profile,item,result);continue
+                    _save_entry_execution_evidence(entry,executions,creds.get('account_id'))
                     if get_settings().ibkr_native_protection_enabled:
                         if _has_pending_exit(db,profile,symbol):
                             result={'status':'PROTECTION_BLOCKED','reason':'PENDING_EXIT_RECONCILIATION_REQUIRED'}
