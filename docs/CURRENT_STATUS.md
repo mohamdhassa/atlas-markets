@@ -1,11 +1,17 @@
 # ATLAS MARKETS v1 — Current Status
 
-Last verified: 2026-10-02
+Last verified: 2026-10-16
 
-Source reviewed 2026-10-16: current integration main is `30ddccf655abb20a631346104a152b1944cef11d`;
-the source migration head is `20261010_0023`. The runtime assertions below are historical,
-not a fresh production verification. See [Project closeout](PROJECT_CLOSEOUT.md) for current
-candidate evidence, fixed acceptance checks and live-money blockers.
+Deployed application source: `0f12cce20dddbb7bf75f9787270bb0082209a46b` (PR #170).
+The isolated container suite passed 814 tests with zero skips. Production health and
+schema `20261010_0023` were verified, and a closed Paper trade was recovered durably.
+Automation is paused; Live execution is disabled. IBKR's Demo login reports unsubscribed
+market data (10167), and quotes fall back to historical data. Full broker-connected
+Paper acceptance is pending, not certified complete.
+See [Paper handover](PAPER_HANDOVER_20261016.md) for exact evidence and remaining checks.
+
+The older baseline/runtime descriptions below are historical context, not additional
+2026-10-16 attestations of every provider, watchdog or user-interface workflow.
 
 ## Canonical baseline
 
@@ -13,7 +19,7 @@ candidate evidence, fixed acceptance checks and live-money blockers.
 - Git tag: `v1.0.0`
 - Commit: `5ef08db6426876be6019541c45c0b3b3851f85eb`
 - Environment: production application with simulation/paper/testnet providers
-- Database: PostgreSQL at Alembic head `20261001_0022`
+- Database: PostgreSQL at Alembic head `20261010_0023`
 - Live Money: explicitly gated
 
 Older experimental and reverted release lines are historical Git data, not production

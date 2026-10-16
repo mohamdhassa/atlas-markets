@@ -2,6 +2,11 @@
 
 Last updated: 2026-09-28
 
+2026-10-16 checkpoint: feature work is frozen after the deployed PR #170 software
+validation and closed-trade recovery. Automation remains paused because the Demo
+API feed is unsubscribed. See [Paper handover](PAPER_HANDOVER_20261016.md); broker
+runtime acceptance and Live certification remain separate, pending milestones.
+
 The detailed checklist below is historical. For the 2026-10-16 source audit and the
 bounded remaining release scope, use [Project closeout](PROJECT_CLOSEOUT.md).
 Do not interpret old unchecked items as a requirement to restart the rebuild.
