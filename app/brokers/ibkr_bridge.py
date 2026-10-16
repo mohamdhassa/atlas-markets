@@ -3,7 +3,7 @@ import asyncio
 import httpx
 from app.services.system_events import observed_provider
 
-from app.services.execution_guard import exposure_symbols, pending_order_symbols, reserve_execution
+from app.services.execution_guard import PreSubmissionBlocked, exposure_symbols, pending_order_symbols, reserve_execution
 from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_shares
 
 class IbkrBridgeClient:
@@ -53,7 +53,7 @@ class IbkrBridgeClient:
             if not health.get('connected') or not health.get('simulation'):
                 raise RuntimeError('IBKR_PAPER_BRIDGE_REQUIRED')
             return await self._post('/protection',payload,timeout=90.0)
-    async def place_order(self,payload:dict):
+    async def place_order(self,payload:dict,*,before_submit=None):
         payload=dict(payload);symbol=str(payload.get('symbol') or '').strip().upper().replace('/','').replace(' ','');payload['symbol']=symbol
         account_key=payload.get('account_id') or self.base_url
         async with reserve_execution(f'IBKR:{account_key}',symbol) as reservation:
@@ -65,6 +65,9 @@ class IbkrBridgeClient:
             if symbol in exposure_symbols(positions,'quantity'):raise RuntimeError('SYMBOL_ALREADY_HAS_POSITION')
             orders=(await self.orders()).get('list',[])
             if symbol in pending_order_symbols(orders):raise RuntimeError('SYMBOL_ALREADY_HAS_OPEN_ORDER')
+            if before_submit is not None:
+                blocker=before_submit()
+                if blocker:raise PreSubmissionBlocked(blocker)
             return await self._post('/orders',payload)
     async def close_position(self,*,symbol:str,quantity:float,position_side:str,account_id:str):
         """Close exactly one existing Paper position after re-verifying broker state.

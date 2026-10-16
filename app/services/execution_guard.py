@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Iterable
 
 
+class PreSubmissionBlocked(RuntimeError):
+    """A local authorization check stopped the request before the broker POST."""
+
+
 def canonical_symbol(symbol: Any) -> str:
     return str(symbol or "").strip().upper().replace("/", "").replace(" ", "")
 

@@ -461,7 +461,8 @@ def test_safe_scan_attaches_only_after_committing_the_confirmed_entry(monkeypatc
         assert len(committed)>saved[0][1]
         return {'status':'PROTECTED'}
     monkeypatch.setattr(execution,'autotrade_preflight',preflight)
-    monkeypatch.setattr(execution,'_execute_ibkr',filled)
+    async def audited(*args, **kwargs): return await filled(), None
+    monkeypatch.setattr(execution,'_execute_ibkr_audited',audited)
     monkeypatch.setattr(execution,'_persist_action',persist)
     monkeypatch.setattr(manager,'protect_saved_entry',protect)
     result=asyncio.run(execution.run_safe_scan())

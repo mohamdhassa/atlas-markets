@@ -16,7 +16,7 @@ Live Money remains intentionally gated.
 | Provider | Purpose | Environment | Current route |
 |---|---|---|---|
 | Fusion Markets MT5 | FX, metals, commodities | Demo | Bridge/readiness supported; runtime terminal authorization must be healthy |
-| Interactive Brokers | Stocks, ETFs | Paper | Certified simulation route; max 1 share/order |
+| Interactive Brokers | Stocks, ETFs | Paper | Risk-sized whole shares; fractional API capability explicitly gated |
 | Bybit | Crypto Spot | Testnet / Demo | Managed Spot infrastructure with BUY/SELL certification and reconciliation gates |
 | Twelve Data | Market/historical data | Data only | Data provider; never an execution route |
 
@@ -50,7 +50,7 @@ IBKR Paper safeguards include:
 
 - Paper bridge only;
 - WhatIf preflight;
-- maximum 1 share/order;
+- risk-sized quantities rounded down to the certified share step;
 - position/open-order duplicate guards;
 - broker status polling;
 - cancelled orders never counted as executed.

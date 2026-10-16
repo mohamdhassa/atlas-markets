@@ -2,6 +2,10 @@
 
 Last updated: 2026-09-28
 
+The detailed checklist below is historical. For the 2026-10-16 source audit and the
+bounded remaining release scope, use [Project closeout](PROJECT_CLOSEOUT.md).
+Do not interpret old unchecked items as a requirement to restart the rebuild.
+
 ## Baseline
 
 `v1.0.0` at `5ef08db6426876be6019541c45c0b3b3851f85eb` is the canonical production

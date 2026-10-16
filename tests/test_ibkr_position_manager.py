@@ -83,7 +83,7 @@ def test_ibkr_exit_manager_is_paper_owned_and_lifecycle_guarded():
     text=Path('app/services/ibkr_position_manager.py').read_text()
     assert "BrokerProfile.environment=='PAPER'" in text
     assert "AutomationAction.status=='SUBMITTED'" in text
-    assert "AutomationAction.reason=='BROKER_FILL_NOT_CONFIRMED'" in text
+    assert "AutomationAction.reason.in_(['BROKER_FILL_NOT_CONFIRMED','IBKR_ENTRY_SUBMISSION_UNRESOLVED'])" in text
     assert "broker.executions(30)" in text
     assert 'BROKER_EXECUTION_RECONCILED' in text
     assert 'IBKR_CURRENT_POSITION_FALLBACK' in text

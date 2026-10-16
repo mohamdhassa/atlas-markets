@@ -73,7 +73,7 @@ def test_accepted_entry_retains_broker_id_when_fill_read_fails(monkeypatch):
             import time
             return {'bid':100,'ask':100,'bid_received_at_ms':int(time.time()*1000),'ask_received_at_ms':int(time.time()*1000),'last':100,'source':'SNAPSHOT','market_data_type':1,'received_at_ms':int(time.time()*1000)}
         async def order_check(self, payload): return {'ok':True,'what_if':True,'simulation':True}
-        async def place_order(self, payload):
+        async def place_order(self, payload, **kwargs):
             self.submissions += 1
             return {'accepted':True,'order_id':128,'simulation':True}
         async def order_status(self, order_id): raise TimeoutError('unavailable')
@@ -81,6 +81,7 @@ def test_accepted_entry_retains_broker_id_when_fill_read_fails(monkeypatch):
     monkeypatch.setattr(execution, 'IbkrBridgeClient', lambda *args: broker)
     monkeypatch.setattr(execution, '_secret', lambda *args: {'account_id':'DU_TEST'})
     monkeypatch.setattr(execution, 'get_settings', lambda: NS(ibkr_fractional_api_enabled=False,market_data_timeout_seconds=1))
+    monkeypatch.setattr(execution, '_entry_authorization_blocker', lambda *args: None)
     result = asyncio.run(execution._execute_ibkr(DB(), user_id=1,
                         item={'market':'STOCK','symbol':'MSFT','request':{'side':'BUY','shares':95}}))
     assert result['status'] == 'SUBMITTED'
@@ -115,7 +116,8 @@ def test_later_scan_failure_does_not_rollback_recorded_submission(monkeypatch):
     monkeypatch.setattr(execution,'SessionLocal',lambda:db)
     monkeypatch.setattr(execution,'get_or_create_state',lambda db:state)
     monkeypatch.setattr(execution,'autotrade_preflight',preflight)
-    monkeypatch.setattr(execution,'_execute_ibkr',submit)
+    async def audited(*args, **kwargs): return await submit(), None
+    monkeypatch.setattr(execution,'_execute_ibkr_audited',audited)
     monkeypatch.setattr(execution,'_persist_action',lambda db,scan,user_id,item,result:db.pending.append(result))
     result = asyncio.run(execution.run_safe_scan())
     assert result['status'] == 'FAILED'
