@@ -1,5 +1,21 @@
 # Project closeout and live-money decision
 
+## 2026-10-16 delivery checkpoint
+
+The application through PR #170 is deployed. Its immutable candidate passed 814
+container tests with zero skips, clean migrations and app health/system smoke.
+Production health/schema and a reviewed, durable closed Paper round trip were
+verified. Automation remains paused and Live trading disabled.
+
+IBKR's connected Demo login reports unsubscribed market data (10167) and supplies
+historical quote fallback. Freeze feature work at this software checkpoint;
+full Paper runtime acceptance remains pending. The table below records the earlier
+source-audit plan; the current evidence and unresolved runtime checks are recorded
+in [Paper handover](PAPER_HANDOVER_20261016.md). Do not treat tests, flags, or this
+checkpoint as proof of broker-connected trading readiness or a successful restore.
+
+## Earlier source audit and acceptance plan
+
 Source review: 2026-10-16, based on main `30ddccf655abb20a631346104a152b1944cef11d`
 plus this candidate. This is a source audit, not a production attestation.
 
