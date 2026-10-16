@@ -21,6 +21,7 @@ from app.services.bybit_spot_execution import execute_managed_spot_order
 from app.services.ibkr_fractional import ibkr_fill_is_complete, normalize_ibkr_shares, ibkr_quantity_is_fractional, ibkr_fractional_policy_payload
 
 from app.services.trading_candles import completed_ibkr_candles, entry_candle_quality, ibkr_entry_quote_quality
+from app.services.execution_guard import PreSubmissionBlocked
 
 CERTIFIED_AUTOMATION_ROUTES = {
     ("MT5", "DEMO"),
@@ -137,6 +138,80 @@ def _persist_action(db, scan, user_id, item, result):
     return action
 
 
+def _entry_authorization_blocker(db, profile, cfg):
+    """Reload controls after slow provider reads; cached scan state is insufficient."""
+    state = get_or_create_state(db)
+    db.refresh(state)
+    db.refresh(profile)
+    db.refresh(cfg)
+    if profile.provider != 'IBKR':
+        return 'IBKR_PROFILE_REQUIRED'
+    if state.killed:
+        return 'KILL_SWITCH'
+    if not state.enabled:
+        return 'ENGINE_DISABLED'
+    if not state.auto_execute_paper:
+        return 'SIMULATION_EXECUTION_DISABLED'
+    if not cfg.enabled or cfg.mode != 'AUTO_TRADE' or cfg.profile_id != profile.id:
+        return 'AUTO_TRADE_NOT_ENABLED'
+    if profile.user_id != cfg.user_id:
+        return 'PROFILE_OWNERSHIP_MISMATCH'
+    if not (profile.is_enabled and profile.is_active and profile.credentials_configured
+            and profile.last_connection_status == 'CONNECTED'):
+        return 'ROUTE_NOT_READY'
+    return automation_certification_blocker(profile.provider, profile.environment)
+
+
+async def _execute_ibkr_audited(db, *, scan, user_id, item):
+    """Commit an entry intent before any execution workflow can reach the broker.
+
+    A crash, cancellation or unknown exception retains that intent and blocks
+    another entry. Empty broker history is never proof that submission failed.
+    """
+    cfg, profile = _profile_for_item(db, user_id, item)
+    base = {'market': item.get('market'), 'symbol': item.get('symbol'), 'provider': 'IBKR'}
+    if cfg is None or profile is None or profile.user_id != user_id:
+        return {**base, 'status': 'BLOCK', 'reason': 'PROFILE_NOT_FOUND'}, None
+    # Serialize the pending check and intent insert across app workers sharing this profile.
+    db.refresh(profile, with_for_update=True)
+    pending = db.scalar(select(AutomationAction).where(
+        AutomationAction.user_id == user_id,
+        AutomationAction.broker_profile_id == profile.id,
+        AutomationAction.provider == 'IBKR',
+        AutomationAction.environment == 'PAPER',
+        AutomationAction.symbol == _canonical_symbol(item.get('symbol')),
+        AutomationAction.status.in_(['SUBMITTED', 'EXIT_SUBMITTED']),
+    ).limit(1))
+    if pending is not None:
+        return {**base, 'status': 'BLOCK',
+                'reason': 'IBKR_PENDING_SUBMISSION_RECONCILIATION_REQUIRED'}, None
+    blocker = _entry_authorization_blocker(db, profile, cfg)
+    if blocker:
+        return {**base, 'status': 'BLOCK', 'reason': blocker}, None
+    request = item.get('request') or {}
+    intent = {**base, 'environment': 'PAPER', 'side': request.get('side'),
+              'shares': request.get('shares') or request.get('quantity'),
+              'status': 'SUBMITTED', 'reason': 'IBKR_ENTRY_SUBMISSION_UNRESOLVED'}
+    action = _persist_action(db, scan, user_id, item, intent)
+    db.commit()  # A failed commit must prevent submission.
+    try:
+        result = await _execute_ibkr(db, user_id=user_id, item=item)
+    except Exception as exc:
+        result = {**intent, 'submission_error': type(exc).__name__}
+    # CancelledError deliberately propagates while the committed intent survives.
+    db.refresh(action)
+    raw = json.loads(action.raw_json or '{}')
+    raw['submission_intent'] = intent
+    raw['result'] = result
+    action.status = _short(result.get('status') or 'SUBMITTED', 24)
+    action.reason = _short(result.get('reason'), 128)
+    order_id, _ = _broker_ids(result.get('broker_result'))
+    action.broker_order_id = _short(order_id, 128)
+    action.raw_json = json.dumps(raw, default=str)
+    db.commit()
+    return result, action
+
+
 async def _execute_bybit(db, *, user_id, item):
     market = str(item.get("market") or "").upper()
     symbol = _canonical_symbol(item.get("symbol"))
@@ -234,7 +309,12 @@ async def _verify_ibkr_fill(broker, order_id, shares):
         if ibkr_fill_is_complete(status, shares):
             return "FILLED", latest
         if state in IBKR_TERMINAL_ORDER_STATUSES:
-            return "CANCELLED", latest
+            try:
+                filled = float(status['filled'])
+            except (KeyError, TypeError, ValueError):
+                filled = float('nan')
+            # A cancelled remainder does not prove that no shares were bought.
+            return ("CANCELLED" if math.isfinite(filled) and filled == 0 else "SUBMITTED"), latest
     return "SUBMITTED", latest
 
 
@@ -301,9 +381,19 @@ async def _execute_ibkr(db, *, user_id, item):
     check = await broker.order_check(payload)
     if not (check.get("ok") and check.get("what_if") and check.get("simulation")):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "BROKER_WHATIF_REJECTED", "broker_check": check}
-    result = await broker.place_order(payload)
-    if not result.get("accepted"):
-        return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "BROKER_ORDER_REJECTED", "broker_result": result}
+    blocker = _entry_authorization_blocker(db, profile, cfg)
+    if blocker:
+        return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": blocker}
+    try:
+        result = await broker.place_order(payload, before_submit=lambda: _entry_authorization_blocker(db, profile, cfg))
+    except PreSubmissionBlocked as exc:
+        return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": str(exc)}
+    if result.get("accepted") is not True:
+        rejected = result.get('accepted') is False and result.get('order_id') is None
+        return {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER",
+                "status": "BLOCK" if rejected else "SUBMITTED",
+                "reason": "BROKER_ORDER_REJECTED" if rejected else "IBKR_ENTRY_SUBMISSION_UNRESOLVED",
+                "broker_result": result}
     order_id = result.get("order_id")
     base = {"market": market, "symbol": symbol, "provider": "IBKR", "environment": "PAPER", "side": side, "shares": shares, "strategy_requested_shares": proposed.get("strategy_requested_shares") or requested, "sizing_policy": "RISK_SIZED_" + ibkr_fractional_policy_payload()["quantity_mode"], **ibkr_fractional_policy_payload(), "broker_check": check, "broker_result": result, "market_data_quality": quality}
     if order_id is None:
@@ -363,6 +453,7 @@ async def run_safe_scan():
                          provider=provider, symbol=item.get('symbol'), decision=(item.get('request') or {}).get('side') or 'HOLD',
                          status='PASS', preflight='PASS', scan_id=scan.id)
                     try:
+                        saved_action = None
                         emit('TRADING', 'EXECUTION_ATTEMPT', message='Execution workflow entered; submission and fill still require broker confirmation',
                              decision=(item.get('request') or {}).get('side') or 'HOLD')
                         if provider == "BYBIT":
@@ -370,7 +461,7 @@ async def run_safe_scan():
                         elif provider == "MT5":
                             result = await _execute_mt5(db, user_id=user_id, item=item)
                         elif provider == "IBKR":
-                            result = await _execute_ibkr(db, user_id=user_id, item=item)
+                            result, saved_action = await _execute_ibkr_audited(db, scan=scan, user_id=user_id, item=item)
                         else:
                             result = {"market": item.get("market"), "symbol": item.get("symbol"), "provider": provider, "status": "BLOCK", "reason": automation_certification_blocker(provider, None)}
                     except Exception as exc:
@@ -382,7 +473,8 @@ async def run_safe_scan():
                             "reason": f"EXECUTION_ERROR:{_short(exc, 100)}",
                         }
                     results.append(result)
-                    saved_action = _persist_action(db, scan, user_id, item, result)
+                    if saved_action is None:
+                        saved_action = _persist_action(db, scan, user_id, item, result)
                     if result.get("status") == "EXECUTED":
                         scan.executed_count += 1
                     db.commit()

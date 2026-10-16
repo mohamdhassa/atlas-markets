@@ -52,9 +52,9 @@ other-account lifecycle isolation.
 The local Python 3.12 suite passed: **761 passed, 4 skipped**. The skipped checks need
 PostgreSQL/Redis. Local execution is not production-equivalent container acceptance.
 
-CI now builds the production Dockerfile, upgrades its isolated PostgreSQL service to
-Alembic head, and runs the full suite with the bridge source mounted. Both application
-and integration-test database/Redis environment variables are supplied. CI and runtime
+CI now invokes `ops/validate_release_candidate.sh`: it builds the production Dockerfile,
+upgrades isolated PostgreSQL to Alembic head, runs the full suite with bridge source and
+integration settings, rejects skipped tests and smokes the isolated app. CI and runtime
 acceptance are pending until their actual results are recorded.
 
 Before merge, run that candidate container suite. After merge, record the current

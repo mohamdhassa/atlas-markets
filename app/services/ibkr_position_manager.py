@@ -87,7 +87,7 @@ def _submitted_entries(db,profile):
         AutomationAction.provider=='IBKR',
         AutomationAction.environment=='PAPER',
         AutomationAction.status=='SUBMITTED',
-        AutomationAction.reason=='BROKER_FILL_NOT_CONFIRMED',
+        AutomationAction.reason.in_(['BROKER_FILL_NOT_CONFIRMED','IBKR_ENTRY_SUBMISSION_UNRESOLVED']),
         AutomationAction.broker_order_id.is_not(None),
     )).all())
 

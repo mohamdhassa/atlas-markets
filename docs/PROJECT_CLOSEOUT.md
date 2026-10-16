@@ -3,6 +3,11 @@
 Source review: 2026-10-16, based on main `30ddccf655abb20a631346104a152b1944cef11d`
 plus this candidate. This is a source audit, not a production attestation.
 
+Candidate updates also persist uncertain IBKR entry intent, block retries, retain
+partial/unknown cancelled outcomes, and refresh authorization immediately before
+submission. See `RELEASE_V1_IBKR_SUBMISSION_INTENT.md`. The same candidate validation
+runner now runs in CI and on a Docker host, without production configuration.
+
 ## Finish line
 
 Freeze the existing application and trading policy. No new dashboards, indicators,
@@ -68,19 +73,14 @@ optimistic assumptions or another parameter search.
 
 ## Candidate validation command
 
-Run against an isolated disposable test database and Redis, never production. Set the
-four test connection variables in the shell without printing their values:
+From a checkout containing the runner, supply the full candidate commit SHA:
 
 ```bash
-docker build --tag atlas-markets:closeout-test .
-docker run --rm --network host -e DATABASE_URL atlas-markets:closeout-test alembic upgrade head
-docker run --rm --network host \
-  -e DATABASE_URL -e TEST_DATABASE_URL -e REDIS_URL -e TEST_REDIS_URL \
-  -v "$PWD/tools:/app/tools:ro" \
-  atlas-markets:closeout-test python -m pytest -o addopts='' -q -rs
+bash ops/validate_release_candidate.sh <FULL_CANDIDATE_COMMIT_SHA>
 ```
 
-`DATABASE_URL` and `TEST_DATABASE_URL` must identify the same disposable database.
-The two Redis variables must identify the disposable Redis. The CI workflow provisions
-these isolated services itself. A failed or unavailable Actions runner is not a pass;
-use the equivalent isolated server container check before merge.
+The runner creates and removes its own isolated test services. It never reads production
+connection variables or `.env.oracle`. It tests the archived commit even when the host
+worktree is on another branch. It does not switch the checkout or deploy anything.
+Capture its final PASS line with the immutable SHA. A failed or unavailable Actions
+runner is not a pass; the same server command can supply the container check before merge.

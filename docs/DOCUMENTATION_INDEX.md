@@ -5,6 +5,7 @@ This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 
 - [Project closeout](PROJECT_CLOSEOUT.md) — bounded Paper acceptance and explicit real-money blockers.
 - [Delayed entry fill evidence](RELEASE_V1_IBKR_DELAYED_FILL_EVIDENCE.md) — retain actual executions for protection and ledger recovery.
+- [Submission intent and authorization](RELEASE_V1_IBKR_SUBMISSION_INTENT.md) — retain uncertain entries, block retries and re-read controls before sending; isolated release validation runner.
 
 ## Product and design
 
