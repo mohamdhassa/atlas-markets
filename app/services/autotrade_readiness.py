@@ -21,7 +21,7 @@ from app.analysis.strategy_router import route_strategy
 from app.services.paper_execution import build_execution_plan
 from app.services.signal_risk import evaluate_risk, generate_signal
 from app.services.capital_sizing import capital_policy_payload, capital_sizing_inputs
-from app.services.bybit_spot_execution import managed_position_slots
+from app.services.bybit_spot_execution import managed_position_slots, managed_buy_is_blocked
 from app.services.trading_candles import INTERVAL_MS, completed_trading_candles, completed_ibkr_candles, entry_candle_quality, ibkr_entry_quote_quality
 
 READINESS_MAX_GROSS_EXPOSURE_PCT = 50.0
@@ -381,7 +381,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 if generated.decision == "BUY":
                     if existing_positions >= risk.max_open_positions:
                         blockers.append("MAX_OPEN_POSITIONS_REACHED")
-                    if existing_qty > 1e-12:
+                    if managed_buy_is_blocked(cfg.symbol, existing_qty, slots):
                         blockers.append("ATLAS_MANAGED_POSITION_ALREADY_OPEN")
                 elif generated.decision == "SELL" and existing_qty <= 1e-12:
                     blockers.append("NO_ATLAS_MANAGED_INVENTORY")
