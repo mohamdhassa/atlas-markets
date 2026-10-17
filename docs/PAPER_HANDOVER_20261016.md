@@ -26,7 +26,8 @@ financials are deliberately excluded from this public handover.
 | Backup | Private custom-format production dump created; archive listing successfully checked |
 | Rollback | Previous app image retained under a versioned `pre-pr170` tag; previous commit/image recorded on server |
 
-The backup listing check is not a restore drill. Reading retained ledger rows
+The original backup listing check was not a restore drill; the following-day
+restore result is recorded below. Reading retained ledger rows
 without live fills is not a physical bridge restart test. Core health is not
 proof that all provider sessions, user interfaces or trading feeds are ready.
 
@@ -84,3 +85,25 @@ for this documentation checkpoint, so the unchanged suite was not repeated.
 Use [Project closeout](PROJECT_CLOSEOUT.md) for the fixed acceptance criteria and
 remaining live-route, capital/loss-control and frozen-policy evidence gates.
 No further feature expansion or parameter search is needed for this checkpoint.
+
+## 2026-10-17 follow-up evidence
+
+A fresh production dump was restored with `pg_restore --exit-on-error` into a
+temporary PostgreSQL container using the production PostgreSQL image, no network
+and no published ports. The schema head, users, profiles, both selected trade
+actions and their retained closed-pair evidence passed SQL assertions. The
+operator reported `RESTORE_DRILL_PASS`; cleanup removed the temporary container
+and its disposable volumes. Production was not replaced. Application startup
+against the restored database and decryption-key recovery were not tested by
+this database-only drill.
+
+The deployed ADMIN browser session loaded Dashboard, Operations, Performance
+and Users & Access. Automation displayed stopped. Performance eventually loaded
+after a delay; it was not a permanently empty page. Its broker-reported recovered
+P&L was correct, but entry date/price/duration came from an older unmatched FIFO
+lot. The exact-entry reporting correction is described in
+[closed recovery release notes](RELEASE_V1_IBKR_CLOSED_RECOVERY.md).
+Its code candidate still requires isolated container validation and deployment.
+No trading controls or user accounts were changed during this review. A separate
+USER session and mobile viewport acceptance remain pending; seeing the ADMIN
+user list does not validate USER isolation.

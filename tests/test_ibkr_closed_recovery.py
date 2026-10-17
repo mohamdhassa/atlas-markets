@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.db.models.ibkr_statement import IbkrStatementEvidence
 from app.services.ibkr_closed_recovery import recover_closed_pair, recovered_row
 from app.services.ibkr_ledger_history import merge_saved_fills
+from app.api.routes_broker_native import _pair_execution_lots
 from test_ibkr_statement_import import data, flex
 
 
@@ -163,3 +164,30 @@ def test_execution_callbacks_are_canonicalized_on_repeated_apply(data):
     args['executions'].pop()
     recover_closed_pair(**args, apply=True)
     assert len(retained(args['db'])) == 2
+
+
+def test_reviewed_close_uses_exact_entry_with_older_orphan_lots(data):
+    args = inputs(data)
+    recover_closed_pair(**args, apply=True)
+    old = dict(profile_id=str(args['profile'].id), symbol='MSFT', side='BUY',
+        quantity=2, execution_price=80, time=1791450000000,
+        audit_action_id='older-unmatched-entry', broker_order_id='older-order',
+        closed_trade=False, pnl_available=False)
+    rows = merge_saved_fills([old], [args['entry'], args['exit_action']],
+        args['profile'], 'DU_TEST', retained(args['db']))
+    _pair_execution_lots(rows)
+    close = next(r for r in rows if r.get('closed_trade'))
+    assert close['entry_price'] == 100
+    assert close['invested_amount'] == 200
+    assert close['duration_seconds'] == 3600
+    assert close['entry_action_ids'] == [str(args['entry'].id)]
+    assert close['opened_time_source'] == 'IBKR_STATEMENT_EXECUTION_TIME'
+    assert close['pnl'] == 8 and close['commission'] == 1
+    assert close['return_pct'] == 4
+    # The exact pair must consume its own opening lot, leaving the historical
+    # orphan for a later ordinary FIFO close rather than reusing the paired lot.
+    ordinary = dict(profile_id=str(args['profile'].id), symbol='MSFT', side='SELL',
+        quantity=2, execution_price=110, time=close['time'] + 1000,
+        closed_trade=True, pnl_available=False)
+    _pair_execution_lots(rows + [ordinary])
+    assert ordinary['entry_price'] == 80
