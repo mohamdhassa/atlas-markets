@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import math
 from collections import defaultdict
 from datetime import datetime,timezone,timedelta
 from app.services.ibkr_execution_format import execution_time_ms as _execution_time_ms
@@ -28,6 +29,16 @@ from app.services.strategy_evaluation import attach_entry_strategies, strategy_e
 
 router=APIRouter(tags=['portfolio','performance'])
 MARKETS=['CRYPTO','FX','STOCK','ETF','METAL','COMMODITY']
+
+def _position_pnl_total(positions):
+ """A flat account has zero open P&L; any unvalued holding makes it unknown."""
+ values=[]
+ for position in positions:
+  try:value=float(position.get('unrealized_pnl'))
+  except (TypeError,ValueError):return None
+  if not math.isfinite(value):return None
+  values.append(value)
+ return round(sum(values),2)
 
 def _accounts(db:Session,user:User):
  q=select(BrokerProfile).where(BrokerProfile.provider.in_(['BYBIT','MT5','IBKR']),BrokerProfile.is_enabled.is_(True));q=q if user.role=='ADMIN' else q.where(BrokerProfile.user_id==user.id);return list(db.scalars(q).all())
@@ -142,24 +153,25 @@ async def portfolio(user:User=Depends(get_current_user),db:Session=Depends(get_d
     plist=managed
     for x in managed:
      positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'BYBIT','market':'CRYPTO','symbol':x.symbol,'side':'LONG','quantity':_f(x.managed_quantity),'entry_price':_f(x.average_entry_price),'mark_price':None,'unrealized_pnl':None,'leverage':None,'position_source':'ATLAS_MANAGED_SPOT'})
-    unrealized=0
+    unrealized=None if plist else 0
    elif p.provider=='MT5':
     c=_mt5(p);a=await c.account();pos=await c.positions();equity=_f(a.get('equity'));available=_f(a.get('margin_free'));plist=pos.get('list',[])
     for x in plist:
-     market=symmap.get(str(x.get('symbol') or '').upper(),_mt5_market(x.get('symbol')));positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'MT5','market':market,'symbol':x.get('symbol'),'side':'BUY' if int(x.get('type',0))==0 else 'SELL','quantity':_f(x.get('volume')),'entry_price':_f(x.get('price_open')),'mark_price':_f(x.get('price_current')),'unrealized_pnl':_f(x.get('profit')),'leverage':None,'ticket':x.get('ticket')})
-    unrealized=sum(_f(x.get('profit')) for x in plist)
+     market=symmap.get(str(x.get('symbol') or '').upper(),_mt5_market(x.get('symbol')));positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'MT5','market':market,'symbol':x.get('symbol'),'side':'BUY' if int(x.get('type',0))==0 else 'SELL','quantity':_f(x.get('volume')),'entry_price':_f(x.get('price_open')),'mark_price':_f(x.get('price_current')),'unrealized_pnl':_position_pnl_total([{'unrealized_pnl':x.get('profit')}]),'leverage':None,'ticket':x.get('ticket')})
+    unrealized=_position_pnl_total([{'unrealized_pnl':_position_pnl_total([{'unrealized_pnl':x.get('profit')}])} for x in plist])
    else:
     c=_ibkr(p);a=await c.account();pos=await c.positions();equity=_f(a.get('equity'));available=_f(a.get('available'));plist=[x for x in pos.get('list',[]) if _f(x.get('quantity'))]
     for x in plist:
      symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');positions.append({'profile_id':str(p.id),'account':p.account_label,'provider':'IBKR','market':market,'symbol':symbol,'side':'LONG' if _f(x.get('quantity'))>0 else 'SHORT','quantity':abs(_f(x.get('quantity'))),'entry_price':_f(x.get('avg_cost')),'mark_price':None,'unrealized_pnl':None,'leverage':None})
-    unrealized=0
-   out.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_account_market(p.provider),'environment':p.environment,'active':p.is_active,'status':'CONNECTED','data_status':'FRESH','observed_at':datetime.now(timezone.utc).isoformat(),'equity':equity,'available':available,'positions':len(plist),'unrealized_pnl':round(unrealized,2)})
+    unrealized=None if plist else 0
+   out.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_account_market(p.provider),'environment':p.environment,'active':p.is_active,'status':'CONNECTED','data_status':'FRESH','observed_at':datetime.now(timezone.utc).isoformat(),'equity':equity,'available':available,'positions':len(plist),'unrealized_pnl':round(unrealized,2) if unrealized is not None else None})
   except Exception as exc:
    errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
    if p.provider=='IBKR':
     out.append({'id':str(p.id),'label':p.account_label,'provider':p.provider,'market':_account_market(p.provider),'environment':p.environment,'active':p.is_active,'status':'UNAVAILABLE','data_status':'STALE','observed_at':p.last_sync_at.isoformat() if p.last_sync_at else None,'equity':p.equity_usd,'available':None,'positions':None,'unrealized_pnl':None})
  fresh=[x for x in out if x.get('data_status')=='FRESH']
- return {'accounts':out,'positions':positions,'errors':errors,'totals':{'partial':bool(errors),'equity':round(sum(x['equity'] for x in fresh),2),'available':round(sum(x['available'] for x in fresh),2),'unrealized_pnl':round(sum(x['unrealized_pnl'] for x in fresh),2),'open_positions':len(positions)}}
+ pnl_complete=not errors and all(x.get('unrealized_pnl') is not None for x in fresh)
+ return {'accounts':out,'positions':positions,'errors':errors,'totals':{'partial':bool(errors),'equity':round(sum(x['equity'] for x in fresh),2),'available':round(sum(x['available'] for x in fresh),2),'unrealized_pnl':round(sum(x['unrealized_pnl'] for x in fresh),2) if pnl_complete else None,'unrealized_pnl_complete':pnl_complete,'open_positions':len(positions)}}
 
 @router.get('/broker-orders')
 @isolated_provider_read

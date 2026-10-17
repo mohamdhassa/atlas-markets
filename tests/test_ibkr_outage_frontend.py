@@ -7,7 +7,7 @@ import pytest
 def test_outage_assets_have_new_cache_versions():
     html = Path('app/static/index.html').read_text()
     assert 'portfolio-v61.js?v=84.2' in html
-    assert 'dashboard-v72-2.js?v=72.3' in html
+    assert 'dashboard-v72-2.js?v=72.4' in html
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node optional in Python container')
@@ -25,5 +25,9 @@ const page=sandbox();vm.createContext(page);vm.runInContext(fs.readFileSync('app
 portfolio={accounts:[{...stale,data_status:'FRESH',available:999,positions:1}],positions:[{profile_id:'ib',symbol:'TSLA',provider:'IBKR',account:'Paper',quantity:1,entry_price:100,side:'LONG'}],totals:{equity:999}};
 await page.window.AtlasPortfolioV61.render();assert(page.content.innerHTML.includes('POSITION OPEN'));assert(!page.content.innerHTML.includes('STALE'));assert(!page.content.innerHTML.includes('Portfolio unavailable'));
 await dashboard.window.AtlasDashboardV722.dashboard();assert(!dashboard.content.innerHTML.includes('Last saved equity · STALE $999'));
+portfolio.totals={equity:999,unrealized_pnl:null,open_positions:3};
+await dashboard.window.AtlasDashboardV722.dashboard();assert(dashboard.content.innerHTML.includes('Open P&L</span><strong>—</strong>'));assert(dashboard.content.innerHTML.includes('3 holdings · P&L unavailable'));
+portfolio.totals={equity:999,unrealized_pnl:0,open_positions:0};
+await dashboard.window.AtlasDashboardV722.dashboard();assert(dashboard.content.innerHTML.includes('Open P&L</span><strong>$0.00</strong>'));
 })().catch(e=>{console.error(e);process.exitCode=1});
 '''], check=True, capture_output=True, text=True)
