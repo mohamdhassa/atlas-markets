@@ -51,3 +51,14 @@ App rollback leaves this evidence in the database; older images ignore this new
 source. The original broker audits remain available. Backups include the table.
 This candidate needs the full isolated Docker validator before merge/deployment.
 It does not certify market-data subscriptions, protection or Live execution.
+
+## Exact opening context in the combined ledger
+
+A deployed browser review found that, with older unmatched stock entries in the
+same report, generic FIFO pairing could assign a recovered close an older opening
+date and price even though its broker P&L was correct. Revalidated closed-pair
+rows now carry their explicit entry action, price, timestamp and timestamp source
+into the existing exact-entry pairing path. This changes reporting context only;
+broker fees/P&L and original stored evidence remain unchanged. No reimport or
+migration is needed. The regression includes older orphan lots and a later
+ordinary close to verify inventory consumption as well as price, duration and return.

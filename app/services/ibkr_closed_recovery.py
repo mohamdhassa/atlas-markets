@@ -170,6 +170,15 @@ def recovered_row(action, profile, account_id, stored, actions):
         kind = 'opening' if action.id == entry.id else 'closing' if action.id == exit_action.id else None
         if kind != stored['kind'] or stored['opening'] != opening or stored['closing'] != close:
             return None
-        return {**(opening if kind == 'opening' else close), 'audit_action_id': str(action.id)}
+        row = {**(opening if kind == 'opening' else close), 'audit_action_id': str(action.id)}
+        if kind == 'closing':
+            # Reporting already supports exact native-exit links. Use that same
+            # path for a reviewed closed pair instead of consuming orphan FIFO
+            # lots from incomplete older bridge history.
+            row.update(entry_action_id=str(entry.id),
+                       linked_entry_price=opening['execution_price'],
+                       linked_entry_time=opening['time'],
+                       linked_entry_time_source=opening['time_source'])
+        return row
     except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
         return None
