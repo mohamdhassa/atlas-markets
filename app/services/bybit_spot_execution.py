@@ -25,6 +25,18 @@ BYBIT_FILL_VERIFY_DELAY_SECONDS = 1.0
 BYBIT_FILLED_STATUSES = {"FILLED", "PARTIALLYFILLED"}
 
 
+def managed_buy_is_blocked(symbol, quantity, slots):
+    """Only confirmed quantity dust may coexist with one new managed entry."""
+    value = float(quantity)
+    if not math.isfinite(value) or value < 0:
+        return True
+    if value <= 1e-12:
+        return False
+    name = _canonical_symbol(symbol)
+    return (name not in slots.get('quantity_dust_symbols', [])
+            or name in slots.get('unverified_symbols', []))
+
+
 async def managed_position_slots(client: BybitPrivateClient, inventories) -> dict:
     """Exclude only broker-confirmed quantity dust; retain inventory and exposure."""
     dust = []
@@ -315,14 +327,22 @@ async def execute_managed_spot_order(
 
     inventory = managed_inventory(db, profile.id, symbol)
     managed_before = float(inventory.managed_quantity or 0) if inventory else 0.0
-    if side == "BUY" and managed_before > 1e-12:
-        return {**base, "status": "BLOCK", "reason": "ATLAS_MANAGED_POSITION_ALREADY_OPEN", "managed_quantity": managed_before}
+    client = None
+    if side == "BUY" and managed_buy_is_blocked(symbol, managed_before, {}):
+        try:
+            client = _bybit_client(profile)
+            slots = await managed_position_slots(client, [inventory])
+        except Exception:
+            slots = {'quantity_dust_symbols': [], 'unverified_symbols': [symbol]}
+        if managed_buy_is_blocked(symbol, managed_before, slots):
+            return {**base, "status": "BLOCK", "reason": "ATLAS_MANAGED_POSITION_ALREADY_OPEN", "managed_quantity": managed_before}
+        base['residual_quantity_dust'] = managed_before
     if side == "SELL" and (inventory is None or managed_before <= 1e-12):
         return {**base, "status": "BLOCK", "reason": "NO_ATLAS_MANAGED_INVENTORY", "managed_quantity": managed_before}
     if side == "SELL" and quantity > managed_before + 1e-12:
         return {**base, "status": "BLOCK", "reason": "SELL_EXCEEDS_ATLAS_MANAGED_INVENTORY", "managed_quantity": managed_before}
 
-    client = _bybit_client(profile)
+    client = client or _bybit_client(profile)
     reconciliation = None
     if side == "SELL":
         wallet = await client.wallet()
