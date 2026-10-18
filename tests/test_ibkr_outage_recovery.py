@@ -125,6 +125,8 @@ async def test_portfolio_keeps_other_provider_and_excludes_stale_ibkr_from_total
     assert data['totals']['equity'] == 100
     assert data['totals']['available'] == 80
     assert data['totals']['partial'] is True
+    assert data['totals']['unrealized_pnl'] is None
+    assert data['totals']['unrealized_pnl_complete'] is False
     stale = data['accounts'][0]
     assert stale['equity'] == 999 and stale['data_status'] == 'STALE'
     assert stale['positions'] is stale['available'] is None

@@ -3,6 +3,7 @@
 This index is the entry point for the canonical `v1.0.0` baseline at Git commit
 `5ef08db6426876be6019541c45c0b3b3851f85eb`.
 
+- [Open P&L availability](RELEASE_OPEN_PNL_AVAILABILITY.md) — preserve unknown open P&L and distinguish holdings from sellable positions.
 - [Project closeout](PROJECT_CLOSEOUT.md) — bounded Paper acceptance and explicit real-money blockers.
 - [Bybit quantity-dust re-entry](RELEASE_BYBIT_DUST_REENTRY.md) — align same-symbol BUY checks with broker-confirmed dust classification while retaining inventory and risk limits.
 - [2026-10-16 Paper handover](PAPER_HANDOVER_20261016.md) — deployed/tested checkpoint, paused automation, unsubscribed Demo data and remaining runtime checks.
