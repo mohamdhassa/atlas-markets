@@ -110,3 +110,5 @@ follow root `AGENTS.md` before making changes.
 - [IBKR fill-anchored protection](RELEASE_V1_IBKR_FILL_ANCHORED_PROTECTION.md) — preserve intended risk distances at verified fills and explicitly recover rejected Paper geometry.
 
 - [IBKR entry data quality and release closeout](RELEASE_V1_IBKR_ENTRY_DATA_QUALITY.md) — bounded RTH history, quote provenance and entry-only freshness gates; fixed Paper milestone acceptance.
+
+- [Flat RSI research](SPOT_FLAT_RSI_RESEARCH.md) — frozen neutral flat-lookback candidate, standalone comparison and unchanged production signals.
