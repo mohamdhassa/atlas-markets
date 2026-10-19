@@ -112,3 +112,5 @@ follow root `AGENTS.md` before making changes.
 - [IBKR entry data quality and release closeout](RELEASE_V1_IBKR_ENTRY_DATA_QUALITY.md) — bounded RTH history, quote provenance and entry-only freshness gates; fixed Paper milestone acceptance.
 
 - [Flat RSI research](SPOT_FLAT_RSI_RESEARCH.md) — frozen neutral flat-lookback candidate, standalone comparison and unchanged production signals.
+
+- [Prospective Spot breakout v1](SPOT_BREAKOUT_V1.md) — frozen independent entry/exit hypothesis, future-only evaluation and no production integration.
