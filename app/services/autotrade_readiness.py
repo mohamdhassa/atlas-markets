@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.services.ibkr_paper_data import delayed_paper_mode, delayed_reference
 
 import json
 import math
@@ -328,8 +329,9 @@ async def autotrade_readiness(db, *, user_id) -> dict:
             elif profile.provider == "IBKR":
                 c = _secret(profile)
                 broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)
+                paper_delayed = await delayed_paper_mode(settings, profile.environment, broker)
                 normalized_candles = completed_ibkr_candles(await broker.candles(cfg.symbol, timeframe, 201, sec_type="STK"), timeframe)
-                base['market_data_quality'] = {'candles':entry_candle_quality(normalized_candles,timeframe)}
+                base['market_data_quality'] = {'candles':entry_candle_quality(normalized_candles,timeframe,paper_delayed=paper_delayed)}
                 if base['market_data_quality']['candles']['reason']:
                     raise ValueError(base['market_data_quality']['candles']['reason'])
                 generated = generate_signal(normalized_candles, timeframe=timeframe, market=signal_market)
@@ -340,8 +342,12 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 existing_positions = len(positions)
                 existing_gross = sum(_position_notional(p) for p in positions)
                 existing_qty = sum(float(p.get("quantity") or 0) for p in positions if str(p.get("symbol") or "").upper() == cfg.symbol.upper())
-                quote = await broker.quote(cfg.symbol, sec_type="STK")
-                base['market_data_quality']['quote'] = ibkr_entry_quote_quality(quote,side=generated.decision)
+                if paper_delayed:
+                    quote, evidence = delayed_reference(normalized_candles, timeframe)
+                    base['market_data_quality']['quote'] = evidence
+                else:
+                    quote = await broker.quote(cfg.symbol, sec_type="STK")
+                    base['market_data_quality']['quote'] = ibkr_entry_quote_quality(quote,side=generated.decision)
                 if base['market_data_quality']['quote']['reason']:
                     raise ValueError(base['market_data_quality']['quote']['reason'])
                 price = _ibkr_quote_price(quote, generated.decision)

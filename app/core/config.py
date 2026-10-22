@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     dependency_health_timeout_seconds: float = 2.0
     ibkr_fractional_api_enabled: bool = False
     ibkr_native_protection_enabled: bool = False
+    ibkr_paper_delayed_data_enabled: bool = False
     ibkr_execution_timezone: str = 'Etc/UTC'
     model_config = SettingsConfigDict(env_file=".env",env_file_encoding="utf-8",case_sensitive=False,extra="ignore")
 

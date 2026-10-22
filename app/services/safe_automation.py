@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.services.ibkr_paper_data import delayed_paper_mode, delayed_reference
 
 import asyncio
 import json
@@ -370,10 +371,14 @@ async def _execute_ibkr(db, *, user_id, item):
     if not timeframe:
         return {"market":market,"symbol":symbol,"provider":"IBKR","status":"BLOCK","reason":"IBKR_ENTRY_TIMEFRAME_REQUIRED"}
     candles = completed_ibkr_candles(await broker.candles(symbol,timeframe,201,sec_type='STK'),timeframe)
-    quality = {'candles':entry_candle_quality(candles,timeframe)}
+    paper_delayed = await delayed_paper_mode(get_settings(), profile.environment, broker, health=health)
+    quality = {'candles':entry_candle_quality(candles,timeframe,paper_delayed=paper_delayed)}
     reason = quality['candles']['reason']
     if not reason:
-        quality['quote'] = ibkr_entry_quote_quality(await broker.quote(symbol,sec_type='STK'),side=side)
+        if paper_delayed:
+            _, quality['quote'] = delayed_reference(candles, timeframe)
+        else:
+            quality['quote'] = ibkr_entry_quote_quality(await broker.quote(symbol,sec_type='STK'),side=side)
         reason = quality['quote']['reason']
     if reason:
         return {"market":market,"symbol":symbol,"provider":"IBKR","status":"BLOCK","reason":reason,"market_data_quality":quality}
