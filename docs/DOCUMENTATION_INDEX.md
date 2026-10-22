@@ -114,3 +114,5 @@ follow root `AGENTS.md` before making changes.
 - [Flat RSI research](SPOT_FLAT_RSI_RESEARCH.md) — frozen neutral flat-lookback candidate, standalone comparison and unchanged production signals.
 
 - [Prospective Spot breakout v1](SPOT_BREAKOUT_V1.md) — frozen independent entry/exit hypothesis, future-only evaluation and no production integration.
+
+- [IBKR delayed-data Paper mode](RELEASE_IBKR_PAPER_DELAYED_DATA.md) — explicit Demo-only opt-in, bounded candle references and unchanged Live/entry controls.

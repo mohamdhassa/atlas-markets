@@ -45,16 +45,18 @@ def completed_ibkr_candles(payload, timeframe):
     return completed_trading_candles(payload.get('list', []), timeframe)
 
 
-def entry_candle_quality(rows, timeframe, *, now_ms=None):
+def entry_candle_quality(rows, timeframe, *, now_ms=None, paper_delayed=False):
     """Additional entry-only coverage/freshness gate, after completion validation."""
     now_ms = int(time.time()*1000) if now_ms is None else now_ms
     duration = INTERVAL_MS[timeframe]
     end = rows[-1].get('bar_end_ms', rows[-1]['timestamp_ms']+duration) if rows else None
     age = now_ms-end if end is not None else None
+    maximum_age = duration + 90_000 + (1_200_000 if paper_delayed else 0)
     reason = ('ENTRY_CANDLE_HISTORY_INSUFFICIENT' if len(rows)<200 else
-              'ENTRY_CANDLES_STALE' if age is None or not 0<=age<=duration+90_000 else None)
+              'ENTRY_CANDLES_STALE' if age is None or not 0<=age<=maximum_age else None)
     return {'count':len(rows), 'required_count':200, 'timeframe':timeframe,
-            'last_end_ms':end, 'age_ms':age, 'maximum_age_ms':duration+90_000,
+            'last_end_ms':end, 'age_ms':age, 'maximum_age_ms':maximum_age,
+            'policy':'IBKR_PAPER_DELAYED_DATA' if paper_delayed else 'REALTIME_ENTRY',
             'reason':reason}
 
 

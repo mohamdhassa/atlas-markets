@@ -1,0 +1,7 @@
+# Optional opt-in for an IBKR Paper/Demo account with delayed stock data.
+# Retain the native-protection overlay and this overlay on later app recreations.
+services:
+  app:
+    environment:
+      IBKR_PAPER_DELAYED_DATA_ENABLED: "true"
+      ALLOW_LIVE_TRADING: "false"
