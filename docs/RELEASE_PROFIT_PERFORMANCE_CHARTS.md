@@ -67,3 +67,15 @@ Scope explicit stacked metric typography, three equal-width cards, dark date
 fields, and a compact Reset button to the profit page. Filters use a five-column
 desktop grid and two-column narrow layout; cards stack on phones. Preserve all
 data calculations, filter actions and trading settings. Cache version is 72.2.
+
+## Phone sizing correction
+
+Remove the 560px minimum plot width. Draw the SVG using the chart container's
+actual width, keep a 300px mobile viewBox height and show only endpoint date
+labels on narrow plots. Pointer inspection uses the actual SVG coordinates.
+ResizeObserver redraws when width changes without another provider request.
+Mobile summaries use one full-width P&L card and two compact supporting cards.
+Date fields stack below 400px and use 16px input text; checkboxes remain 18px
+inside 44px touch rows. Asset version 72.3. No calculation or trading changes.
+Actual phone visual verification remains pending; automated geometry checks cover
+260, 288, 326, 366, 650 and 1000 pixel chart containers.

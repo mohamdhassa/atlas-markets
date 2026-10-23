@@ -37,6 +37,30 @@ const style=document.createElement('style');style.textContent=`
 #profitPage #profitCoverage{font-size:.76rem;line-height:1.7;border-top:1px solid var(--line);padding-top:16px;margin-top:18px}
 @media(max-width:1100px){#profitPage .profit-filters{grid-template-columns:repeat(2,minmax(0,1fr))}#profitPage .profit-picker{grid-column:1/-1}#profitPage .profit-filters button{width:100%}}
 @media(max-width:650px){#profitPage{gap:14px}#profitPage #profitFacts{grid-template-columns:1fr}#profitPage .metric-card{gap:8px;padding:18px}#profitPage .profit-filters{gap:12px}#profitPage .profit-symbols{box-sizing:border-box;width:100%}#profitPage .profit-filters button{padding:10px 8px}}
+
+#profitPage .profit-plot-scroll{min-width:0;overflow:hidden}
+#profitPage .profit-plot-scroll svg{min-width:0;width:100%;height:auto}
+#profitPage .profit-symbols label{min-height:44px}
+#profitPage .profit-symbols input[type=checkbox]{min-height:18px;height:18px;width:18px;flex:0 0 18px}
+#profitPage .profit-symbols label>span{min-width:0;overflow-wrap:anywhere}
+#profitPage .profit-inspect input[type=range]{box-sizing:border-box;min-width:0;min-height:44px;margin:0}
+#profitPage .profit-point{overflow-wrap:anywhere}
+@media(max-width:650px){
+ #profitPage .panel{padding:14px}
+ #profitPage #profitFacts{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ #profitPage .metric-card{padding:14px;gap:6px}
+ #profitPage .metric-card:first-child{grid-column:1/-1}
+ #profitPage .metric-card>strong{font-size:1.2rem}
+ #profitPage .metric-card:first-child>strong{font-size:1.7rem}
+ #profitPage .metric-card>small{font-size:.7rem}
+ #profitPage .profit-filters input[type=date]{font-size:16px}
+ #profitPage .profit-legend{gap:10px;margin:10px 0}
+ #profitPage .profit-legend span{font-size:12px;max-width:100%;overflow-wrap:anywhere}
+ #profitPage .profit-inspect{margin-top:12px;font-size:.8rem}
+ #profitPage .page-intro h3{font-size:1.1rem}
+ #profitPage .page-intro .muted{font-size:.8rem}
+}
+@media(max-width:400px){#profitPage .profit-filters>label{grid-column:1/-1}}
 `;document.head.appendChild(style);
 
 function line(candles){const a=(candles||[]).map(x=>Number(x.close)).filter(Number.isFinite);if(a.length<2)return '<div class="empty-state">Chart unavailable.</div>';const w=1000,h=330,p=24,lo=Math.min(...a),hi=Math.max(...a),sp=hi-lo||1,pts=a.map((v,i)=>`${p+i/(a.length-1)*(w-p*2)},${h-p-((v-lo)/sp)*(h-p*2)}`).join(' ');return `<svg viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>`}
@@ -52,54 +76,64 @@ async function markets(){
   const filter=()=>{const pr=document.getElementById('v72Provider').value,st=document.getElementById('v72State').value,q=document.getElementById('v72Search').value.trim().toUpperCase();document.querySelectorAll('.v72-market-card').forEach(c=>c.hidden=(pr!=='ALL'&&c.dataset.provider!==pr)||(st!=='ALL'&&c.dataset.state!==st)||(q&&!c.dataset.symbol.includes(q)))};['v72Provider','v72State','v72Search'].forEach(id=>document.getElementById(id).addEventListener('input',filter));
  }catch(e){content.innerHTML=`<div class="panel empty-state">Market monitor unavailable: ${H(e.message)}</div>`}
 }
-let chartsEpoch=0;
+let chartsEpoch=0,profitResizeObserver;
 const profitColors=['#60a5fa','#34d399','#fbbf24','#f472b6','#a78bfa','#22d3ee','#fb923c','#e879f9'];
 const profitNumber=v=>v==null||!Number.isFinite(Number(v))?'—':(Number(v)>0?'+':'')+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const profitDate=ms=>new Date(ms).toLocaleDateString(undefined,{timeZone:'UTC',year:'numeric',month:'short',day:'numeric'});
-function profitGraph(data){
+function profitGraph(data, availableWidth=1000){
  const series=data.series||[];
  if(!series.length)return '<div class="empty-state">No recorded realized P&amp;L in this selection. Open positions and records without P&amp;L do not create a profit curve.</div>';
- const points=series[0].points,w=1000,h=360,l=88,r=28,t=22,b=48;
+ const points=series[0].points,w=Math.max(260,Math.min(1000,availableWidth)),h=w<650?300:360,l=w<650?64:88,r=w<650?12:28,t=22,b=48;
  let lo=0,hi=0;for(const s of series)for(const p of s.points){lo=Math.min(lo,p.value);hi=Math.max(hi,p.value)}
  const margin=(hi-lo||1)*.12;lo-=margin;hi+=margin;
  const first=points[0].time,last=points.at(-1).time,span=last-first||1;
  const x=p=>l+(p.time-first)/span*(w-l-r),y=v=>t+(hi-v)/(hi-lo)*(h-t-b);
  const grid=Array.from({length:5},(_,i)=>{const v=lo+(hi-lo)*i/4,yy=y(v);return `<line x1="${l}" y1="${yy}" x2="${w-r}" y2="${yy}" stroke="currentColor" opacity=".12"/><text x="${l-10}" y="${yy+4}" text-anchor="end" fill="currentColor" font-size="12">${H(N(v))}</text>`}).join('');
- const ticks=[0,Math.floor((points.length-1)/2),points.length-1].filter((v,i,a)=>a.indexOf(v)===i).map((index,i,a)=>{const p=points[index];return `<text x="${x(p)}" y="${h-16}" text-anchor="${i===0?'start':i===a.length-1?'end':'middle'}" fill="currentColor" font-size="12">${H(profitDate(p.time))}</text>`}).join('');
+ const ticks=(w<500?[0,points.length-1]:[0,Math.floor((points.length-1)/2),points.length-1]).filter((v,i,a)=>a.indexOf(v)===i).map((index,i,a)=>{const p=points[index];return `<text x="${x(p)}" y="${h-16}" text-anchor="${i===0?'start':i===a.length-1?'end':'middle'}" fill="currentColor" font-size="12">${H(profitDate(p.time))}</text>`}).join('');
  return `<div class="profit-plot-scroll"><svg id="profitSvg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Cumulative recorded realized profit and loss over time. Use the date slider below for exact values.">${grid}<line x1="${l}" y1="${y(0)}" x2="${w-r}" y2="${y(0)}" stroke="currentColor" opacity=".4" stroke-dasharray="5 5"/>${series.map((s,i)=>`<polyline points="${s.points.map(p=>`${x(p)},${y(p.value)}`).join(' ')}" fill="none" stroke="${profitColors[i%profitColors.length]}" stroke-width="${i?2:3}" vector-effect="non-scaling-stroke"/>`).join('')}${ticks}</svg></div><div class="profit-legend">${series.map((s,i)=>`<span><i style="background:${profitColors[i%profitColors.length]}"></i>${H(s.label)} <strong>${H(profitNumber(s.points.at(-1).value))}</strong></span>`).join('')}</div><label class="profit-inspect">Inspect date<input id="profitDateSlider" type="range" min="0" max="${points.length-1}" value="${points.length-1}" aria-label="Inspect profit performance date"></label><div id="profitPoint" class="profit-point" role="status" aria-live="polite"></div>`;
 }
 async function charts(){
  const epoch=chartsEpoch;
+ if(profitResizeObserver)profitResizeObserver.disconnect();
  content.innerHTML='<div class="panel empty-state">Loading profit performance…</div>';
  content.classList.remove('atlas-route-loading');
  try{
   let data=await api('/performance/profit-chart');
   if(epoch!==chartsEpoch)return;
   content.innerHTML=`<div id="profitPage"><div class="page-intro"><div><p class="eyebrow">YOUR PERFORMANCE</p><h3>Profit performance</h3><p class="muted">Cumulative recorded realized P&amp;L. Overall · all available history by default.</p></div></div><section class="panel"><form id="profitFilters" class="profit-filters"><details class="profit-picker"><summary id="profitSelectionLabel">Compare symbols · all</summary><div class="profit-symbols">${(data.symbols||[]).map(s=>`<label><input type="checkbox" name="profitSymbol" value="${H(s.key)}"><span>${H(s.symbol)}<small>${H(s.provider)} · ${H(s.environment)} · ${H(s.market)}</small></span></label>`).join('')||'<span class="muted">No recorded symbols yet.</span>'}</div></details><label>From · UTC<input id="profitStart" type="date" aria-label="Performance start date"></label><label>To · UTC<input id="profitEnd" type="date" aria-label="Performance end date"></label><button id="profitApply" class="primary-button" type="submit">Apply filters</button><button id="profitReset" class="ghost-button" type="button">Reset</button></form><p id="profitFilterError" role="alert"></p></section><div id="profitFacts" class="metric-grid"></div><section class="panel"><div class="page-intro"><div><h3 id="profitHeading">Overall performance</h3><p class="muted">Recorded realized P&amp;L · USD / USDT · UTC dates</p></div></div><div id="profitChart"></div><p id="profitCoverage" class="muted"></p></section></div>`;
-  let request=0;
+  let request=0,loading=false;
   const selected=()=>Array.from(document.querySelectorAll('input[name="profitSymbol"]:checked')).map(x=>x.value);
   const paint=d=>{
    document.getElementById('profitFacts').innerHTML=`<div class="metric-card"><span>Recorded realized P&amp;L</span><strong class="${d.recorded_pnl<0?'profit-loss':d.recorded_pnl>0?'profit-gain':''}">${H(profitNumber(d.recorded_pnl))}</strong><small>USD / USDT · selected period</small></div><div class="metric-card"><span>P&amp;L records</span><strong>${N(d.pnl_records,0)}</strong><small>Available recorded outcomes</small></div><div class="metric-card"><span>History window</span><strong>${d.start||d.end?'Custom dates':'All available'}</strong><small>${H(d.start||'Beginning')} → ${H(d.end||'Latest record')}</small></div>`;
    const count=(d.selected_symbols||[]).length;
    document.getElementById('profitHeading').textContent=count?'Selected symbols comparison':'Overall performance';
    document.getElementById('profitSelectionLabel').textContent=count?`Compare symbols · ${count} selected`:'Compare symbols · all';
-   document.getElementById('profitChart').innerHTML=profitGraph(d);
+   document.getElementById('profitChart').innerHTML=profitGraph(d,document.getElementById('profitChart').clientWidth||1000);
    document.getElementById('profitCoverage').textContent=(d.partial?'Partial history: '+(d.provider_errors||[]).length+' provider read issue(s); '+d.excluded_unknown_pnl_records+' records without P&L and '+d.excluded_undated_records+' undated records excluded. ':'')+((d.symbols_without_priced_records||[]).length?'No priced records for: '+d.symbols_without_priced_records.join(', ')+'. ':'')+d.coverage+' Open P&L is excluded; fee treatment follows the Performance ledger. USD/USDT are reported in existing ledger units without conversion.';
    const series=d.series||[],slider=document.getElementById('profitDateSlider');
    if(slider&&series.length){const inspect=index=>{index=Math.max(0,Math.min(series[0].points.length-1,Number(index)));slider.value=String(index);document.getElementById('profitPoint').textContent=profitDate(series[0].points[index].time)+' · '+series.map(s=>s.label+': '+profitNumber(s.points[index].value)).join(' | ')};slider.oninput=()=>inspect(slider.value);inspect(slider.value);
-    const svg=document.getElementById('profitSvg');svg.onpointermove=e=>{const bounds=svg.getBoundingClientRect(),px=(e.clientX-bounds.left)/bounds.width*1000,ratio=Math.max(0,Math.min(1,(px-88)/(1000-88-28))),ps=series[0].points,target=ps[0].time+ratio*(ps.at(-1).time-ps[0].time);let left=0,right=ps.length-1;while(left<right){const mid=Math.floor((left+right)/2);if(ps[mid].time<target)left=mid+1;else right=mid}const index=left>0&&target-ps[left-1].time<ps[left].time-target?left-1:left;inspect(index)};
+    const svg=document.getElementById('profitSvg');svg.onpointermove=e=>{const bounds=svg.getBoundingClientRect(),vw=svg.viewBox.baseVal.width,leftPad=vw<650?64:88,rightPad=vw<650?12:28,px=(e.clientX-bounds.left)/bounds.width*vw,ratio=Math.max(0,Math.min(1,(px-leftPad)/(vw-leftPad-rightPad))),ps=series[0].points,target=ps[0].time+ratio*(ps.at(-1).time-ps[0].time);let left=0,right=ps.length-1;while(left<right){const mid=Math.floor((left+right)/2);if(ps[mid].time<target)left=mid+1;else right=mid}const index=left>0&&target-ps[left-1].time<ps[left].time-target?left-1:left;inspect(index)};
    }
   };
   const load=async()=>{
    const start=document.getElementById('profitStart').value,end=document.getElementById('profitEnd').value,error=document.getElementById('profitFilterError');
    if(start&&end&&start>end){error.textContent='Start date must be on or before end date. Filters have not been applied.';return}
    error.textContent='';const id=++request,query=new URLSearchParams();for(const symbol of selected())query.append('symbols',symbol);if(start)query.set('start',start);if(end)query.set('end',end);
-   document.getElementById('profitApply').disabled=true;document.getElementById('profitFacts').innerHTML='';document.getElementById('profitChart').innerHTML='<div class="empty-state">Loading performance…</div>';
-   try{const next=await api('/performance/profit-chart'+(query.toString()?'?'+query:''));if(epoch!==chartsEpoch||id!==request)return;data=next;paint(data)}catch(e){if(epoch!==chartsEpoch||id!==request)return;document.getElementById('profitChart').innerHTML=`<div class="empty-state">Performance unavailable: ${H(e.message)}</div>`;document.getElementById('profitCoverage').textContent='Try Apply filters again to refresh.'}finally{if(epoch===chartsEpoch&&id===request)document.getElementById('profitApply').disabled=false}
+   loading=true;document.getElementById('profitApply').disabled=true;document.getElementById('profitFacts').innerHTML='';document.getElementById('profitChart').innerHTML='<div class="empty-state">Loading performance…</div>';
+   try{const next=await api('/performance/profit-chart'+(query.toString()?'?'+query:''));if(epoch!==chartsEpoch||id!==request)return;data=next;paint(data)}catch(e){if(epoch!==chartsEpoch||id!==request)return;document.getElementById('profitChart').innerHTML=`<div class="empty-state">Performance unavailable: ${H(e.message)}</div>`;document.getElementById('profitCoverage').textContent='Try Apply filters again to refresh.'}finally{if(epoch===chartsEpoch&&id===request){loading=false;document.getElementById('profitApply').disabled=false}}
   };
   document.getElementById('profitFilters').onsubmit=e=>{e.preventDefault();load()};
   document.getElementById('profitReset').onclick=()=>{document.querySelectorAll('input[name="profitSymbol"]').forEach(x=>x.checked=false);document.getElementById('profitStart').value='';document.getElementById('profitEnd').value='';load()};
   paint(data);
+  if(typeof ResizeObserver!=='undefined'){
+   let lastWidth=document.getElementById('profitChart').clientWidth;
+   const observer=new ResizeObserver(entries=>{
+    if(epoch!==chartsEpoch){observer.disconnect();return}
+    const width=entries[0].contentRect.width;
+    if(Math.abs(width-lastWidth)>1&&!loading){lastWidth=width;paint(data)}
+   });
+   profitResizeObserver=observer;observer.observe(document.getElementById('profitChart'));
+  }
  }catch(e){if(epoch===chartsEpoch){content.innerHTML=`<div class="panel empty-state">Profit performance unavailable: ${H(e.message)}<br><button id="profitRetry" class="ghost-button">Retry</button></div>`;document.getElementById('profitRetry').onclick=()=>charts()}}
 }
 const previous=renderPage;
