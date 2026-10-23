@@ -31,6 +31,9 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
  assert(ids.profitChart.innerHTML.includes('<svg'));
  assert(!ids.profitChart.innerHTML.includes('NaN'));
  assert(ids.profitPoint.textContent.includes('+3.00'));
+ ids.profitSvg.viewBox={baseVal:{width:326}};
+ ids.profitSvg.onpointermove({clientX:1000});assert(ids.profitPoint.textContent.includes('+3.00'));
+ ids.profitSvg.onpointermove({clientX:0});assert(ids.profitPoint.textContent.includes('0.00'));
  ids.profitDateSlider.value='1';ids.profitDateSlider.oninput();assert(ids.profitPoint.textContent.includes('-12.00'));
  checks[0].checked=checks[1].checked=true;
  ids.profitStart.value='2026-10-01';ids.profitEnd.value='2026-10-02';
@@ -57,6 +60,14 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
  assert(context.window.AtlasProfitChart.profitGraph({series:[]}).includes('No recorded realized'));
  const zero=context.window.AtlasProfitChart.profitGraph({series:[{label:'Zero',points:[{time:1,value:0},{time:2,value:0}]}]});
  assert(zero.includes('<svg')&&!zero.includes('NaN'));
+ for(const width of [260,288,326,366,650,1000]){
+  const graph=context.window.AtlasProfitChart.profitGraph(data,width);
+  assert(graph.includes('viewBox="0 0 '+width+' '));
+  assert(!graph.includes('NaN'));
+  const coords=[...graph.matchAll(/points="([^"]+)"/g)].flatMap(m=>m[1].split(' ').map(p=>p.split(',').map(Number)));
+  assert(coords.every(([x,y])=>x>=0&&x<=width&&y>=0&&y<=360));
+ }
+
  const escaped=context.window.AtlasProfitChart.profitGraph({series:[{label:'<img onerror=bad>',points:[{time:1,value:0},{time:2,value:1}]}]});
  assert(!escaped.includes('<img'));
 })().catch(error=>{console.error(error);process.exitCode=1;});
@@ -66,5 +77,5 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 def test_chart_asset_version_and_order_preserve_existing_workspaces():
     html=Path('app/static/index.html').read_text()
-    assert 'markets-charts-v72.js?v=72.2' in html
+    assert 'markets-charts-v72.js?v=72.3' in html
     assert html.index('markets-charts-v72.js')<html.index('frontend-stability-v72-6.js')
