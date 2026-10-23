@@ -12,8 +12,8 @@ def test_root_endpoint_serves_consolidated_frontend():
     r = client.get("/")
     assert r.status_code == 200
     assert "ATLAS MARKETS" in r.text
-    assert "/static/app.js?v=84.0" in r.text
-    assert "/static/atlas-core.js?v=53.0" in r.text
+    assert "/static/app.js?v=84.1" in r.text
+    assert "/static/atlas-core.js?v=53.1" in r.text
     assert "/static/phase17.js" not in r.text
     assert "/static/phase38-operations.js" not in r.text
     assert "/static/phase49-live-certification.js" not in r.text

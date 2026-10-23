@@ -3,7 +3,7 @@ from pathlib import Path
 
 def test_legacy_symbol_monitor_is_not_runtime_loaded():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
-    assert '/static/atlas-core.js?v=53.0' in html
+    assert '/static/atlas-core.js?v=53.1' in html
     assert '/static/phase49-symbol-monitor.css' not in html
     assert '/static/phase49-symbol-monitor.js' not in html
 

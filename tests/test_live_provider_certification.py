@@ -33,7 +33,7 @@ def test_legacy_live_certification_module_is_not_runtime_loaded():
     root = Path(__file__).resolve().parents[1]
     index = (root / 'app/static/index.html').read_text(encoding='utf-8')
     core = (root / 'app/static/atlas-core.js').read_text(encoding='utf-8')
-    assert '/static/atlas-core.js?v=53.0' in index
+    assert '/static/atlas-core.js?v=53.1' in index
     assert '/static/phase49-live-certification.js' not in index
     assert 'TESTNET' in core and 'DEMO' in core
     assert 'certify-bybit-test-order' in core

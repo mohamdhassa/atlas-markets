@@ -137,6 +137,7 @@ active navigation and title. Preserve all symbol/date filters, responsive layout
 profit/loss insights and authenticated API scope. Both renderers invalidate late
 responses when navigating between Dashboard and Overview. No database, order,
 strategy or automation changes. Cache versions: app 84.1, core 53.1, chart 72.7,
-overview 72.5. Workspace execution is currently unavailable; regression tests
-are prepared but must pass in the isolated server validator before merge. Desktop
-and phone visual acceptance remains pending deployment.
+overview 72.5. The local full suite passes with four infrastructure skips.
+Legacy asset-version checks are updated to the new cache versions; all API
+hardening, module exclusion and script-order assertions remain intact. Full
+isolated server validation and desktop/phone visual acceptance remain pending.
