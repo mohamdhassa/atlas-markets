@@ -66,5 +66,5 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 def test_chart_asset_version_and_order_preserve_existing_workspaces():
     html=Path('app/static/index.html').read_text()
-    assert 'markets-charts-v72.js?v=72.1' in html
+    assert 'markets-charts-v72.js?v=72.2' in html
     assert html.index('markets-charts-v72.js')<html.index('frontend-stability-v72-6.js')

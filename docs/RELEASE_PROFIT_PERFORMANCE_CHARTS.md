@@ -59,3 +59,11 @@ After deployment, verify desktop/phone layout, all-time initial render, two-symb
 comparison, date filtering/reset and navigation alongside Portfolio, Performance
 and Markets. Browser visual checks remain pending until the app candidate is
 available; local interaction tests do not claim production visual verification.
+
+## Layout correction after deployment
+
+The deployed screenshot exposed inline metric text and unstyled date inputs.
+Scope explicit stacked metric typography, three equal-width cards, dark date
+fields, and a compact Reset button to the profit page. Filters use a five-column
+desktop grid and two-column narrow layout; cards stack on phones. Preserve all
+data calculations, filter actions and trading settings. Cache version is 72.2.
