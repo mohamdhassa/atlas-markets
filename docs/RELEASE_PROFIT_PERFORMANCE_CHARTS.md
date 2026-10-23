@@ -79,3 +79,13 @@ Date fields stack below 400px and use 16px input text; checkboxes remain 18px
 inside 44px touch rows. Asset version 72.3. No calculation or trading changes.
 Actual phone visual verification remains pending; automated geometry checks cover
 260, 288, 326, 366, 650 and 1000 pixel chart containers.
+
+## Safari date field containment
+
+An iPhone screenshot showed the two native date controls overlapping above the
+400px breakpoint. Stack both date labels across the entire grid up to 650px,
+retain side-by-side action buttons, and constrain native date controls in both
+physical and logical dimensions to their container with a 46px height.
+Normalize WebKit date editing appearance without replacing the native date
+picker or changing filter values. Cache version 72.4. iPhone visual acceptance
+still requires the deployed screenshot; Node tests do not emulate Safari.
