@@ -116,3 +116,5 @@ follow root `AGENTS.md` before making changes.
 - [Prospective Spot breakout v1](SPOT_BREAKOUT_V1.md) — frozen independent entry/exit hypothesis, future-only evaluation and no production integration.
 
 - [IBKR delayed-data Paper mode](RELEASE_IBKR_PAPER_DELAYED_DATA.md) — explicit Demo-only opt-in, bounded candle references and unchanged Live/entry controls.
+
+- [Profit performance charts](RELEASE_PROFIT_PERFORMANCE_CHARTS.md) — overall/all-time recorded profit curves, multi-symbol comparison and optional dates.
