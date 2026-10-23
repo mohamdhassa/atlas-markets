@@ -197,11 +197,12 @@ async function charts(){
 }
 const previous=renderPage;
 renderPage=async function(page){
+ if(page==='Charts')page='Dashboard';
  chartsEpoch++;
  const root=document.getElementById('content');root.classList.add('atlas-route-loading');
- try{setActive(page);if(page==='Markets')await markets();else if(page==='Charts')await charts();else await previous(page)}
+ try{setActive(page);if(page==='Markets')await markets();else if(page==='Dashboard')await charts();else await previous(page)}
  finally{requestAnimationFrame(()=>root.classList.remove('atlas-route-loading'))}
 };
-window.AtlasMarketsChartsV72={markets,charts};
+window.AtlasMarketsChartsV72={markets,charts,invalidate:()=>{chartsEpoch++;if(profitResizeObserver)profitResizeObserver.disconnect()}};
 window.AtlasProfitChart={profitGraph,profitInsights};
 })();

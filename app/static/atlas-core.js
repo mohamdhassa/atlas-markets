@@ -4,7 +4,7 @@
    layer while its pages are migrated into this core. */
 (()=>{
 'use strict';
-const USER=['Dashboard','Markets','Charts','Signals','Positions','Orders','Performance','Accounts'];
+const USER=['Dashboard','Overview','Markets','Signals','Positions','Orders','Performance','Accounts'];
 const ADMIN=['Operations','Users','Strategy','Risk','Integrations','System'];
 const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dt=v=>v?new Date(v).toLocaleString():'—';
