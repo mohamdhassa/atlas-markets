@@ -133,3 +133,18 @@ introduced; records update through normal verified reconciliation. This reportin
 correction does not prove profitability or resolve an unmeasured fill-to-protection
 delay. Compare actual fill evidence with the first protection attempt before
 attributing a delay from entry creation timestamps.
+
+## Independent Paper position monitoring
+
+The position manager previously slept for the strategy scan interval after each
+pass. Delayed fills therefore waited for a later strategy-timed reconciliation.
+IBKR_POSITION_MONITOR_INTERVAL_SECONDS now defaults to 30 seconds (15–300
+supported) while automation, kill-switch and Paper-execution gates remain
+unchanged. Disabled monitoring retains the existing idle interval. The loop is
+sequential: the interval follows completion of the previous pass, so broker
+latency/cooldowns can extend it. This is not atomic protection or a guaranteed
+30-second fill-to-stop bound. Native broker stops still use their configured
+session policy. Immediate protection for synchronously confirmed entries,
+verification-only retries and account/symbol submission locks are preserved.
+The faster pass can increase read/check and audit-row volume; entry scans and
+signal frequency remain unchanged. No schema or Gateway/bridge restart required.

@@ -400,7 +400,11 @@ async def run_ibkr_position_manager():
 async def ibkr_position_manager_loop(stop_event):
     while not stop_event.is_set():
         try:
-            with SessionLocal() as db:state=get_or_create_state(db);wait=max(30,int(state.interval_seconds or 300));enabled=state.enabled and not state.killed and state.auto_execute_paper
+            with SessionLocal() as db:
+                state=get_or_create_state(db)
+                enabled=state.enabled and not state.killed and state.auto_execute_paper
+                wait=(get_settings().ibkr_position_monitor_interval_seconds if enabled
+                      else max(30,int(state.interval_seconds or 300)))
             if enabled:await run_ibkr_position_manager()
             try:await asyncio.wait_for(stop_event.wait(),timeout=wait)
             except asyncio.TimeoutError:pass
