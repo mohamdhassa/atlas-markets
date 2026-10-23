@@ -19,13 +19,15 @@ class El{
 }
 const content=ids.content=new El('content'),requests=[];
 const data={symbols:[{key:'IBKR:PAPER:STOCK:TSLA',symbol:'TSLA',provider:'IBKR',environment:'PAPER',market:'STOCK'},{key:'IBKR:PAPER:STOCK:AAPL',symbol:'AAPL',provider:'IBKR',environment:'PAPER',market:'STOCK'}],series:[{key:'OVERALL',label:'Overall',points:[{time:1790812800000,value:0},{time:1790899199999,value:-12},{time:1790985599999,value:3}]}],recorded_pnl:3,pnl_records:4,selected_symbols:[],start:null,end:null,coverage:'All available recorded history',partial:false};
-let fail=false,blockNext=false,release;
-const context={content,window:{},document:{createElement:()=>new El('style'),head:{appendChild(){}},getElementById:id=>ids[id]||null,querySelectorAll:selector=>selector.includes('profitSymbol')?checks.filter(x=>!selector.includes(':checked')||x.checked):[]},renderPage:async()=>{},setActive(){},requestAnimationFrame:f=>f(),URLSearchParams,Date,Promise,console,
- api:async url=>{requests.push(url);if(blockNext){blockNext=false;await new Promise(resolve=>release=resolve);}if(fail)throw Error('<unsafe error>');const query=new URL('https://test'+url).searchParams;return {...data,selected_symbols:query.getAll('symbols'),start:query.get('start'),end:query.get('end')};}};
+let fail=false,blockNext=false,release,activePage='';
+const context={content,window:{},document:{createElement:()=>new El('style'),head:{appendChild(){}},getElementById:id=>ids[id]||null,querySelectorAll:selector=>selector.includes('profitSymbol')?checks.filter(x=>!selector.includes(':checked')||x.checked):[]},renderPage:async()=>{},setActive(page){activePage=page;},requestAnimationFrame:f=>f(),URLSearchParams,Date,Promise,console,
+ api:async url=>{requests.push(url);if(!url.startsWith('/performance/profit-chart'))return url==='/accounts'||url.startsWith('/automation/actions')?[]:url.startsWith('/portfolio')?{totals:{},accounts:[],errors:[]}:url.startsWith('/performance/broker-native')?{overall:{}}:url.startsWith('/broker-orders')?{orders:[]}:url.startsWith('/automation/state')?{}:{items:[]};if(blockNext){blockNext=false;await new Promise(resolve=>release=resolve);}if(fail)throw Error('<unsafe error>');const query=new URL('https://test'+url).searchParams;return {...data,selected_symbols:query.getAll('symbols'),start:query.get('start'),end:query.get('end')};}};
 vm.createContext(context);vm.runInContext(fs.readFileSync('app/static/markets-charts-v72.js','utf8'),context);
+vm.runInContext(fs.readFileSync('app/static/dashboard-v72-2.js','utf8'),context);
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
- await context.renderPage('Charts');
+ await context.renderPage('Dashboard');
+ assert.equal(activePage,'Dashboard');
  assert.equal(requests[0],'/performance/profit-chart');
  assert(content.innerHTML.includes('Profit performance'));
  assert(ids.profitChart.innerHTML.includes('<svg'));
@@ -50,9 +52,9 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
  fail=true;ids.profitFilters.onsubmit({preventDefault(){}});await tick();
  assert(ids.profitChart.innerHTML.includes('&lt;unsafe error&gt;'));assert.equal(ids.profitApply.disabled,false);
  fail=false;blockNext=true;ids.profitFilters.onsubmit({preventDefault(){}});await tick();
- await context.renderPage('Dashboard');content.innerHTML='Dashboard retained';release();await tick();
- assert.equal(content.innerHTML,'Dashboard retained');
- fail=true;await context.renderPage('Charts');assert(content.innerHTML.includes('profitRetry'));
+ await context.renderPage('Overview');assert.equal(activePage,'Overview');assert(content.innerHTML.includes('System overview'));release();await tick();
+ assert(content.innerHTML.includes('System overview'));
+ fail=true;await context.renderPage('Charts');assert.equal(activePage,'Dashboard');assert(content.innerHTML.includes('profitRetry'));
  fail=false;await ids.profitRetry.onclick();assert(ids.profitChart.innerHTML.includes('<svg'));
  data.partial=true;data.excluded_unknown_pnl_records=2;data.excluded_undated_records=1;data.provider_errors=[{provider:'IBKR'}];
  ids.profitFilters.onsubmit({preventDefault(){}});await tick();assert(ids.profitCoverage.textContent.includes('Partial history: 1 provider read issue(s)'));
@@ -89,5 +91,5 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 def test_chart_asset_version_and_order_preserve_existing_workspaces():
     html=Path('app/static/index.html').read_text()
-    assert 'markets-charts-v72.js?v=72.6' in html
+    assert 'markets-charts-v72.js?v=72.7' in html
     assert html.index('markets-charts-v72.js')<html.index('frontend-stability-v72-6.js')

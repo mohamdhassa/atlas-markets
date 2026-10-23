@@ -1,7 +1,7 @@
 const state={token:localStorage.getItem('atlas_token'),user:null,page:'Dashboard',marketTimer:null};
 const $=id=>document.getElementById(id);
 const loginView=$('loginView'),appView=$('appView'),loginForm=$('loginForm'),loginError=$('loginError'),nav=$('nav'),content=$('content'),pageTitle=$('pageTitle'),profileName=$('profileName'),profileRole=$('profileRole'),avatar=$('avatar'),systemDot=$('systemDot'),systemText=$('systemText'),sidebar=$('sidebar');
-const userPages=['Dashboard','Markets','Charts','Signals','Positions','Orders','Performance','Accounts'];
+const userPages=['Dashboard','Overview','Markets','Signals','Positions','Orders','Performance','Accounts'];
 const adminPages=['Users','Strategy','Risk','Integrations','System'];
 
 async function api(path,options={}){const headers={...(options.headers||{})};if(options.body&&!headers['Content-Type'])headers['Content-Type']='application/json';if(state.token)headers.Authorization=`Bearer ${state.token}`;const res=await fetch(path,{...options,headers});if(res.status===204)return null;let data=null;try{data=await res.json()}catch{}if(!res.ok)throw new Error(data?.detail||`Request failed (${res.status})`);return data}

@@ -126,3 +126,18 @@ Wins and Losses use matching cards/lists side by side on desktop and stack below
 900px. Both symbol lists use net selected-period contributions. Keep after-peak
 loss attribution in a disclosure below them. Add count and sum of losing records
 so positive-record P&L plus negative-record P&L reconciles with the period total.
+
+## Performance as the main Dashboard
+
+Dashboard now opens the profit-performance workspace after sign-in and from the
+sidebar for ADMIN and USER. Replace the duplicate Charts navigation item with
+Overview, which retains the existing system overview and provider/automation
+summaries. Existing Charts render calls resolve to Dashboard with the matching
+active navigation and title. Preserve all symbol/date filters, responsive layout,
+profit/loss insights and authenticated API scope. Both renderers invalidate late
+responses when navigating between Dashboard and Overview. No database, order,
+strategy or automation changes. Cache versions: app 84.1, core 53.1, chart 72.7,
+overview 72.5. The local full suite passes with four infrastructure skips.
+Legacy asset-version checks are updated to the new cache versions; all API
+hardening, module exclusion and script-order assertions remain intact. Full
+isolated server validation and desktop/phone visual acceptance remain pending.

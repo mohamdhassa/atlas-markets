@@ -6,7 +6,7 @@ from app.main import app
 def test_management_navigation_is_consolidated():
     html = Path('app/static/index.html').read_text(encoding='utf-8')
     core = Path('app/static/atlas-core.js').read_text(encoding='utf-8')
-    assert '/static/atlas-core.js?v=53.0' in html
+    assert '/static/atlas-core.js?v=53.1' in html
     assert 'phase44-engine-center.js' not in html
     assert 'phase45-management-center.js' not in html
     assert 'Users' in core
