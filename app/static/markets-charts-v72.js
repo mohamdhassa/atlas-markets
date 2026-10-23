@@ -79,6 +79,18 @@ const style=document.createElement('style');style.textContent=`
 #profitPage .profit-insight-lists li>div{min-width:0;overflow-wrap:anywhere}
 #profitPage .profit-insight-lists li>strong{white-space:nowrap}
 #profitPage .profit-insight-lists small{display:block;color:var(--muted);font-size:.7rem;margin-top:5px}
+#profitPage .profit-outcomes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+#profitPage .profit-outcome{min-width:0;border:1px solid var(--line);border-radius:12px;padding:16px}
+#profitPage .profit-outcome>h4{font-size:1.1rem;margin:0}
+#profitPage .profit-outcome .profit-insight-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+#profitPage .profit-outcome .profit-insight-lists{grid-template-columns:1fr;gap:12px}
+#profitPage .profit-after-peak{margin-top:18px}
+#profitPage .profit-after-peak summary{cursor:pointer;padding:12px 0;font-size:.85rem}
+#profitPage .profit-after-peak ul{list-style:none;padding:0}
+#profitPage .profit-after-peak li{display:flex;justify-content:space-between;gap:12px;padding:10px 0}
+#profitPage .profit-after-peak small{display:block;color:var(--muted)}
+@media(max-width:900px){#profitPage .profit-outcomes{grid-template-columns:1fr}}
+@media(max-width:650px){#profitPage .profit-outcome{padding:12px}}
 #profitPage .profit-insight-note{font-size:.75rem;line-height:1.7}
 @media(max-width:900px){#profitPage .profit-insight-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){#profitPage .profit-insight-lists{grid-template-columns:1fr;gap:12px}#profitPage .profit-insight-metrics{gap:10px}#profitPage .profit-insight-metrics>div{padding:12px}}
@@ -104,18 +116,27 @@ const profitDate=ms=>new Date(ms).toLocaleDateString(undefined,{timeZone:'UTC',y
 function profitInsights(data){
  const a=data.insights;
  if(!a)return '<p class="muted">No priced records available for performance insights.</p>';
- const drivers=a.loss_drivers_since_peak||[];
- const detail=rows=>rows.map(row=>`<li><div><strong>${H(row.symbol)}</strong><small>${H(row.provider)} · ${H(row.environment)}${row.day?' · '+H(row.day)+' UTC':''}</small></div><strong class="profit-loss">${H(profitNumber(row.pnl))}</strong></li>`).join('');
- return `<div class="profit-insight-head"><h3>What changed</h3><span class="muted">Current filters · USD / USDT</span></div>
+ const detail=(rows,tone)=>rows.map(row=>`<li><div><strong>${H(row.symbol)}</strong><small>${H(row.provider)} · ${H(row.environment)}${row.day?' · '+H(row.day)+' UTC':''}</small></div><strong class="${tone}">${H(profitNumber(row.pnl))}</strong></li>`).join('');
+ const outcome=win=>{
+  const tone=win?'profit-gain':'profit-loss',day=win?a.best_day:a.worst_day,records=win?a.largest_win_records:a.largest_loss_records,contributors=win?a.profit_contributors:a.loss_drivers;
+  return `<div class="profit-outcome"><h4 class="${tone}">${win?'Wins':'Losses'}</h4><div class="profit-insight-metrics">
+   <div><span>${win?'Best':'Worst'} recorded day</span><strong class="${tone}">${day?H(profitNumber(day.pnl)):'—'}</strong><small>${day?H(day.date)+' UTC':win?'No profitable day recorded':'No losing day recorded'}</small></div>
+   <div><span>${win?'Winning':'Losing'} records</span><strong>${N(win?a.winning_records:a.losing_records,0)}</strong><small>Records may include partial fills</small></div>
+   <div><span>P&amp;L from ${win?'winning':'losing'} records</span><strong class="${tone}">${H(profitNumber(win?a.winning_record_pnl:a.losing_record_pnl))}</strong><small>${win?'Before subtracting losing records; not total profit':'Before adding winning records; not total P&L'}</small></div>
+   <div><span>Largest ${win?'winning':'losing'} record</span><strong class="${tone}">${records?.length?H(profitNumber(records[0].pnl)):'—'}</strong><small>${records?.length?H(records[0].symbol):'No '+(win?'winning':'losing')+' records'}</small></div></div>
+   <div class="profit-insight-lists"><div><h4>${win?'Profit':'Loss'} contributors · selected period</h4><ul>${detail(contributors||[],tone)||'<li>No symbols with '+(win?'positive':'negative')+' net recorded P&amp;L in this selection.</li>'}</ul></div>
+   <div><h4>Largest ${win?'winning':'loss'} records · selected period</h4><ul>${detail(records||[],tone)||'<li>No '+(win?'winning':'losing')+' records in this selection.</li>'}</ul></div></div></div>`;
+ };
+ return `<div class="profit-insight-head"><h3>Performance breakdown</h3><span class="muted">Wins &amp; losses · current filters · USD / USDT</span></div>
  <p class="muted">${a.current_drawdown>0?`Recorded P&amp;L is ${H(N(a.current_drawdown))} below its ${a.peak_day?'highest daily closing level on '+H(a.peak_day)+' UTC':'zero starting baseline'}.`:'Recorded P&amp;L is at its highest daily closing level for this selection.'}</p>
  <div class="profit-insight-metrics">
  <div><span>Profit peak</span><strong>${H(profitNumber(a.peak_pnl))}</strong><small>${H(a.peak_day||'Starting baseline')}</small></div>
  <div><span>Below peak now</span><strong>${H(N(a.current_drawdown))}</strong><small>P&amp;L decrease, not account equity</small></div>
  <div><span>Largest daily drawdown</span><strong>${H(N(a.max_daily_drawdown))}</strong><small>Peak to later daily closing level</small></div>
- <div><span>Worst recorded day</span><strong>${a.worst_day?H(profitNumber(a.worst_day.pnl)):'—'}</strong><small>${a.worst_day?H(a.worst_day.date)+' UTC':'No losing day recorded'}</small></div></div>
- <div class="profit-insight-lists"><div><h4>Loss contributors after peak</h4><ul>${detail(drivers)||'<li>No negative symbol contribution after the peak day.</li>'}</ul></div>
- <div><h4>Largest loss records · selected period</h4><ul>${detail(a.largest_loss_records||[])||'<li>No losing records in this selection.</li>'}</ul></div></div>
- <p class="muted profit-insight-note">${data.partial?'Partial history: these figures use available priced records only. ':''}${H(a.basis)} Symbol contributions show where losses were recorded; they do not prove a strategy or protection failure. Open P&amp;L is excluded.</p>`;
+ <div><span>Selected period total</span><strong>${H(profitNumber(data.recorded_pnl))}</strong><small>Winning plus losing records</small></div></div>
+ <div class="profit-outcomes">${outcome(true)}${outcome(false)}</div>
+ <details class="profit-after-peak"><summary>Loss contributors after peak day</summary><ul>${detail(a.loss_drivers_since_peak||[],'profit-loss')||'<li>No negative symbol contribution after the peak day.</li>'}</ul></details>
+ <p class="muted profit-insight-note">${data.partial?'Partial history: these figures use available priced records only. ':''}${H(a.basis)} Symbol contributions show recorded outcomes; they do not prove why a strategy succeeded or failed. Open P&amp;L is excluded.</p>`;
 }
 function profitGraph(data, availableWidth=1000){
  const series=data.series||[];

@@ -92,7 +92,22 @@ def build_profit_chart(rows, *, symbols=None, start=None, end=None, errors=()):
         worst_day = min(daily, key=lambda day: (daily[day], day))
         losses = sorted((record for record in records if record['pnl'] < 0),
                         key=lambda row: (row['pnl'], row['time'], row['key']))[:5]
+        best_day = min(daily, key=lambda day: (-daily[day], day))
+        wins = sorted((record for record in records if record['pnl'] > 0),
+                      key=lambda row: (-row['pnl'], row['time'], row['key']))
+        profit_contributors = [
+            {**options[key], 'pnl': round(sum(days.values()), 8)}
+            for key, days in amounts.items() if sum(days.values()) > 0
+        ]
         insights = {
+            'best_day': {'date': best_day, 'pnl': round(daily[best_day], 8)} if daily[best_day] > 0 else None,
+            'losing_records': sum(record['pnl'] < 0 for record in records),
+            'losing_record_pnl': round(sum(record['pnl'] for record in records if record['pnl'] < 0), 8),
+            'winning_records': len(wins),
+            'winning_record_pnl': round(sum(record['pnl'] for record in wins), 8),
+            'profit_contributors': sorted(profit_contributors, key=lambda row: (-row['pnl'], row['key']))[:5],
+            'largest_win_records': [{**options[row['key']], **row,
+                                     'pnl': round(row['pnl'], 8)} for row in wins[:5]],
             'peak_pnl': round(peak, 8), 'peak_day': peak_day,
             'current_drawdown': round(max(0., peak - current), 8),
             'max_daily_drawdown': round(max_drawdown, 8),
