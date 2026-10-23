@@ -171,3 +171,40 @@ def test_insights_aggregate_split_records_and_distinguish_environments():
     assert a['worst_day']['pnl'] == -55
     assert [(r['environment'], r['pnl']) for r in a['loss_drivers_since_peak']] == [('PAPER', -50), ('LIVE', -5)]
     assert len(a['largest_loss_records']) == 3
+
+
+def test_wins_distinguish_positive_records_from_net_symbol_and_day():
+    a = build_profit_chart([
+        row('TSLA', 100), row('TSLA', -150),
+        row('AAPL', 20, day='2026-10-02'), row('AAPL', 30, day='2026-10-02'),
+        row('SPY', 999, pnl_available=False),
+    ])['insights']
+    assert a['winning_records'] == 3 and a['winning_record_pnl'] == 150
+    assert a['losing_records'] == 1 and a['losing_record_pnl'] == -150
+    assert a['winning_record_pnl'] + a['losing_record_pnl'] == 0
+    assert a['best_day'] == {'date': '2026-10-02', 'pnl': 50}
+    assert [(r['symbol'], r['pnl']) for r in a['profit_contributors']] == [('AAPL', 50)]
+    assert [r['pnl'] for r in a['largest_win_records']] == [100, 30, 20]
+    assert a['largest_win_records'][0]['day'] == '2026-10-01'
+
+
+def test_wins_follow_dates_symbols_and_keep_unknown_distinct_from_zero():
+    b = row('AAPL', 10, day='2026-10-02', environment='LIVE')
+    data = build_profit_chart([row('TSLA', 999), b, row('AAPL', -2, day='2026-10-03')],
+                              symbols=[instrument_key(b)], start=date(2026, 10, 2))
+    a = data['insights']
+    assert a['winning_records'] == 1 and a['winning_record_pnl'] == 10
+    assert a['profit_contributors'][0]['environment'] == 'LIVE'
+    for pnl in [0, -10]:
+        a = build_profit_chart([row(pnl=pnl)])['insights']
+        assert a['best_day'] is None and a['winning_records'] == 0
+        assert a['largest_win_records'] == a['profit_contributors'] == []
+    assert build_profit_chart([row(pnl=None)])['insights'] is None
+
+
+def test_wins_rank_and_limit_records_without_merging_environments():
+    rows = [row('TSLA', i+1, environment='PAPER' if i%2 else 'LIVE') for i in range(8)]
+    a = build_profit_chart(rows)['insights']
+    assert [r['pnl'] for r in a['largest_win_records']] == [8, 7, 6, 5, 4]
+    assert a['winning_records'] == 8
+    assert {(r['environment'], r['pnl']) for r in a['profit_contributors']} == {('PAPER', 20), ('LIVE', 16)}

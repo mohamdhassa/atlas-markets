@@ -59,8 +59,14 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
  assert(context.window.AtlasProfitChart.profitGraph({series:[]}).includes('No recorded realized'));
  const insights=context.window.AtlasProfitChart.profitInsights({partial:true,insights:{peak_pnl:100,peak_day:'2026-10-01',current_drawdown:140,max_daily_drawdown:160,worst_day:{date:'2026-10-02',pnl:-160},loss_drivers_since_peak:[{symbol:'<unsafe>',provider:'IBKR',environment:'PAPER',pnl:-160}],largest_loss_records:[],basis:'Daily records'}});
- assert(insights.includes('What changed')&&insights.includes('140')&&insights.includes('Partial history'));
+ assert(insights.includes('Performance breakdown')&&insights.includes('140')&&insights.includes('Partial history'));
  assert(!insights.includes('<unsafe>')&&insights.includes('&lt;unsafe&gt;'));
+ const winHtml=context.window.AtlasProfitChart.profitInsights({insights:{winning_records:2,winning_record_pnl:80,best_day:{date:'2026-10-02',pnl:50},profit_contributors:[{symbol:'<winner>',provider:'IBKR',environment:'PAPER',pnl:40}],largest_win_records:[{symbol:'TSLA',provider:'IBKR',environment:'PAPER',day:'2026-10-02',pnl:50}]}});
+ assert(winHtml.includes('Wins')&&winHtml.includes('Best recorded day')&&winHtml.includes('2026-10-02'));
+ assert(winHtml.includes('Before subtracting losing records')&&winHtml.includes('profit-gain'));
+ assert(winHtml.includes('&lt;winner&gt;')&&!winHtml.includes('<winner>'));
+ assert(insights.includes('No winning records in this selection'));
+
  assert(context.window.AtlasProfitChart.profitInsights({}).includes('No priced records'));
  assert(ids.profitInsights.innerHTML.includes('No priced records'));
 
@@ -83,5 +89,5 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 def test_chart_asset_version_and_order_preserve_existing_workspaces():
     html=Path('app/static/index.html').read_text()
-    assert 'markets-charts-v72.js?v=72.5' in html
+    assert 'markets-charts-v72.js?v=72.6' in html
     assert html.index('markets-charts-v72.js')<html.index('frontend-stability-v72-6.js')

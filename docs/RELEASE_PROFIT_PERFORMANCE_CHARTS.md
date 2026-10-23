@@ -107,3 +107,22 @@ These are outcomes, not evidence of strategy/stop failure. Partial coverage and
 unknown values retain existing disclosures. Empty/loading/error states clear
 stale insights. No orders, settings, migration or additional provider calls.
 Asset version 72.5. Desktop/mobile visual acceptance remains pending deployment.
+
+## Wins alongside loss identifiers
+
+Add a matching Wins section using the same known, dated, filtered realized P&L
+records: best net UTC day, count and summed P&L of positive records, largest
+positive record, top five net-positive symbol contributors and top five winning
+records. Winning-record P&L is explicitly before subtracting losing records,
+not total profit or a new fee calculation. Partial fills remain records rather
+than trades; no whole-trade win rate is inferred. Symbols are ranked by their
+net period outcome, so an individual winner can belong to a net-losing symbol.
+Keep provider/environment labels, dates, partial/empty/error disclosures and
+the existing mobile grids. No extra provider calls, orders, settings or schema
+changes. Asset version 72.6. Container and visual acceptance remain pending.
+
+The final layout combines both outcomes in one Performance breakdown section.
+Wins and Losses use matching cards/lists side by side on desktop and stack below
+900px. Both symbol lists use net selected-period contributions. Keep after-peak
+loss attribution in a disclosure below them. Add count and sum of losing records
+so positive-record P&L plus negative-record P&L reconciles with the period total.
