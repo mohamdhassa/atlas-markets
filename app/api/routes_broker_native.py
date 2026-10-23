@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import math
 from collections import defaultdict
-from datetime import datetime,timezone,timedelta
+from datetime import date,datetime,timezone,timedelta
 from app.services.ibkr_execution_format import execution_time_ms as _execution_time_ms
 from fastapi import APIRouter,Depends,Query,HTTPException
 from pydantic import BaseModel, Field
@@ -26,6 +26,7 @@ from app.services.provider_reads import isolated_provider_read
 from app.services.ibkr_ledger_history import merge_saved_fills
 from app.services.trade_news_context import attach_trade_news
 from app.services.strategy_evaluation import attach_entry_strategies, strategy_evaluation
+from app.services.profit_chart import build_profit_chart
 
 router=APIRouter(tags=['portfolio','performance'])
 MARKETS=['CRYPTO','FX','STOCK','ETF','METAL','COMMODITY']
@@ -202,6 +203,9 @@ async def broker_orders(limit:int=Query(default=100,ge=1,le=200),user:User=Depen
 @router.get('/performance/broker-native')
 @isolated_provider_read
 async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ return await _broker_performance(days=days,user=user,db=db)
+
+async def _broker_performance(days, user, db, *, chart_request=None):
  account_rows=[];trade_rows=[];errors=[]
  profiles=_accounts(db,user)
  for p in profiles:
@@ -210,7 +214,7 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
    symmap=_symbol_market_map(db,p.id)
    if p.provider=='BYBIT':
     c=_bybit(p);wallet=await c.wallet();hist=await c.closed_pnl(100);a=(wallet.get('list') or [{}])[0];equity=_f(a.get('totalEquity'));available=_f(a.get('totalAvailableBalance'));account_market='CRYPTO'
-    for x in hist.get('list',[]):trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':'CRYPTO','provider':'BYBIT','symbol':x.get('symbol'),'pnl':_f(x.get('closedPnl')),'pnl_available':True,'time':int(x.get('updatedTime') or x.get('createdTime') or 0),'side':x.get('side')})
+    for x in hist.get('list',[]):trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':'CRYPTO','provider':'BYBIT','symbol':x.get('symbol'),'pnl':_f(x.get('closedPnl')),'pnl_available':(x.get('closedPnl') is not None if chart_request is not None else True),'time':int(x.get('updatedTime') or x.get('createdTime') or 0),'side':x.get('side')})
     # Bybit Spot Testnet closed-PnL history does not represent ATLAS Spot fills reliably.
     # Persisted EXECUTED automation actions are the authoritative ATLAS execution audit trail.
     existing_ids={str(x.get('broker_order_id') or '') for x in trade_rows if x.get('provider')=='BYBIT' and str(x.get('profile_id'))==str(p.id)}
@@ -252,7 +256,9 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
      symbol=str(x.get('symbol')).upper();market=symmap.get(symbol,_mt5_market(symbol));trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'MT5','symbol':symbol,'pnl':_f(x.get('profit'))+_f(x.get('commission'))+_f(x.get('swap')),'pnl_available':True,'time':int(x.get('time_msc') or int(x.get('time',0))*1000),'side':'BUY' if int(x.get('type',0))==0 else 'SELL'})
    else:
     c=_ibkr(p);a=await c.account();hist=await c.executions(days);equity=_f(a.get('equity'));available=_f(a.get('available'));account_market='STOCK+ETF'
+    expected_account_id=_creds(p).get('account_id') if chart_request is not None else None
     for x in hist.get('list',[]):
+     if chart_request is not None and (not expected_account_id or x.get('account')!=expected_account_id):continue
      symbol=str(x.get('symbol') or '').upper();market=symmap.get(symbol,'STOCK');pnl_available=bool(x.get('pnl_available')) and x.get('realized_pnl') is not None;trade_rows.append({'profile_id':str(p.id),'account':p.account_label,'market':market,'provider':'IBKR','symbol':symbol,'pnl':_f(x.get('realized_pnl')) if pnl_available else 0,'pnl_available':pnl_available,'time':_execution_time_ms(x,get_settings().ibkr_execution_timezone),'side':_side(x.get('side')),'execution_price':_f(x.get('price')),'quantity':_f(x.get('quantity')),'commission':_f(x.get('commission')) if x.get('commission') is not None else None,'broker_order_id':x.get('order_id'),'execution_id':x.get('execution_id') or x.get('exec_id')})
    account_rows.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'market':account_market,'environment':p.environment,'broker_equity':equity,'equity':equity,'available':available,'starting_capital':_f(p.simulation_capital_override_usd) if p.simulation_capital_override_usd is not None else None})
   except Exception as exc:errors.append({'profile_id':str(p.id),'account':p.account_label,'provider':p.provider,'error':str(exc)[:240]})
@@ -273,6 +279,8 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
  for row in trade_rows:
   if str(row.get('profile_id')) in environments:row['environment']=environments[str(row['profile_id'])]
  _pair_execution_lots(trade_rows)
+ if chart_request is not None:
+  return build_profit_chart(trade_rows,errors=errors,**chart_request)
  _trade_context(db,user,trade_rows)
  for row in trade_rows:
   stamp=int(row.get('time') or 0)
@@ -296,6 +304,16 @@ async def broker_performance(days:int=Query(default=30,ge=1,le=366),user:User=De
  overall_stats=_stats(trade_rows)
  evaluation=strategy_evaluation(trade_rows,int((datetime.now(timezone.utc)-timedelta(days=days)).timestamp()*1000),errors)
  return {'days':days,'strategy_evaluation':evaluation,'overall':{'broker_equity':round(sum(a['equity'] for a in account_rows),2),'equity':round(sum(a['equity'] for a in account_rows),2),'starting_capital':starting,'strategy_value':round(starting+overall_stats['realized_pnl'],2) if starting is not None else None,**overall_stats},'markets':markets,'accounts':accounts,'symbols':symbols,'daily':[{'date':d,'realized_pnl':round(v,2)} for d,v in sorted(series.items())],'trades':sorted(trade_rows,key=lambda x:x.get('time') or 0,reverse=True)[:200],'errors':errors,'notes':{'IBKR':'Broker-reported P&L is authoritative. Entry, duration, strategy and news context are attached only when matching evidence exists.','attribution':'ATLAS_EXACT_ORDER requires an exact persisted broker order match; other rows remain BROKER_REPORTED.','news':'News is contextual when stored for the same symbol within 24 hours before execution; it is not claimed as causal.'}}
+
+@router.get('/performance/profit-chart')
+@isolated_provider_read
+async def profit_chart(symbols:list[str]|None=Query(default=None,max_length=50),
+                       start:date|None=None,end:date|None=None,
+                       user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+ if start and end and start>end:raise HTTPException(400,'Start date must be on or before end date')
+ if end==date.max:raise HTTPException(400,'End date is outside the supported range')
+ return await _broker_performance(days=366,user=user,db=db,
+  chart_request={'symbols':symbols,'start':start,'end':end})
 
 @router.get('/execution-readiness')
 async def execution_readiness(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
