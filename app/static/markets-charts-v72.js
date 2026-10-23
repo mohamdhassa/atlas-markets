@@ -53,7 +53,10 @@ const style=document.createElement('style');style.textContent=`
  #profitPage .metric-card>strong{font-size:1.2rem}
  #profitPage .metric-card:first-child>strong{font-size:1.7rem}
  #profitPage .metric-card>small{font-size:.7rem}
- #profitPage .profit-filters input[type=date]{font-size:16px}
+ #profitPage .profit-filters>label{grid-column:1/-1;display:flex;flex-direction:column;min-width:0;width:100%}
+ #profitPage .profit-filters input[type=date]{-webkit-appearance:none;appearance:none;display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;inline-size:100%;min-inline-size:0;max-inline-size:100%;height:46px;min-height:46px;max-height:46px;font-size:16px;line-height:24px;padding:10px 12px;overflow:hidden}
+ #profitPage .profit-filters input[type=date]::-webkit-date-and-time-value{text-align:left;min-width:0;margin:0}
+ #profitPage .profit-filters input[type=date]::-webkit-datetime-edit{display:block;min-width:0;padding:0}
  #profitPage .profit-legend{gap:10px;margin:10px 0}
  #profitPage .profit-legend span{font-size:12px;max-width:100%;overflow-wrap:anywhere}
  #profitPage .profit-inspect{margin-top:12px;font-size:.8rem}
