@@ -296,7 +296,7 @@ def test_intent_survives_timeout_and_retry_only_verifies_same_pair(db):
 
 def test_manager_passes_persisted_pair_ids_without_enabling_new_submission(db):
     row=entry(db);raw=json.loads(row.raw_json)
-    raw['native_protection']={'status':'PROTECTION_PENDING','order_ids':[216,217]}
+    raw['native_protection']={'status':'PROTECTION_PENDING','reason':'BROKER_PROTECTION_NOT_CONFIRMED','order_ids':[216,217]}
     row.raw_json=json.dumps(raw);db.commit();calls=[]
     class Broker:
         async def ensure_protection(self,payload):
@@ -306,7 +306,11 @@ def test_manager_passes_persisted_pair_ids_without_enabling_new_submission(db):
         {'symbol':'MSFT','position_side':'LONG','quantity':3},'DU_TEST'))
     assert result['status']=='PROTECTED'
     assert calls[0]['existing_order_ids']==[216,217] and calls[0]['allow_submit'] is False
-    assert json.loads(row.raw_json)['native_protection']['order_ids']==[216,217]
+    saved=json.loads(row.raw_json)
+    assert saved['native_protection']['order_ids']==[216,217]
+    assert 'reason' not in saved['native_protection']
+    assert saved['native_protection']['previous_reason']=='BROKER_PROTECTION_NOT_CONFIRMED'
+    assert saved['result']['status']=='EXECUTED'
 
 
 def test_only_explicit_pre_submission_busy_response_can_release_submission_intent(db):
@@ -500,3 +504,27 @@ def test_new_entries_block_before_submission_when_protection_is_not_ready(monkey
     if case=='missing_levels':request.pop('stop_loss')
     result=asyncio.run(execution._execute_ibkr(DB(),user_id=1,item={'market':'STOCK','symbol':'AMZN','request':request}))
     assert result['status']=='BLOCK' and result['reason']==reason
+
+
+@pytest.mark.parametrize('verified', [False, True])
+def test_protection_reason_is_not_cleared_without_verified_broker_success(db, verified):
+    row=entry(db);raw=json.loads(row.raw_json)
+    raw['native_protection']={'status':'PROTECTION_PENDING',
+        'reason':'BROKER_PROTECTION_NOT_CONFIRMED','order_ids':[216,217]}
+    row.raw_json=json.dumps(raw);db.commit()
+    class Broker:
+        async def ensure_protection(self,payload):
+            assert payload['allow_submit'] is False
+            return {'status':'PROTECTED','simulation':verified,
+                    'oca_group':'atlas-protect-'+row.id.hex,
+                    'reason':'CURRENT_BROKER_REASON'}
+    result=asyncio.run(manager._ensure_native_protection(db,row,Broker(),
+        {'symbol':'MSFT','position_side':'LONG','quantity':3},'DU_TEST'))
+    saved=json.loads(row.raw_json)['native_protection']
+    if verified:
+        assert result['status']=='PROTECTED'
+        assert saved['reason']=='CURRENT_BROKER_REASON'
+    else:
+        assert result['status']=='PROTECTION_PENDING'
+        assert saved['reason']=='BROKER_PROTECTION_NOT_CONFIRMED'
+    assert saved['order_ids']==[216,217]

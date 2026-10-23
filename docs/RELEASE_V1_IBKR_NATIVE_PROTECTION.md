@@ -121,3 +121,15 @@ are local to that session. Restarting the bridge with the same client ID and an 
 Gateway allows same-client retrieval. Deploy only after container tests; verify the
 actual stop and target statuses and quantities after the manager check. App health is
 not evidence of protective coverage.
+
+## Current versus historical protection reasons
+
+After an exact Paper broker response verifies PROTECTED, clear an inherited
+pending/error reason when the successful response supplies no current reason.
+Retain it as previous_reason for audit, and preserve order IDs, submission intent,
+fill evidence and check time. A pending, wrong-environment or wrong-group result
+does not clear its warning. No historical bulk rewrite or broker mutation is
+introduced; records update through normal verified reconciliation. This reporting
+correction does not prove profitability or resolve an unmeasured fill-to-protection
+delay. Compare actual fill evidence with the first protection attempt before
+attributing a delay from entry creation timestamps.

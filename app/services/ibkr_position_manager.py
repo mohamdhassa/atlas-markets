@@ -229,6 +229,10 @@ async def _ensure_native_protection(db,entry,broker,item,account_id):
         raw=json.loads(entry.raw_json or '{}')
         raw['native_protection']={**raw.get('native_protection',{}),**result,
                                   'checked_at':datetime.now(timezone.utc).isoformat()}
+        if result.get('status')=='PROTECTED' and not result.get('reason'):
+            previous_reason=raw['native_protection'].pop('reason',None)
+            if previous_reason:
+                raw['native_protection']['previous_reason']=previous_reason
         entry.raw_json=json.dumps(raw);db.commit()
         return result
     except (KeyError,TypeError,ValueError) as exc:
