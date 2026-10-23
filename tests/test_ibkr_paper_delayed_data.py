@@ -152,3 +152,15 @@ def test_delayed_mode_cannot_add_to_existing_symbol(monkeypatch):
         'market':'STOCK','symbol':'TSLA','request':{'side':'BUY','shares':2}}))
     assert result['reason']=='SYMBOL_ALREADY_HAS_POSITION'
     assert Broker.checks==[]
+
+
+def test_opted_in_ibkr_sizing_uses_completed_atr_and_records_basis(monkeypatch):
+    DB,Broker,settings=setup(monkeypatch)
+    settings.ibkr_paper_atr_sizing_enabled=True
+    row=asyncio.run(readiness.autotrade_readiness(DB(),user_id=1))['items'][0]
+    assert row['readiness']=='PASS',row
+    proof=row['strategy_snapshot']['protection_sizing']
+    assert proof['basis']=='COMPLETED_CANDLE_ATR' and proof['atr_value']==2
+    assert row['proposed_order']['stop_loss']==98
+    assert row['proposed_order']['take_profit']==104
+    assert row['proposed_order']['shares']==int(row['proposed_order']['shares'])
