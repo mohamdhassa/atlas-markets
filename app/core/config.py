@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     ibkr_fractional_api_enabled: bool = False
     ibkr_native_protection_enabled: bool = False
     ibkr_paper_delayed_data_enabled: bool = False
+    ibkr_position_monitor_interval_seconds: int = Field(default=30, ge=15, le=300)
     ibkr_execution_timezone: str = 'Etc/UTC'
     model_config = SettingsConfigDict(env_file=".env",env_file_encoding="utf-8",case_sensitive=False,extra="ignore")
 
