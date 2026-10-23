@@ -58,6 +58,12 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
  ids.profitFilters.onsubmit({preventDefault(){}});await tick();assert(ids.profitCoverage.textContent.includes('Partial history: 1 provider read issue(s)'));
 
  assert(context.window.AtlasProfitChart.profitGraph({series:[]}).includes('No recorded realized'));
+ const insights=context.window.AtlasProfitChart.profitInsights({partial:true,insights:{peak_pnl:100,peak_day:'2026-10-01',current_drawdown:140,max_daily_drawdown:160,worst_day:{date:'2026-10-02',pnl:-160},loss_drivers_since_peak:[{symbol:'<unsafe>',provider:'IBKR',environment:'PAPER',pnl:-160}],largest_loss_records:[],basis:'Daily records'}});
+ assert(insights.includes('What changed')&&insights.includes('140')&&insights.includes('Partial history'));
+ assert(!insights.includes('<unsafe>')&&insights.includes('&lt;unsafe&gt;'));
+ assert(context.window.AtlasProfitChart.profitInsights({}).includes('No priced records'));
+ assert(ids.profitInsights.innerHTML.includes('No priced records'));
+
  const zero=context.window.AtlasProfitChart.profitGraph({series:[{label:'Zero',points:[{time:1,value:0},{time:2,value:0}]}]});
  assert(zero.includes('<svg')&&!zero.includes('NaN'));
  for(const width of [260,288,326,366,650,1000]){
@@ -77,5 +83,5 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 def test_chart_asset_version_and_order_preserve_existing_workspaces():
     html=Path('app/static/index.html').read_text()
-    assert 'markets-charts-v72.js?v=72.4' in html
+    assert 'markets-charts-v72.js?v=72.5' in html
     assert html.index('markets-charts-v72.js')<html.index('frontend-stability-v72-6.js')

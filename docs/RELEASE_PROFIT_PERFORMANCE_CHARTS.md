@@ -89,3 +89,21 @@ physical and logical dimensions to their container with a 46px height.
 Normalize WebKit date editing appearance without replacing the native date
 picker or changing filter values. Cache version 72.4. iPhone visual acceptance
 still requires the deployed screenshot; Node tests do not emulate Safari.
+
+## Performance identifiers: What changed
+
+Charts now includes a read-only insights section following the same symbol/date
+filters, owner scope and available priced records as the graph. Show the highest
+daily cumulative realized P&L (including the zero baseline), current distance
+below that peak, largest daily closing peak-to-trough drop and worst UTC day.
+Do not calculate an account-equity drawdown percentage from realized P&L.
+
+Show up to five negative net symbol contributions after the peak day, plus the
+five largest negative P&L records in the selected period with UTC dates and
+provider/environment labels. Aggregate partial fills for symbol contributions;
+label individual records as records rather than whole trades. Since-peak
+attribution begins after the peak UTC day, so intraday giveback is not inferred.
+These are outcomes, not evidence of strategy/stop failure. Partial coverage and
+unknown values retain existing disclosures. Empty/loading/error states clear
+stale insights. No orders, settings, migration or additional provider calls.
+Asset version 72.5. Desktop/mobile visual acceptance remains pending deployment.
