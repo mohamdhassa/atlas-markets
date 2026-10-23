@@ -133,3 +133,41 @@ def test_http_query_parsing_for_multiple_symbols_dates_and_limits(monkeypatch):
     assert len(response.json()['selected_symbols'])==2
     assert client.get('/performance/profit-chart?start=invalid').status_code==422
     assert client.get('/performance/profit-chart',params=[('symbols',str(i)) for i in range(51)]).status_code==422
+
+
+def test_insights_attribute_profit_giveback_and_daily_drawdown():
+    data = build_profit_chart([
+        row('TSLA', 100), row('AAPL', -160, day='2026-10-02'),
+        row('TSLA', 20, day='2026-10-03'),
+        row('SPY', 999, pnl_available=False),
+    ])
+    a = data['insights']
+    assert a['peak_pnl'] == 100 and a['peak_day'] == '2026-10-01'
+    assert a['current_drawdown'] == 140
+    assert a['max_daily_drawdown'] == 160
+    assert a['worst_day'] == {'date': '2026-10-02', 'pnl': -160}
+    assert [(r['symbol'], r['pnl']) for r in a['loss_drivers_since_peak']] == [('AAPL', -160)]
+    assert a['largest_loss_records'][0]['symbol'] == 'AAPL'
+    assert data['partial']
+
+
+def test_insights_follow_filters_and_rebase_from_zero():
+    a, b = row('TSLA', 100), row('AAPL', -10, day='2026-10-02')
+    data = build_profit_chart([a, b], symbols=[instrument_key(b)], start=date(2026, 10, 2))
+    audit = data['insights']
+    assert audit['peak_pnl'] == 0 and audit['peak_day'] is None
+    assert audit['current_drawdown'] == audit['max_daily_drawdown'] == 10
+    assert [r['symbol'] for r in audit['loss_drivers']] == ['AAPL']
+    assert build_profit_chart([row(pnl=None)])['insights'] is None
+    zero = build_profit_chart([row(pnl=0)])['insights']
+    assert zero['worst_day'] is None and zero['current_drawdown'] == 0
+
+
+def test_insights_aggregate_split_records_and_distinguish_environments():
+    rows = [row('TSLA', 50), row('TSLA', -30, day='2026-10-02'),
+            row('TSLA', -20, day='2026-10-02'),
+            row('TSLA', -5, day='2026-10-02', environment='LIVE')]
+    a = build_profit_chart(rows)['insights']
+    assert a['worst_day']['pnl'] == -55
+    assert [(r['environment'], r['pnl']) for r in a['loss_drivers_since_peak']] == [('PAPER', -50), ('LIVE', -5)]
+    assert len(a['largest_loss_records']) == 3

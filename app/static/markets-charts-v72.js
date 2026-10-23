@@ -64,6 +64,24 @@ const style=document.createElement('style');style.textContent=`
  #profitPage .page-intro .muted{font-size:.8rem}
 }
 @media(max-width:400px){#profitPage .profit-filters>label{grid-column:1/-1}}
+
+#profitPage .profit-insight-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+#profitPage .profit-insight-head h3{margin:0}
+#profitPage .profit-insight-head>span{font-size:.75rem}
+#profitPage .profit-insight-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+#profitPage .profit-insight-metrics>div{display:grid;align-content:start;gap:8px;padding:14px;border:1px solid var(--line);border-radius:12px;min-width:0}
+#profitPage .profit-insight-metrics span,#profitPage .profit-insight-metrics small{font-size:.75rem;color:var(--muted);line-height:1.5}
+#profitPage .profit-insight-metrics strong{font-size:1.2rem;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+#profitPage .profit-insight-lists{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+#profitPage .profit-insight-lists h4{font-size:.9rem;margin:10px 0}
+#profitPage .profit-insight-lists ul{list-style:none;padding:0;margin:0}
+#profitPage .profit-insight-lists li{display:flex;justify-content:space-between;align-items:start;gap:12px;border-bottom:1px solid var(--line);padding:12px 0;font-size:.85rem}
+#profitPage .profit-insight-lists li>div{min-width:0;overflow-wrap:anywhere}
+#profitPage .profit-insight-lists li>strong{white-space:nowrap}
+#profitPage .profit-insight-lists small{display:block;color:var(--muted);font-size:.7rem;margin-top:5px}
+#profitPage .profit-insight-note{font-size:.75rem;line-height:1.7}
+@media(max-width:900px){#profitPage .profit-insight-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){#profitPage .profit-insight-lists{grid-template-columns:1fr;gap:12px}#profitPage .profit-insight-metrics{gap:10px}#profitPage .profit-insight-metrics>div{padding:12px}}
 `;document.head.appendChild(style);
 
 function line(candles){const a=(candles||[]).map(x=>Number(x.close)).filter(Number.isFinite);if(a.length<2)return '<div class="empty-state">Chart unavailable.</div>';const w=1000,h=330,p=24,lo=Math.min(...a),hi=Math.max(...a),sp=hi-lo||1,pts=a.map((v,i)=>`${p+i/(a.length-1)*(w-p*2)},${h-p-((v-lo)/sp)*(h-p*2)}`).join(' ');return `<svg viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>`}
@@ -83,6 +101,22 @@ let chartsEpoch=0,profitResizeObserver;
 const profitColors=['#60a5fa','#34d399','#fbbf24','#f472b6','#a78bfa','#22d3ee','#fb923c','#e879f9'];
 const profitNumber=v=>v==null||!Number.isFinite(Number(v))?'—':(Number(v)>0?'+':'')+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const profitDate=ms=>new Date(ms).toLocaleDateString(undefined,{timeZone:'UTC',year:'numeric',month:'short',day:'numeric'});
+function profitInsights(data){
+ const a=data.insights;
+ if(!a)return '<p class="muted">No priced records available for performance insights.</p>';
+ const drivers=a.loss_drivers_since_peak||[];
+ const detail=rows=>rows.map(row=>`<li><div><strong>${H(row.symbol)}</strong><small>${H(row.provider)} · ${H(row.environment)}${row.day?' · '+H(row.day)+' UTC':''}</small></div><strong class="profit-loss">${H(profitNumber(row.pnl))}</strong></li>`).join('');
+ return `<div class="profit-insight-head"><h3>What changed</h3><span class="muted">Current filters · USD / USDT</span></div>
+ <p class="muted">${a.current_drawdown>0?`Recorded P&amp;L is ${H(N(a.current_drawdown))} below its ${a.peak_day?'highest daily closing level on '+H(a.peak_day)+' UTC':'zero starting baseline'}.`:'Recorded P&amp;L is at its highest daily closing level for this selection.'}</p>
+ <div class="profit-insight-metrics">
+ <div><span>Profit peak</span><strong>${H(profitNumber(a.peak_pnl))}</strong><small>${H(a.peak_day||'Starting baseline')}</small></div>
+ <div><span>Below peak now</span><strong>${H(N(a.current_drawdown))}</strong><small>P&amp;L decrease, not account equity</small></div>
+ <div><span>Largest daily drawdown</span><strong>${H(N(a.max_daily_drawdown))}</strong><small>Peak to later daily closing level</small></div>
+ <div><span>Worst recorded day</span><strong>${a.worst_day?H(profitNumber(a.worst_day.pnl)):'—'}</strong><small>${a.worst_day?H(a.worst_day.date)+' UTC':'No losing day recorded'}</small></div></div>
+ <div class="profit-insight-lists"><div><h4>Loss contributors after peak</h4><ul>${detail(drivers)||'<li>No negative symbol contribution after the peak day.</li>'}</ul></div>
+ <div><h4>Largest loss records · selected period</h4><ul>${detail(a.largest_loss_records||[])||'<li>No losing records in this selection.</li>'}</ul></div></div>
+ <p class="muted profit-insight-note">${data.partial?'Partial history: these figures use available priced records only. ':''}${H(a.basis)} Symbol contributions show where losses were recorded; they do not prove a strategy or protection failure. Open P&amp;L is excluded.</p>`;
+}
 function profitGraph(data, availableWidth=1000){
  const series=data.series||[];
  if(!series.length)return '<div class="empty-state">No recorded realized P&amp;L in this selection. Open positions and records without P&amp;L do not create a profit curve.</div>';
@@ -103,10 +137,11 @@ async function charts(){
  try{
   let data=await api('/performance/profit-chart');
   if(epoch!==chartsEpoch)return;
-  content.innerHTML=`<div id="profitPage"><div class="page-intro"><div><p class="eyebrow">YOUR PERFORMANCE</p><h3>Profit performance</h3><p class="muted">Cumulative recorded realized P&amp;L. Overall · all available history by default.</p></div></div><section class="panel"><form id="profitFilters" class="profit-filters"><details class="profit-picker"><summary id="profitSelectionLabel">Compare symbols · all</summary><div class="profit-symbols">${(data.symbols||[]).map(s=>`<label><input type="checkbox" name="profitSymbol" value="${H(s.key)}"><span>${H(s.symbol)}<small>${H(s.provider)} · ${H(s.environment)} · ${H(s.market)}</small></span></label>`).join('')||'<span class="muted">No recorded symbols yet.</span>'}</div></details><label>From · UTC<input id="profitStart" type="date" aria-label="Performance start date"></label><label>To · UTC<input id="profitEnd" type="date" aria-label="Performance end date"></label><button id="profitApply" class="primary-button" type="submit">Apply filters</button><button id="profitReset" class="ghost-button" type="button">Reset</button></form><p id="profitFilterError" role="alert"></p></section><div id="profitFacts" class="metric-grid"></div><section class="panel"><div class="page-intro"><div><h3 id="profitHeading">Overall performance</h3><p class="muted">Recorded realized P&amp;L · USD / USDT · UTC dates</p></div></div><div id="profitChart"></div><p id="profitCoverage" class="muted"></p></section></div>`;
+  content.innerHTML=`<div id="profitPage"><div class="page-intro"><div><p class="eyebrow">YOUR PERFORMANCE</p><h3>Profit performance</h3><p class="muted">Cumulative recorded realized P&amp;L. Overall · all available history by default.</p></div></div><section class="panel"><form id="profitFilters" class="profit-filters"><details class="profit-picker"><summary id="profitSelectionLabel">Compare symbols · all</summary><div class="profit-symbols">${(data.symbols||[]).map(s=>`<label><input type="checkbox" name="profitSymbol" value="${H(s.key)}"><span>${H(s.symbol)}<small>${H(s.provider)} · ${H(s.environment)} · ${H(s.market)}</small></span></label>`).join('')||'<span class="muted">No recorded symbols yet.</span>'}</div></details><label>From · UTC<input id="profitStart" type="date" aria-label="Performance start date"></label><label>To · UTC<input id="profitEnd" type="date" aria-label="Performance end date"></label><button id="profitApply" class="primary-button" type="submit">Apply filters</button><button id="profitReset" class="ghost-button" type="button">Reset</button></form><p id="profitFilterError" role="alert"></p></section><div id="profitFacts" class="metric-grid"></div><section class="panel"><div class="page-intro"><div><h3 id="profitHeading">Overall performance</h3><p class="muted">Recorded realized P&amp;L · USD / USDT · UTC dates</p></div></div><div id="profitChart"></div><p id="profitCoverage" class="muted"></p></section><section id="profitInsights" class="panel" aria-label="Performance insights"></section></div>`;
   let request=0,loading=false;
   const selected=()=>Array.from(document.querySelectorAll('input[name="profitSymbol"]:checked')).map(x=>x.value);
   const paint=d=>{
+   document.getElementById('profitInsights').innerHTML=profitInsights(d);
    document.getElementById('profitFacts').innerHTML=`<div class="metric-card"><span>Recorded realized P&amp;L</span><strong class="${d.recorded_pnl<0?'profit-loss':d.recorded_pnl>0?'profit-gain':''}">${H(profitNumber(d.recorded_pnl))}</strong><small>USD / USDT · selected period</small></div><div class="metric-card"><span>P&amp;L records</span><strong>${N(d.pnl_records,0)}</strong><small>Available recorded outcomes</small></div><div class="metric-card"><span>History window</span><strong>${d.start||d.end?'Custom dates':'All available'}</strong><small>${H(d.start||'Beginning')} → ${H(d.end||'Latest record')}</small></div>`;
    const count=(d.selected_symbols||[]).length;
    document.getElementById('profitHeading').textContent=count?'Selected symbols comparison':'Overall performance';
@@ -122,8 +157,8 @@ async function charts(){
    const start=document.getElementById('profitStart').value,end=document.getElementById('profitEnd').value,error=document.getElementById('profitFilterError');
    if(start&&end&&start>end){error.textContent='Start date must be on or before end date. Filters have not been applied.';return}
    error.textContent='';const id=++request,query=new URLSearchParams();for(const symbol of selected())query.append('symbols',symbol);if(start)query.set('start',start);if(end)query.set('end',end);
-   loading=true;document.getElementById('profitApply').disabled=true;document.getElementById('profitFacts').innerHTML='';document.getElementById('profitChart').innerHTML='<div class="empty-state">Loading performance…</div>';
-   try{const next=await api('/performance/profit-chart'+(query.toString()?'?'+query:''));if(epoch!==chartsEpoch||id!==request)return;data=next;paint(data)}catch(e){if(epoch!==chartsEpoch||id!==request)return;document.getElementById('profitChart').innerHTML=`<div class="empty-state">Performance unavailable: ${H(e.message)}</div>`;document.getElementById('profitCoverage').textContent='Try Apply filters again to refresh.'}finally{if(epoch===chartsEpoch&&id===request){loading=false;document.getElementById('profitApply').disabled=false}}
+   loading=true;document.getElementById('profitInsights').innerHTML='<p class="muted">Updating insights…</p>';document.getElementById('profitApply').disabled=true;document.getElementById('profitFacts').innerHTML='';document.getElementById('profitChart').innerHTML='<div class="empty-state">Loading performance…</div>';
+   try{const next=await api('/performance/profit-chart'+(query.toString()?'?'+query:''));if(epoch!==chartsEpoch||id!==request)return;data=next;paint(data)}catch(e){if(epoch!==chartsEpoch||id!==request)return;document.getElementById('profitChart').innerHTML=`<div class="empty-state">Performance unavailable: ${H(e.message)}</div>`;document.getElementById('profitInsights').innerHTML='<p class="muted">Insights unavailable. Apply filters to retry.</p>';document.getElementById('profitCoverage').textContent='Try Apply filters again to refresh.'}finally{if(epoch===chartsEpoch&&id===request){loading=false;document.getElementById('profitApply').disabled=false}}
   };
   document.getElementById('profitFilters').onsubmit=e=>{e.preventDefault();load()};
   document.getElementById('profitReset').onclick=()=>{document.querySelectorAll('input[name="profitSymbol"]').forEach(x=>x.checked=false);document.getElementById('profitStart').value='';document.getElementById('profitEnd').value='';load()};
@@ -147,5 +182,5 @@ renderPage=async function(page){
  finally{requestAnimationFrame(()=>root.classList.remove('atlas-route-loading'))}
 };
 window.AtlasMarketsChartsV72={markets,charts};
-window.AtlasProfitChart={profitGraph};
+window.AtlasProfitChart={profitGraph,profitInsights};
 })();

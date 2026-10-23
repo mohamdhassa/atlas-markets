@@ -23,6 +23,7 @@ def build_profit_chart(rows, *, symbols=None, start=None, end=None, errors=()):
     upper = int(datetime.combine(end + timedelta(days=1), time.min, timezone.utc).timestamp() * 1000) if end else None
     amounts = defaultdict(lambda: defaultdict(float))
     included, unknown, invalid_time = 0, 0, 0
+    records = []
     for row in rows:
         key = instrument_key(row)
         if key not in options or (selected and key not in selected):
@@ -46,6 +47,9 @@ def build_profit_chart(rows, *, symbols=None, start=None, end=None, errors=()):
             invalid_time += 1
             continue
         amounts[key][day] += value
+        records.append({'key': key, 'day': day, 'pnl': value, 'time': stamp,
+                        'broker_order_id': row.get('broker_order_id'),
+                        'execution_id': row.get('execution_id')})
         included += 1
     dates = sorted({day for values in amounts.values() for day in values})
     series = []
@@ -68,7 +72,39 @@ def build_profit_chart(rows, *, symbols=None, start=None, end=None, errors=()):
         if selected:
             series.extend({'key': key, 'label': options[key]['symbol'] + ' · ' + options[key]['provider'] + ' · ' + str(options[key]['environment']),
                            'points': points[key]} for key in keys)
+    insights = None
+    if series:
+        daily = {day: sum(values.get(day, 0.) for values in amounts.values()) for day in dates}
+        peak, peak_day, running, max_drawdown = 0., None, 0., 0.
+        for day in dates:
+            running += daily[day]
+            if running > peak:
+                peak, peak_day = running, day
+            max_drawdown = max(max_drawdown, peak - running)
+        current = series[0]['points'][-1]['value']
+        def drivers(after=None):
+            values = []
+            for key, days in amounts.items():
+                value = sum(v for day, v in days.items() if after is None or day > after)
+                if value < 0:
+                    values.append({**options[key], 'pnl': round(value, 8)})
+            return sorted(values, key=lambda row: (row['pnl'], row['key']))[:5]
+        worst_day = min(daily, key=lambda day: (daily[day], day))
+        losses = sorted((record for record in records if record['pnl'] < 0),
+                        key=lambda row: (row['pnl'], row['time'], row['key']))[:5]
+        insights = {
+            'peak_pnl': round(peak, 8), 'peak_day': peak_day,
+            'current_drawdown': round(max(0., peak - current), 8),
+            'max_daily_drawdown': round(max_drawdown, 8),
+            'worst_day': {'date': worst_day, 'pnl': round(daily[worst_day], 8)} if daily[worst_day] < 0 else None,
+            'loss_drivers': drivers(),
+            'loss_drivers_since_peak': drivers(peak_day) if peak_day else drivers(),
+            'largest_loss_records': [{**options[row['key']], **row,
+                                      'pnl': round(row['pnl'], 8)} for row in losses],
+            'basis': 'Daily recorded realized P&L; peaks include the zero starting baseline. Since-peak attribution starts after the peak UTC day. Records can be partial fills, not whole trades.',
+        }
     return {
+        'insights': insights,
         'metric': 'CUMULATIVE_RECORDED_REALIZED_PNL', 'timezone': 'UTC',
         'currency_label': 'USD / USDT', 'start': start, 'end': end,
         'selected_symbols': sorted(selected),
