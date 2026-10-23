@@ -118,3 +118,5 @@ follow root `AGENTS.md` before making changes.
 - [IBKR delayed-data Paper mode](RELEASE_IBKR_PAPER_DELAYED_DATA.md) — explicit Demo-only opt-in, bounded candle references and unchanged Live/entry controls.
 
 - [Profit performance charts](RELEASE_PROFIT_PERFORMANCE_CHARTS.md) — overall/all-time recorded profit curves, multi-symbol comparison and optional dates.
+
+- [IBKR measured ATR candidate](IBKR_ATR_SIZING_CANDIDATE.md) — explicit Paper opt-in, recorded sizing basis, baseline preserved until comparison.

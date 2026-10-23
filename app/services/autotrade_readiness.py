@@ -20,6 +20,7 @@ from app.db.models.symbol_strategy import SymbolStrategy
 from app.market_data.bybit import BybitPublicMarketData
 from app.analysis.strategy_router import route_strategy
 from app.services.paper_execution import build_execution_plan
+from app.services.ibkr_atr_sizing import sizing_atr
 from app.services.signal_risk import evaluate_risk, generate_signal
 from app.services.capital_sizing import capital_policy_payload, capital_sizing_inputs
 from app.services.bybit_spot_execution import managed_position_slots, managed_buy_is_blocked
@@ -413,12 +414,18 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                     environment=profile.environment,
                     simulation_capital_override_usd=profile.simulation_capital_override_usd,
                 )
+                measured_atr = None
+                if profile.provider == "IBKR":
+                    measured_atr, sizing_evidence = sizing_atr(
+                        settings, profile.environment, normalized_candles)
+                    base["strategy_snapshot"]["protection_sizing"] = sizing_evidence
                 plan = build_execution_plan(
                     decision=generated.decision,
                     price=price,
                     equity=sizing_equity,
                     available_cash=sizing_available,
                     risk_per_trade_pct=risk_pct,
+                    atr=measured_atr,
                     stop_atr_multiplier=stop,
                     take_profit_rr=rr,
                     max_position_notional_pct=max_pos,
