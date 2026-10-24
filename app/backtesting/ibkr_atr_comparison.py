@@ -88,14 +88,16 @@ def trigger(row, position):
 
 
 def simulate(rows, stream, *, measured, slip_bps, capital=250000.,
-             commission_per_share=.005, minimum_commission=1.):
+             commission_per_share=.005, minimum_commission=1., intraday=False):
     cash, position, peak, max_dd = capital, None, capital, 0.
     trades, skipped, fees = [], 0, 0.
     slip = slip_bps/10000
     for index in range(PARAMETERS['warmup'], len(rows)):
         row = rows[index]
+        local = datetime.fromtimestamp(row['timestamp_ms']/1000, NY)
+        minute = local.hour*60 + local.minute
         held_at_open = position is not None
-        if not held_at_open and index in stream and cash > 0:
+        if not held_at_open and index in stream and cash > 0 and (not intraday or minute < 900):
             side = stream[index]; sign = 1 if side == 'BUY' else -1
             reference = float(rows[index-1]['close'])
             try:
@@ -127,7 +129,13 @@ def simulate(rows, stream, *, measured, slip_bps, capital=250000.,
             except (ValueError, KeyError, TypeError):
                 skipped += 1
         if position is not None:
-            outcome = trigger(row, position)
+            if intraday and minute >= 945:
+                # Exit at the scheduled open; never inspect this bar's future range.
+                opening = float(row['open'])
+                outcome = trigger(dict(open=opening, high=opening, low=opening), position)
+                outcome = outcome or (opening, 'SESSION_EXIT')
+            else:
+                outcome = trigger(row, position)
             if outcome:
                 level, reason = outcome
                 price = level*(1-position['sign']*slip)

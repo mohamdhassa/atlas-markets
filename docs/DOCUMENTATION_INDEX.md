@@ -122,3 +122,5 @@ follow root `AGENTS.md` before making changes.
 - [IBKR measured ATR candidate](IBKR_ATR_SIZING_CANDIDATE.md) — explicit Paper opt-in, recorded sizing basis, baseline preserved until comparison.
 
 - [Offline IBKR ATR comparison](IBKR_ATR_COMPARISON.md) — read-only exports, long/short cost stress tests and explicit exploratory limits.
+
+- [Offline IBKR intraday comparison](IBKR_INTRADAY_COMPARISON.md) — frozen session cutoffs, four policy arms and sacrificed-winner accounting.
