@@ -29,3 +29,6 @@ honest counterfactual for those trades is not yet available.
 Deploy app only after full isolated container acceptance, retain both IBKR
 overlays and Live disabled. This release does not enable the flag or change
 existing orders, open-position protection or historical evidence. No migration.
+
+The [offline comparison](IBKR_ATR_COMPARISON.md) provides a read-only export and
+exploratory cost-aware replay. Its existence does not satisfy performance acceptance.
