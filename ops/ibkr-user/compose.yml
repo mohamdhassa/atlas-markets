@@ -5,9 +5,11 @@ services:
     image: ghcr.io/gnzsnz/ib-gateway:10.50.1e
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
-    command: ["chown -R 1000:1000 /home/ibgateway/tws_settings && chmod 700 /home/ibgateway/tws_settings"]
+    command: ["chown -R 1000:1000 /home/ibgateway/tws_settings && chmod 700 /home/ibgateway/tws_settings && cp /run/secrets/tws_password /runtime-secrets/tws_password && cp /run/secrets/vnc_password /runtime-secrets/vnc_password && chown 1000:1000 /runtime-secrets/tws_password /runtime-secrets/vnc_password && chmod 600 /runtime-secrets/tws_password /runtime-secrets/vnc_password"]
     volumes:
       - settings:/home/ibgateway/tws_settings
+      - runtime_secrets:/runtime-secrets
+    secrets: [tws_password, vnc_password]
     restart: "no"
   ib-gateway:
     image: ghcr.io/gnzsnz/ib-gateway:10.50.1e
@@ -17,8 +19,8 @@ services:
         condition: service_completed_successfully
     environment:
       TWS_USERID: ${TWS_USERID:?Set the owner's Paper username}
-      TWS_PASSWORD_FILE: /run/secrets/tws_password
-      VNC_SERVER_PASSWORD_FILE: /run/secrets/vnc_password
+      TWS_PASSWORD_FILE: /run/atlas-credentials/tws_password
+      VNC_SERVER_PASSWORD_FILE: /run/atlas-credentials/vnc_password
       TRADING_MODE: paper
       READ_ONLY_API: ${READ_ONLY_API:-yes}
       TWS_ACCEPT_INCOMING: "yes"
@@ -32,8 +34,8 @@ services:
     ports:
       - "127.0.0.1:${IBKR_VNC_HOST_PORT:?Choose an unused VNC port}:5900"
       - "127.0.0.1:${IBKR_BRIDGE_HOST_PORT:?Choose an unused bridge port}:8766"
-    secrets: [tws_password, vnc_password]
     volumes:
+      - runtime_secrets:/run/atlas-credentials:ro
       - settings:/home/ibgateway/tws_settings
     networks:
       private:
@@ -75,6 +77,7 @@ secrets:
     file: ${IBKR_SECRET_DIR}/bridge_token
 volumes:
   settings:
+  runtime_secrets:
 networks:
   private:
   app:

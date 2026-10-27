@@ -1,0 +1,6 @@
+# Opt in only after migration and trusted operator worker installation.
+services:
+  app:
+    environment:
+      IBKR_PROVISIONING_ENABLED: "true"
+      IBKR_PROVISIONER_TOKEN: ${IBKR_PROVISIONER_TOKEN:?Generate a private operator token}

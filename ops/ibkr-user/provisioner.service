@@ -1,0 +1,22 @@
+[Unit]
+Description=ATLAS approved IBKR Paper provisioning worker
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=atlas-provisioner
+SupplementaryGroups=docker
+EnvironmentFile=/etc/atlas-ibkr-provisioner.env
+ExecStart=/usr/bin/python3 /opt/atlas-ibkr-provisioner/ops/ibkr-user/provisioner.py
+Restart=on-failure
+RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/atlas-ibkr-provisioner
+
+[Install]
+WantedBy=multi-user.target
