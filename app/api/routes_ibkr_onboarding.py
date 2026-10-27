@@ -232,7 +232,7 @@ async def verify(key:uuid.UUID,user:User=Depends(get_current_user),db:Session=De
     if not active_owner(db,job.user_id):raise HTTPException(409,'Owner is disabled')
     profile=BrokerProfile(user_id=job.user_id,provider='IBKR',environment='PAPER',account_label=job.account_label,
         external_account_ref=job.account_id,credential_blob_encrypted=encrypt_secret(json.dumps(values)),
-        credentials_configured=True,is_active=False,is_enabled=True,live_execution_enabled=False,
+        credentials_configured=True,is_active=False,is_enabled=False,live_execution_enabled=False,
         last_connection_status='CONNECTED',last_connection_test_at=now())
     db.add(profile);db.flush();job.profile_id=profile.id;job.status='CONNECTED';job.error_code=None
     job.bridge_token_encrypted=None

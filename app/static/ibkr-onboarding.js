@@ -2,7 +2,7 @@
 (()=>{'use strict';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let generation=0;
-const descriptions={REQUESTED:'Waiting for administrator approval',APPROVED:'Approved — submit your Paper login privately',QUEUED:'Waiting for provisioning worker',PROVISIONING:'Preparing your isolated Gateway',LOGIN_REQUIRED:'Approve any IBKR authentication request, then verify connection',CONNECTED:'Broker identity verified — account is in standby',FAILED:'Setup needs review or another login attempt',REJECTED:'Administrator declined this request'};
+const descriptions={REQUESTED:'Waiting for administrator approval',APPROVED:'Approved — submit your Paper login privately',QUEUED:'Waiting for provisioning worker',PROVISIONING:'Preparing your isolated Gateway',LOGIN_REQUIRED:'Approve any IBKR authentication request, then verify connection',CONNECTED:'Broker identity verified — waiting for administrator to enable and activate the account',FAILED:'Setup needs review or another login attempt',REJECTED:'Administrator declined this request'};
 async function panel(ticket){
  try{
  const data=await api('/ibkr/onboarding');if(ticket!==generation||state.page!=='Accounts')return;

@@ -68,10 +68,10 @@ VNC secret locally. Do not paste them into chat or expose the ports publicly.
 
 Verify checks connected=True, simulation=True and the exact expected Paper
 account ID. Wrong identity/Live sessions never create a profile. A successful
-profile is encrypted, owner-scoped, inactive/standby and uncertified; credentials
+profile is encrypted, owner-scoped, disabled, inactive/standby and uncertified; credentials
 are not an authorization to trade. The manual template defaults to READ_ONLY_API=yes. The approved automated
 worker explicitly enables the new Paper Gateway order API for later certification;
-the ADMIN approval dialog states this. The app profile still starts uncertified
+the ADMIN approval dialog states this. The app profile still starts disabled and uncertified
 and in standby. Certification, activation and strategy setup remain separate
 ADMIN actions, and setup itself submits no orders. Existing native protection and automation
 are unchanged; Live stays disabled and ATR stays off.

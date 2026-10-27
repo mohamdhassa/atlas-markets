@@ -126,7 +126,7 @@ def test_success_connects_exact_owner_in_standby_and_is_idempotent(setup,monkeyp
     monkeypatch.setattr(routes,'IbkrBridgeClient',lambda *a,**k:Broker())
     for _ in range(2):assert s.client.post(f'/ibkr/onboarding/{key}/verify').json()['status']=='CONNECTED'
     row=s.db.query(BrokerProfile).one()
-    assert row.user_id==s.alice.id and not row.is_active and not row.live_execution_enabled
+    assert row.user_id==s.alice.id and not row.is_active and not row.is_enabled and not row.live_execution_enabled
     assert not row.execution_certified
     creds=json.loads(decrypt_secret(row.credential_blob_encrypted))
     assert creds['bridge_url']=='http://atlas-ibkr-setup-'+uuid.UUID(key).hex+':8766'
