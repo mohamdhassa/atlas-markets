@@ -37,6 +37,21 @@ trap 'exit 143' TERM
 mkdir "$scratch/source" "$scratch/results"
 git -C "$repo" archive "$candidate" | tar -x -C "$scratch/source"
 echo "Validating immutable commit $candidate"
+if [[ -f "$scratch/source/ops/ibkr-user/compose.yml" ]]; then
+  mkdir "$scratch/template-secrets"
+  for secret in tws_password vnc_password bridge_token; do
+    : > "$scratch/template-secrets/$secret"
+  done
+  env IBKR_INSTANCE=validation TWS_USERID=validation IBKR_ACCOUNT_ID=DUVALIDATION \
+    IBKR_SECRET_DIR="$scratch/template-secrets" \
+    IBKR_BRIDGE_SOURCE="$scratch/source/tools/ibkr_bridge.py" \
+    IBKR_VNC_HOST_PORT=19998 IBKR_BRIDGE_HOST_PORT=19999 \
+    ATLAS_APP_IMAGE=python:3.12-slim ATLAS_APP_NETWORK=validation-only \
+    docker compose --env-file /dev/null -p atlas-template-check \
+      -f "$scratch/source/ops/ibkr-user/compose.yml" config --quiet
+  echo 'IBKR per-owner Compose configuration validated without starting services'
+fi
+
 docker build --tag "$app_image" "$scratch/source"
 app_image_built=true
 docker build --build-arg "APP_IMAGE=$app_image" --tag "$image" \

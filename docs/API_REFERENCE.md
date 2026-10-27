@@ -73,3 +73,14 @@ and `apply` (default false). Preview returns statement trades, accessible profil
 validated matches and unmapped IDs; apply commits reviewed matches atomically. Wrong profile
 returns 404, unauthorized roles 403, validation/conflicting evidence 422. See
 [statement import](IBKR_STATEMENT_IMPORT.md) for exact supported fields and restrictions.
+
+## Guided IBKR Paper setup
+
+- GET/POST `/ibkr/onboarding`: own request list/create; ADMIN can inspect all.
+- PUT `/ibkr/onboarding/{id}`: correct an unprovisioned request.
+- POST `/{id}/approve` and `/{id}/reject` under that prefix: ADMIN only.
+- POST `/{id}/credentials`: owner-only encrypted Paper login submission.
+- POST `/{id}/verify`: owner/ADMIN, exact broker identity, standby profile.
+- POST `/ibkr/onboarding/worker/claim` and `/worker/{id}/ack`: separate operator-token authentication, bounded lease, never user-accessible.
+
+Provisioning is opt-in; no API accepts Docker commands or node specifications.

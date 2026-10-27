@@ -2,15 +2,17 @@
 
 Canonical baseline: `v1.0.0` at `5ef08db6426876be6019541c45c0b3b3851f85eb`
 
-Database head: `20261010_0023`
+Candidate database head: `20261027_0024` (production remains `20261010_0023` until deployment)
 
-Production database: `atlas_markets` (26 tables including `alembic_version`). The separate
+Production database: `atlas_markets`. The new queue is additive; verify the deployed revision on the server. The separate
 `atlas` database on the Oracle host belongs to the earlier project and is not part of this ERD.
 
 ## Ownership and execution lineage
 
 ```mermaid
 erDiagram
+    USERS ||--o| IBKR_ONBOARDING : requests
+    BROKER_PROFILES ||--o{ IBKR_ONBOARDING : connects
     USERS ||--o{ USER_SESSIONS : owns
     USERS ||--o{ AUTH_AUDIT_LOG : produces
     USERS ||--o{ BROKER_PROFILES : owns
@@ -44,6 +46,7 @@ erDiagram
 
 | Entity | Purpose | Key scope/relationship |
 |---|---|---|
+| `ibkr_onboarding` | Durable approved Paper setup, encrypted pending login and expiring worker lease | one request per user; optional connected profile |
 | `users` | Identity and ownership root | role is ADMIN or USER |
 | `user_sessions` | Revocable sessions | user → many sessions |
 | `auth_audit_log` | Authentication/security audit | optional user attribution |
@@ -217,3 +220,5 @@ and operator foreign keys. It holds normalized reviewed Activity
 Flex executions with account/profile/owner scope, trade IDs, commissions, FIFO P&L and import
 operator/hash/timezone metadata. Original fill/protection audit data remains intact. This metadata
 is included in normal database backups; earlier application builds ignore it during rollback.
+
+Migration 0024 is additive. Login payloads are cleared after worker acknowledgment/expiry; bridge tokens move to the connected profile. Worker filesystem secrets/volumes are outside the database ERD and require protected operator backup.

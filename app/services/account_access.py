@@ -41,9 +41,14 @@ def identity_lock(db):
         db.execute(text('SELECT pg_advisory_xact_lock(687301992)'))
 
 
-def assert_ibkr_assignment(db, owner_id, environment, credentials, exclude=None):
+def assert_ibkr_assignment(db, owner_id, environment, credentials, exclude=None, onboarding_id=None):
     identity_lock(db)
     account=str(credentials['account_id']).strip()
+    from app.db.models.ibkr_onboarding import IbkrOnboarding
+    pending=select(IbkrOnboarding.id).where(IbkrOnboarding.account_id==account,IbkrOnboarding.status.in_(['APPROVED','QUEUED','PROVISIONING','LOGIN_REQUIRED']))
+    if onboarding_id is not None:pending=pending.where(IbkrOnboarding.id!=onboarding_id)
+    if db.scalar(pending.limit(1)):
+        raise HTTPException(409,'Account has an approved setup request; manage that request first')
     endpoint=bridge_identity(credentials['bridge_url'])
     rows=db.scalars(select(BrokerProfile).where(BrokerProfile.provider=='IBKR')).all()
     for row in rows:

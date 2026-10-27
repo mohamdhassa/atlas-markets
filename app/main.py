@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.routes_ibkr_onboarding import router as ibkr_onboarding_router
 from app.api.health import router as health_router
 from app.api.routes_logs import router as logs_router
 from app.services import system_events
@@ -88,7 +89,7 @@ app = FastAPI(title=settings.app_name, version="2.0.0", debug=settings.debug, li
 app.add_middleware(system_events.EventMiddleware)
 
 routers = (
-    health_router, logs_router, auth_router, admin_router, markets_router, workspace_quotes_router,
+    ibkr_onboarding_router, health_router, logs_router, auth_router, admin_router, markets_router, workspace_quotes_router,
     bybit_certification_state_router, accounts_router, account_lifecycle_router,
     bybit_environment_router, bybit_oauth_router, ibkr_external_router,
     provider_certification_router, analysis_router, signals_router,

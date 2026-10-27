@@ -126,3 +126,5 @@ follow root `AGENTS.md` before making changes.
 - [Offline IBKR intraday comparison](IBKR_INTRADAY_COMPARISON.md) — frozen session cutoffs, four policy arms and sacrificed-winner accounting.
 
 - [Multi-user broker onboarding](RELEASE_MULTI_USER_ACCOUNTS.md) — user lifecycle, admin-provisioned IBKR nodes, Bybit identity and account isolation.
+
+- [Guided IBKR Paper onboarding](RELEASE_IBKR_GUIDED_ONBOARDING.md) — approved setup queue, isolated operator worker and broker-login verification.

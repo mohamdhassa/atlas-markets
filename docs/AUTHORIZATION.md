@@ -82,3 +82,5 @@ new automated entries without removing existing broker protection. ADMIN may
 assign connections to active owners but cannot duplicate IBKR accounts across
 owners or bypass broker identity, certification or Live controls. The current
 MT5 node is shared infrastructure and cannot be assigned to independent owners.
+
+Guided Paper setup adds USER-owned requests and owner-only login submission; ADMIN approves/rejects. The operator worker uses a separate private token plus per-job expiring leases, not user/admin sessions. Web roles never receive Docker authority. See [guided setup](RELEASE_IBKR_GUIDED_ONBOARDING.md).

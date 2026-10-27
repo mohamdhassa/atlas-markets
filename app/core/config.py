@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     mt5_bridge_token: str = ""
     market_data_timeout_seconds: float = 8.0
     dependency_health_timeout_seconds: float = 2.0
+    ibkr_provisioning_enabled: bool = False
+    ibkr_provisioner_token: str = ""
     ibkr_fractional_api_enabled: bool = False
     ibkr_native_protection_enabled: bool = False
     ibkr_paper_delayed_data_enabled: bool = False

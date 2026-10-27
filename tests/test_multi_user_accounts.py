@@ -17,6 +17,7 @@ from app.api import routes_account_lifecycle as lifecycle, routes_admin as admin
 from app.core.crypto import encrypt_secret, decrypt_secret
 from app.db.models.auth import User, UserSession, AuthAuditLog
 from app.db.models.broker import BrokerProfile
+from app.db.models.ibkr_onboarding import IbkrOnboarding
 from app.db.models.live_execution import LiveExecutionEvent
 from app.db.session import get_db
 from app.services import account_access as access
@@ -27,7 +28,7 @@ from app.brokers.bybit_private import BybitPrivateClient, BybitPrivateError
 @pytest.fixture
 def setup():
     engine=create_engine('sqlite://',connect_args={'check_same_thread':False},poolclass=StaticPool)
-    for model in (User,UserSession,AuthAuditLog,BrokerProfile,LiveExecutionEvent):model.__table__.create(engine)
+    for model in (User,UserSession,AuthAuditLog,BrokerProfile,LiveExecutionEvent,IbkrOnboarding):model.__table__.create(engine)
     db=Session(engine)
     people=[User(username=n,password_hash='hash',role=r,is_active=True) for n,r in [('admin','ADMIN'),('alice','USER'),('bob','USER')]]
     db.add_all(people);db.commit()
