@@ -1,0 +1,82 @@
+# Invoke with a unique project name: -p atlas-ibkr-<instance>
+# This template never replaces the existing single-account Gateway.
+services:
+  settings-init:
+    image: ghcr.io/gnzsnz/ib-gateway:10.50.1e
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R 1000:1000 /home/ibgateway/tws_settings && chmod 700 /home/ibgateway/tws_settings"]
+    volumes:
+      - settings:/home/ibgateway/tws_settings
+    restart: "no"
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:10.50.1e
+    restart: unless-stopped
+    depends_on:
+      settings-init:
+        condition: service_completed_successfully
+    environment:
+      TWS_USERID: ${TWS_USERID:?Set the owner's Paper username}
+      TWS_PASSWORD_FILE: /run/secrets/tws_password
+      VNC_SERVER_PASSWORD_FILE: /run/secrets/vnc_password
+      TRADING_MODE: paper
+      READ_ONLY_API: ${READ_ONLY_API:-yes}
+      TWS_ACCEPT_INCOMING: "yes"
+      TWS_SETTINGS_PATH: /home/ibgateway/tws_settings
+      TWOFA_TIMEOUT_ACTION: restart
+      RELOGIN_AFTER_TWOFA_TIMEOUT: "yes"
+      ALLOW_BLIND_TRADING: "no"
+      AUTO_RESTART_TIME: "11:45 PM"
+      TIME_ZONE: Etc/UTC
+      TZ: Etc/UTC
+    ports:
+      - "127.0.0.1:${IBKR_VNC_HOST_PORT:?Choose an unused VNC port}:5900"
+      - "127.0.0.1:${IBKR_BRIDGE_HOST_PORT:?Choose an unused bridge port}:8766"
+    secrets: [tws_password, vnc_password]
+    volumes:
+      - settings:/home/ibgateway/tws_settings
+    networks:
+      private:
+      app:
+        aliases:
+          - atlas-ibkr-${IBKR_INSTANCE:?Set a unique lowercase instance identifier}
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/4002'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+  bridge:
+    image: ${ATLAS_APP_IMAGE:?Use the validated immutable application image ID}
+    restart: unless-stopped
+    network_mode: service:ib-gateway
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - 'export ATLAS_IBKR_BRIDGE_TOKEN="$$(cat /run/secrets/bridge_token)"; exec python /bridge/ibkr_bridge.py --host 127.0.0.1 --port 4002 --client-id 27 --account-id "$$ATLAS_IBKR_ACCOUNT_ID" --bridge-port 8766'
+    environment:
+      ATLAS_IBKR_ACCOUNT_ID: ${IBKR_ACCOUNT_ID:?Set the owner's Paper account ID}
+    secrets: [bridge_token]
+    volumes:
+      - ${IBKR_BRIDGE_SOURCE:?Pinned tools/ibkr_bridge.py path}:/bridge/ibkr_bridge.py:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  tws_password:
+    file: ${IBKR_SECRET_DIR:?Protected per-owner secret directory}/tws_password
+  vnc_password:
+    file: ${IBKR_SECRET_DIR}/vnc_password
+  bridge_token:
+    file: ${IBKR_SECRET_DIR}/bridge_token
+volumes:
+  settings:
+networks:
+  private:
+  app:
+    external: true
+    name: ${ATLAS_APP_NETWORK:?Existing app network name}

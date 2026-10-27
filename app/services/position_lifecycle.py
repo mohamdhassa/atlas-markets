@@ -107,7 +107,7 @@ async def inspect_position_lifecycle(db, *, user_id):
                     if tp <= 0: reasons.append('TAKE_PROFIT_MISSING')
                     items.append({'provider':'MT5','environment':environment,'profile_id':str(profile.id),'market':market,'symbol':symbol,'position_id':str(p.get('ticket') or ''),'side':'BUY' if int(p.get('type') or 0)==0 else 'SELL','quantity':float(p.get('volume') or 0),'entry_price':float(p.get('price_open') or 0),'mark_price':float(p.get('price_current') or 0),'unrealized_pnl':float(p.get('profit') or 0),'stop_loss':sl or None,'take_profit':tp or None,'age_seconds':age_seconds,'atlas_owned':owned,'strategy_mode':getattr(cfg,'mode',None),'lifecycle_status':'MANAGED' if owned and cfg and sl>0 and tp>0 else 'REVIEW','reasons':reasons,'action':'HOLD','execution_enabled':False})
             else:
-                broker = IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766', creds.get('bridge_token'), settings.market_data_timeout_seconds)
+                broker = IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766', creds.get('bridge_token'), settings.market_data_timeout_seconds, expected_account_id=creds.get("account_id"))
                 positions = (await broker.positions()).get('list', [])
                 owned_symbols = _ibkr_owned_symbols(db, user_id, profile.id)
                 for p in positions:

@@ -53,7 +53,7 @@ async def scan_user_universe(db, *, user_id, include_watch: bool = False) -> dic
                 raw = (await broker.candles(cfg.symbol, timeframe, 200)).get('list', [])
             elif profile.provider == 'IBKR':
                 c = _bridge_cfg(profile)
-                broker = IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766', c.get('bridge_token'), settings.market_data_timeout_seconds)
+                broker = IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766', c.get('bridge_token'), settings.market_data_timeout_seconds, expected_account_id=c.get("account_id"))
                 raw = (await broker.candles(cfg.symbol, timeframe, 200, sec_type='STK')).get('list', [])
             else:
                 rows.append({'market': cfg.market, 'symbol': cfg.symbol, 'provider': profile.provider, 'status': 'SKIPPED', 'reason': 'UNSUPPORTED_PROVIDER'})

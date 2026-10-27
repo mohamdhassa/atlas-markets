@@ -198,7 +198,7 @@ async def autotrade_preflight(db, *, user_id, providers: set[str] | None = None,
                     items.append({**base, "preflight": "BLOCK", "reason": "IBKR_FRACTIONAL_API_UNSUPPORTED"})
                     continue
                 c = _secret(profile)
-                broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)
+                broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds, expected_account_id=c.get("account_id"))
                 result = await broker.order_check({
                     "symbol": row["symbol"],
                     "side": proposed["side"],

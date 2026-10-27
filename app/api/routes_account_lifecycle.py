@@ -11,6 +11,9 @@ from app.db.models.broker import BrokerProfile
 from app.db.models.live_execution import LiveExecutionEvent
 from app.db.session import get_db
 from app.services.live_execution import disarm_live_execution
+from app.services.account_access import admin_bridge_required
+
+from app.schemas.broker_profile import BrokerProfilePublic
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -46,6 +49,7 @@ def _replacement(db: Session, profile: BrokerProfile) -> BrokerProfile | None:
 @router.post("/{profile_id}/disconnect")
 def disconnect_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     profile = _profile(db, user, profile_id)
+    admin_bridge_required(user,profile.provider)
     disarm_live_execution(profile, "Account disconnected")
     db.add(LiveExecutionEvent(profile_id=profile.id,owner_user_id=profile.user_id,actor_user_id=user.id,action="AUTO_DISARMED",reason="Account disconnected",armed_until=None))
     profile.is_enabled = False
@@ -68,9 +72,12 @@ def disconnect_account(profile_id: uuid.UUID,user: User = Depends(get_current_us
     return {"id": str(profile.id),"status": "DISCONNECTED","message": f"{profile.account_label} disconnected and stored credentials removed."}
 
 
-@router.patch("/{profile_id}/toggle")
+@router.patch("/{profile_id}/toggle", response_model=BrokerProfilePublic)
 def toggle_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
-    profile = _profile(db,user,profile_id);profile.is_enabled = not profile.is_enabled
+    profile = _profile(db,user,profile_id)
+    if not profile.is_enabled and not _is_admin(user):
+        raise HTTPException(403,'Administrator must re-enable this account')
+    profile.is_enabled = not profile.is_enabled
     if not profile.is_enabled:
         profile.is_active=False;disarm_live_execution(profile,'Account disabled')
         db.add(LiveExecutionEvent(profile_id=profile.id,owner_user_id=profile.user_id,actor_user_id=user.id,action='AUTO_DISARMED',reason='Account disabled',armed_until=None))
@@ -82,6 +89,7 @@ def toggle_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_account(profile_id: uuid.UUID,user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     profile = _profile(db, user, profile_id)
+    admin_bridge_required(user,profile.provider)
     if profile.open_positions_count or profile.open_orders_count:
         raise HTTPException(409, "close open positions and orders before removing this connection")
     was_active = profile.is_active

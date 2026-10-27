@@ -116,7 +116,7 @@ async def validate_instrument(profile, item: UniverseItem) -> ValidationResult:
 
         if provider == 'IBKR':
             cfg = _bridge_cfg(profile)
-            client = IbkrBridgeClient(cfg.get('bridge_url') or 'http://host.docker.internal:8766', cfg.get('bridge_token'), settings.market_data_timeout_seconds)
+            client = IbkrBridgeClient(cfg.get('bridge_url') or 'http://host.docker.internal:8766', cfg.get('bridge_token'), settings.market_data_timeout_seconds, expected_account_id=cfg.get("account_id"))
             data = await client.contract(item.symbol, sec_type='STK', exchange='SMART', currency='USD')
             return ValidationResult(item.market, item.symbol, provider, str(profile.id), True, 'SUPPORTED', {'con_id': data.get('con_id'), 'primary_exchange': data.get('primary_exchange'), 'long_name': data.get('long_name'), 'min_tick': data.get('min_tick')})
 

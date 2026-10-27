@@ -90,7 +90,7 @@ def test_ibkr_existing_position_exit_bypasses_entry_readiness_limits(monkeypatch
     broker.order_status, broker.candles, broker.close_position = status, candles, close
     monkeypatch.setattr(manager,'SessionLocal',lambda:db)
     monkeypatch.setattr(manager,'get_or_create_state',lambda db:NS(enabled=True,killed=False,auto_execute_paper=True))
-    monkeypatch.setattr(manager,'IbkrBridgeClient',lambda *args:broker)
+    monkeypatch.setattr(manager,'IbkrBridgeClient',lambda *args,**kwargs:broker)
     monkeypatch.setattr(manager,'_secret',lambda profile:{'account_id':'DU_TEST'})
     monkeypatch.setattr(manager,'_default_strategy',lambda db:None)
     monkeypatch.setattr(manager,'_latest_entry',lambda *args:NS(side='BUY' if quantity>0 else 'SELL',status='EXECUTED',quantity=3,broker_order_id='1'))
@@ -103,3 +103,8 @@ def test_ibkr_existing_position_exit_bypasses_entry_readiness_limits(monkeypatch
     result = asyncio.run(manager.run_ibkr_position_manager())
     assert result['exit_executed'] == 1
     assert closes == [{'symbol':'MSFT','quantity':3,'position_side':position_side,'account_id':'DU_TEST'}]
+
+
+@pytest.fixture(autouse=True)
+def active_account_owner(monkeypatch):
+    monkeypatch.setattr(safe_automation, "active_owner", lambda *args: True)

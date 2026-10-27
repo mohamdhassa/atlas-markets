@@ -78,7 +78,7 @@ def test_accepted_entry_retains_broker_id_when_fill_read_fails(monkeypatch):
             return {'accepted':True,'order_id':128,'simulation':True}
         async def order_status(self, order_id): raise TimeoutError('unavailable')
     broker = Broker()
-    monkeypatch.setattr(execution, 'IbkrBridgeClient', lambda *args: broker)
+    monkeypatch.setattr(execution, 'IbkrBridgeClient', lambda *args,**kwargs: broker)
     monkeypatch.setattr(execution, '_secret', lambda *args: {'account_id':'DU_TEST'})
     monkeypatch.setattr(execution, 'get_settings', lambda: NS(ibkr_fractional_api_enabled=False,market_data_timeout_seconds=1))
     monkeypatch.setattr(execution, '_entry_authorization_blocker', lambda *args: None)
@@ -123,3 +123,8 @@ def test_later_scan_failure_does_not_rollback_recorded_submission(monkeypatch):
     assert result['status'] == 'FAILED'
     assert len(committed) == 1
     assert committed[0]['broker_result']['order_id'] == 128
+
+
+@pytest.fixture(autouse=True)
+def active_account_owner(monkeypatch):
+    monkeypatch.setattr(execution, "active_owner", lambda *args: True)

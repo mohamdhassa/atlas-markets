@@ -8,14 +8,26 @@ from app.services.ibkr_fractional import ibkr_quantities_match, normalize_ibkr_s
 
 class IbkrBridgeClient:
     """ATLAS client for the local IBKR TWS/IB Gateway bridge."""
-    def __init__(self,base_url:str,token:str|None=None,timeout:float=15.0):
-        self.base_url=base_url.rstrip('/');self.token=token;self.timeout=timeout
+    def __init__(self,base_url:str,token:str|None=None,timeout:float=15.0,*,expected_account_id:str|None=None):
+        self.base_url=base_url.rstrip('/');self.token=token;self.timeout=timeout;self.expected_account_id=expected_account_id
     def _headers(self):return {'X-ATLAS-Bridge-Token':self.token} if self.token else {}
     @observed_provider('IBKR', 'GET')
     async def _get(self,path:str,params:dict|None=None):
-        async with httpx.AsyncClient(timeout=self.timeout) as c:r=await c.get(self.base_url+path,params=params,headers=self._headers());r.raise_for_status();return r.json()
+        async with httpx.AsyncClient(timeout=self.timeout) as c:
+            r=await c.get(self.base_url+path,params=params,headers=self._headers())
+            r.raise_for_status()
+            data=r.json()
+        if self.expected_account_id:
+            if path=='/account' and str(data.get('account_id') or '')!=self.expected_account_id:
+                raise RuntimeError('IBKR_ACCOUNT_IDENTITY_MISMATCH')
+            if path in {'/positions','/orders','/executions'}:
+                data={**data,'list':[row for row in data.get('list',[]) if row.get('account')==self.expected_account_id]}
+        return data
     @observed_provider('IBKR', 'POST')
     async def _post(self,path:str,payload:dict,timeout:float|None=None):
+        if self.expected_account_id:
+            await self.account()
+            if payload.get('account_id') and payload['account_id']!=self.expected_account_id:raise RuntimeError('IBKR_ACCOUNT_IDENTITY_MISMATCH')
         async with httpx.AsyncClient(timeout=self.timeout if timeout is None else timeout) as c:r=await c.post(self.base_url+path,json=payload,headers=self._headers());r.raise_for_status();return r.json()
     async def health(self):return await self._get('/health')
     async def account(self):
@@ -54,6 +66,7 @@ class IbkrBridgeClient:
                 raise RuntimeError('IBKR_PAPER_BRIDGE_REQUIRED')
             return await self._post('/protection',payload,timeout=90.0)
     async def place_order(self,payload:dict,*,before_submit=None):
+        if self.expected_account_id and str(payload.get('account_id') or '')!=self.expected_account_id:raise RuntimeError('IBKR_ACCOUNT_IDENTITY_MISMATCH')
         payload=dict(payload);symbol=str(payload.get('symbol') or '').strip().upper().replace('/','').replace(' ','');payload['symbol']=symbol
         account_key=payload.get('account_id') or self.base_url
         async with reserve_execution(f'IBKR:{account_key}',symbol) as reservation:

@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
+from app.services.account_access import admin_bridge_required, validated_owner, assert_ibkr_assignment, bridge_identity, audit_account_change
 from app.brokers.ibkr_bridge import IbkrBridgeClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret, encrypt_secret
@@ -38,6 +39,7 @@ def _clean(values: dict | None) -> dict[str, str]:
     if not data.get("account_id"):
         raise HTTPException(400, "IBKR account_id is required")
     data.setdefault("bridge_url", "http://host.docker.internal:8766")
+    bridge_identity(data["bridge_url"])
     return data
 
 
@@ -110,7 +112,8 @@ async def _live_profile_ready(profile: BrokerProfile) -> bool:
 
 
 @router.post("/validate", response_model=BrokerValidationResult)
-async def validate_ibkr(payload: BrokerValidateRequest, _: User = Depends(get_current_user)):
+async def validate_ibkr(payload: BrokerValidateRequest, user: User = Depends(get_current_user)):
+    admin_bridge_required(user, "IBKR")
     if payload.provider != "IBKR":
         raise HTTPException(400, "IBKR provider required")
     try:
@@ -125,7 +128,12 @@ async def validate_ibkr(payload: BrokerValidateRequest, _: User = Depends(get_cu
 async def connect_ibkr(payload: BrokerConnectRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if payload.provider != "IBKR":
         raise HTTPException(400, "IBKR provider required")
-    validation = await _validate(payload.environment, payload.credentials)
+    admin_bridge_required(user, "IBKR")
+    owner_id = validated_owner(db,user,payload.owner_user_id)
+    creds = _clean(payload.credentials)
+    if not creds.get("bridge_token"):raise HTTPException(400,"A private bridge token is required for provisioning")
+    assert_ibkr_assignment(db,owner_id,payload.environment,creds)
+    validation = await _validate(payload.environment, creds)
     owner_id = payload.owner_user_id or user.id
     if payload.owner_user_id and not _is_admin(user):
         raise HTTPException(403, "admin role required to assign another owner")
@@ -155,6 +163,7 @@ async def connect_ibkr(payload: BrokerConnectRequest, user: User = Depends(get_c
     if payload.activate:
         db.execute(update(BrokerProfile).where(BrokerProfile.user_id == owner_id, BrokerProfile.provider == "IBKR", BrokerProfile.id != p.id).values(is_active=False))
         p.is_active = True
+    audit_account_change(db,user,p,"broker_connected")
     db.commit()
     db.refresh(p)
     return BrokerConnectResult(profile=p, connected=True, message=validation.message, next_action="Configure STOCK/ETF symbols and strategies")
@@ -162,8 +171,16 @@ async def connect_ibkr(payload: BrokerConnectRequest, user: User = Depends(get_c
 
 @router.put("/{profile_id}/credentials", response_model=BrokerProfilePublic)
 async def replace_ibkr_credentials(profile_id: uuid.UUID, payload: BrokerCredentialsUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    admin_bridge_required(user, "IBKR")
     p = _profile(db, user, profile_id)
-    validation = await _validate(p.environment, payload.credentials)
+    creds = _clean(payload.credentials)
+    if not creds.get("bridge_token"):raise HTTPException(400,"A private bridge token is required for provisioning")
+    if p.credential_blob_encrypted:
+        previous=json.loads(decrypt_secret(p.credential_blob_encrypted))
+        if previous.get("account_id")!=creds["account_id"]:
+            raise HTTPException(409,"Changing the broker account requires a new profile")
+    assert_ibkr_assignment(db,p.user_id,p.environment,creds,exclude=p.id)
+    validation = await _validate(p.environment, creds)
     creds = _clean(payload.credentials)
     p.credential_blob_encrypted = encrypt_secret(json.dumps(creds, separators=(",", ":")))
     p.credentials_configured = True
@@ -173,6 +190,7 @@ async def replace_ibkr_credentials(profile_id: uuid.UUID, payload: BrokerCredent
     p.equity_usd = float(validation.details.get("equity") or 0)
     p.wallet_balance_usd = float(validation.details.get("cash") or 0)
     p.available_balance_usd = float(validation.details.get("available") or 0)
+    audit_account_change(db,user,p,"broker_credentials_replaced")
     db.commit(); db.refresh(p); return p
 
 
@@ -197,9 +215,14 @@ async def sync_ibkr(profile_id: uuid.UUID, user: User = Depends(get_current_user
     if not p.credential_blob_encrypted:
         raise HTTPException(400, "IBKR bridge configuration is missing")
     creds = json.loads(decrypt_secret(p.credential_blob_encrypted)); c = _client(creds)
-    account, positions, orders = await c.account(), await c.positions(), await c.orders()
+    account = await c.account()
+    if str(account.get("account_id") or "").strip() != str(creds.get("account_id") or "").strip():
+        raise HTTPException(409,"IBKR account identity changed; administrator review required")
+    if account.get("simulation") is not (p.environment=="PAPER"):
+        raise HTTPException(409,"IBKR environment changed; administrator review required")
+    positions, orders = await c.positions(), await c.orders()
     p.equity_usd = float(account.get("equity") or 0); p.wallet_balance_usd = float(account.get("cash") or 0); p.available_balance_usd = float(account.get("available") or 0)
-    p.open_positions_count = len([x for x in positions.get("list", []) if float(x.get("quantity") or 0) != 0]); p.open_orders_count = len(orders.get("list", [])); p.last_connection_status = "CONNECTED"; p.last_sync_at = datetime.now(timezone.utc)
+    p.open_positions_count = len([x for x in positions.get("list", []) if x.get("account")==creds["account_id"] and float(x.get("quantity") or 0) != 0]); p.open_orders_count = len([x for x in orders.get("list", []) if x.get("account")==creds["account_id"]]); p.last_connection_status = "CONNECTED"; p.last_sync_at = datetime.now(timezone.utc)
     db.commit(); db.refresh(p); return p
 
 

@@ -84,7 +84,7 @@ def _ibkr_bridge(profile: BrokerProfile) -> tuple[IbkrBridgeClient, dict]:
     if profile.environment != "PAPER": raise HTTPException(409, "IBKR certification requires PAPER environment")
     if not profile.credential_blob_encrypted: raise HTTPException(409, "IBKR bridge configuration missing")
     creds = json.loads(decrypt_secret(profile.credential_blob_encrypted))
-    bridge = IbkrBridgeClient(creds.get("bridge_url") or "http://host.docker.internal:8766", creds.get("bridge_token"), get_settings().market_data_timeout_seconds)
+    bridge = IbkrBridgeClient(creds.get("bridge_url") or "http://host.docker.internal:8766", creds.get("bridge_token"), get_settings().market_data_timeout_seconds, expected_account_id=creds.get("account_id"))
     return bridge, creds
 
 

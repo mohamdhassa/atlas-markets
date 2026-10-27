@@ -43,7 +43,7 @@ async def recover_rejected_levels(db, entry, *, apply=False):
         raise ValueError('RECOVERY_ENTRY_IS_NOT_CURRENT')
     creds = _secret(profile)
     broker = IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',
-                              creds.get('bridge_token'), get_settings().market_data_timeout_seconds)
+                              creds.get('bridge_token'), get_settings().market_data_timeout_seconds, expected_account_id=creds.get("account_id"))
     health = await broker.health()
     if not health.get('connected') or health.get('simulation') is not True:
         raise ValueError('RECOVERY_CONNECTED_PAPER_BRIDGE_REQUIRED')

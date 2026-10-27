@@ -55,3 +55,14 @@ gates remain active.
 - `502/503`: inspect the named provider/dependency independently.
 - IBKR `connected:false`: follow `IBKR_CONTINUITY.md`.
 - Page asset mismatch after deployment: use `Ctrl+F5` after backend health is confirmed.
+
+## Invite another account owner
+
+ADMIN opens Users to create a login, suspend/restore access, change a role or
+reset a password. USER signs in and opens Accounts to validate their own Bybit
+API credentials, using a key without withdrawal permission. IBKR owners ask the
+administrator to provision an isolated Gateway/bridge login and assign their
+profile; users do not enter another owner's bridge configuration. ADMIN can
+filter Accounts by owner, test/sync profiles, activate verified connections or
+disable/re-enable routes. Account activation alone does not authorize orders.
+See [the provisioning and acceptance guide](RELEASE_MULTI_USER_ACCOUNTS.md).

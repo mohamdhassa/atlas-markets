@@ -81,7 +81,7 @@ def recovery_setup(monkeypatch):
             raise httpx.HTTPStatusError('precheck',request=response.request,response=response)
     monkeypatch.setattr(recovery,'get_settings',lambda:NS(ibkr_native_protection_enabled=True,
         ibkr_execution_timezone='Etc/UTC',market_data_timeout_seconds=10))
-    monkeypatch.setattr(recovery,'IbkrBridgeClient',lambda *args:Broker())
+    monkeypatch.setattr(recovery,'IbkrBridgeClient',lambda *args,**kwargs:Broker())
     monkeypatch.setattr(manager,'_secret',lambda *args:{'account_id':'DU_TEST'})
     monkeypatch.setattr(manager,'_has_pending_exit',lambda *args:False)
     monkeypatch.setattr(manager,'_latest_entry',lambda *args:row)

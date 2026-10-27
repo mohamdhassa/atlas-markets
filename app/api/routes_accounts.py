@@ -18,6 +18,8 @@ from app.market_data.fx import TwelveDataFxMarketData
 from app.services.live_execution import disarm_live_execution, live_execution_blockers, live_execution_is_armed
 from app.schemas.broker_profile import BrokerConnectRequest, BrokerConnectResult, BrokerCredentialsUpdate, BrokerProfileCreate, BrokerProfilePublic, BrokerValidateRequest, BrokerValidationResult, LiveExecutionUpdate, SimulationCapitalUpdate
 
+from app.services.account_access import admin_bridge_required, validated_owner, assert_bybit_key_assignment, assert_bybit_uid, audit_account_change
+
 router=APIRouter(prefix='/accounts',tags=['accounts'])
 PROVIDER_ENVIRONMENTS={'BYBIT':{'DEMO','TESTNET','LIVE'},'MT5':{'DEMO','LIVE'},'IBKR':{'PAPER','LIVE'},'TWELVE_DATA':{'LIVE'}}
 TRADING_PROVIDERS={'BYBIT','MT5','IBKR'}
@@ -56,11 +58,7 @@ def _generic(provider,values):
     return c
 
 def _owner_id(db,user,requested):
-    if requested is None:return user.id
-    if not _is_admin(user):raise HTTPException(403,'admin role required to assign another owner')
-    owner=db.get(User,requested)
-    if owner is None:raise HTTPException(404,'owner user not found')
-    return owner.id
+    return validated_owner(db,user,requested)
 
 def _validate_environment(provider,environment):
     if provider=='ATLAS_PAPER': raise HTTPException(410,'The built-in ATLAS account has been retired. Connect an external provider account instead.')
@@ -79,7 +77,13 @@ async def _validate_raw(payload:BrokerValidateRequest)->BrokerValidationResult:
     _validate_environment(payload.provider,payload.environment);warnings=[];details={};detected_ref=(payload.external_account_ref or '').strip() or None;detected_name=None
     if payload.provider=='BYBIT':
         if not payload.api_key or not payload.api_secret:raise HTTPException(400,'BYBIT requires API key and API secret')
-        client=BybitPrivateClient(payload.api_key.strip(),payload.api_secret.strip(),_base_for_bybit(payload.environment),get_settings().market_data_timeout_seconds);wallet=await client.wallet();a=(wallet.get('list') or [{}])[0];details={'equity':a.get('totalEquity'),'wallet_balance':a.get('totalWalletBalance'),'available_balance':a.get('totalAvailableBalance')}
+        client=BybitPrivateClient(payload.api_key.strip(),payload.api_secret.strip(),_base_for_bybit(payload.environment),get_settings().market_data_timeout_seconds)
+        info=await client.api_key_info()
+        uid=str(info.get('userID') or '').strip()
+        if not uid.isdigit() or int(uid)<=0:raise HTTPException(409,'Bybit account identity could not be verified')
+        if 'Withdraw' in (info.get('permissions') or {}).get('Wallet',[]):raise HTTPException(400,'Use an API key without withdrawal permission')
+        detected_ref=uid
+        wallet=await client.wallet();a=(wallet.get('list') or [{}])[0];details={'equity':a.get('totalEquity'),'wallet_balance':a.get('totalWalletBalance'),'available_balance':a.get('totalAvailableBalance')}
         return BrokerValidationResult(valid=True,provider='BYBIT',environment=payload.environment,connection_status='CONNECTED',message='Bybit account credentials validated successfully.',detected_account_ref=detected_ref,warnings=warnings,details=details)
     if payload.provider=='TWELVE_DATA':
         if not payload.api_key:raise HTTPException(400,'TWELVE DATA requires API key')
@@ -100,8 +104,14 @@ async def _validate_raw(payload:BrokerValidateRequest)->BrokerValidationResult:
     raise HTTPException(400,'unsupported provider')
 
 def _new_profile(db,user,payload,external_ref=None):
+    admin_bridge_required(user,payload.provider)
     _validate_environment(payload.provider,payload.environment);owner_id=_owner_id(db,user,payload.owner_user_id);ref=external_ref if external_ref is not None else ((payload.external_account_ref or '').strip() or None);dup=_duplicate(db,owner_id,payload.provider,payload.environment,payload.account_label,ref)
     if dup:raise HTTPException(409,f'duplicate account/profile already exists: {dup.account_label}')
+    if payload.provider=='MT5':
+        from app.services.account_access import identity_lock
+        identity_lock(db)
+        others=db.scalars(select(BrokerProfile).where(BrokerProfile.provider=='MT5',BrokerProfile.user_id!=owner_id)).all()
+        if others:raise HTTPException(409,'The shared MT5 execution node is already assigned to another owner')
     p=BrokerProfile(user_id=owner_id,provider=payload.provider,account_label=payload.account_label.strip(),environment=payload.environment,external_account_ref=ref,live_execution_enabled=False,is_active=False);db.add(p);db.flush();return p
 
 def _save_creds(p,api_key=None,api_secret=None,credentials=None):
@@ -125,7 +135,7 @@ async def _probe(p):
             c.get('bridge_url') or 'http://host.docker.internal:8766',
             c.get('bridge_token'),
             get_settings().market_data_timeout_seconds
-        )
+        , expected_account_id=c.get("account_id"))
         health=await bridge.health()
         if not health.get('connected'):
             return 'FAILED','IBKR bridge is reachable but IB Gateway is not connected.'
@@ -151,7 +161,7 @@ def list_accounts(user:User=Depends(get_current_user),db:Session=Depends(get_db)
 
 @router.get('/capabilities')
 def capabilities(user:User=Depends(get_current_user)):
-    s=get_settings();mt5_configured=bool((s.mt5_bridge_url or '').strip());return {'providers':{k:sorted(v) for k,v in PROVIDER_ENVIRONMENTS.items()},'trading_providers':sorted(TRADING_PROVIDERS),'market_data_only':['TWELVE_DATA'],'credential_fields':{'BYBIT':['api_key','api_secret'],'TWELVE_DATA':['api_key'],'MT5':['login','password','server'],'IBKR':['account_id','host','port','client_id']},'allow_live_trading':bool(s.allow_live_trading),'can_manage_live':_is_admin(user),'account_modes':{'simulation':sorted(SIMULATION_ENVIRONMENTS),'live_money':['LIVE']},'external_accounts_only':True,'preflight_validation':True,'execution_nodes':{'MT5':{'configured':mt5_configured,'status':'READY' if mt5_configured else 'PENDING'}}}
+    s=get_settings();mt5_configured=bool((s.mt5_bridge_url or '').strip());return {'providers':{k:sorted(v) for k,v in PROVIDER_ENVIRONMENTS.items()},'trading_providers':sorted(TRADING_PROVIDERS),'market_data_only':['TWELVE_DATA'],'credential_fields':{'BYBIT':['api_key','api_secret'],'TWELVE_DATA':['api_key'],'MT5':['login','password','server'],'IBKR':['account_id','bridge_url','bridge_token']},'allow_live_trading':bool(s.allow_live_trading),'can_manage_live':_is_admin(user),'account_modes':{'simulation':sorted(SIMULATION_ENVIRONMENTS),'live_money':['LIVE']},'external_accounts_only':True,'preflight_validation':True,'execution_nodes':{'MT5':{'configured':mt5_configured,'status':'READY' if mt5_configured else 'PENDING'}}}
 
 @router.get('/{profile_id}/bybit-spot-state')
 async def bybit_spot_state(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -170,6 +180,7 @@ async def bybit_spot_state(profile_id:uuid.UUID,user:User=Depends(get_current_us
 
 @router.post('/validate',response_model=BrokerValidationResult)
 async def validate_account(payload:BrokerValidateRequest,user:User=Depends(get_current_user)):
+    admin_bridge_required(user,payload.provider)
     try:return await _validate_raw(payload)
     except HTTPException:raise
     except Exception as exc:
@@ -178,17 +189,23 @@ async def validate_account(payload:BrokerValidateRequest,user:User=Depends(get_c
 
 @router.post('/connect',response_model=BrokerConnectResult,status_code=status.HTTP_201_CREATED)
 async def connect_account(payload:BrokerConnectRequest,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    admin_bridge_required(user,payload.provider)
+    _owner_id(db,user,payload.owner_user_id)
+    if payload.provider=="BYBIT":assert_bybit_key_assignment(db,user.id,payload.environment,payload.api_key)
     validation=await _validate_raw(BrokerValidateRequest(provider=payload.provider,environment=payload.environment,external_account_ref=payload.external_account_ref,api_key=payload.api_key,api_secret=payload.api_secret,credentials=payload.credentials))
     if not validation.valid:raise HTTPException(409,validation.message)
+    if payload.provider=='BYBIT':assert_bybit_uid(db,validation.detected_account_ref,payload.environment)
     p=_new_profile(db,user,payload,validation.detected_account_ref)
     try:_save_creds(p,payload.api_key,payload.api_secret,payload.credentials)
     except Exception:db.rollback();raise
+    if p.provider=="BYBIT":p.credential_blob_encrypted=encrypt_secret(json.dumps({"bybit_verified_uid":validation.detected_account_ref}))
     now=datetime.now(timezone.utc);p.last_connection_status='CONNECTED';p.last_connection_test_at=now
     if validation.details.get('equity') is not None:p.equity_usd=float(validation.details.get('equity') or 0)
     if validation.details.get('wallet_balance') is not None:p.wallet_balance_usd=float(validation.details.get('wallet_balance') or 0)
     if validation.details.get('available_balance') is not None:p.available_balance_usd=float(validation.details.get('available_balance') or 0)
     if payload.provider=='MT5':p.wallet_balance_usd=float(validation.details.get('balance') or 0);p.equity_usd=float(validation.details.get('equity') or 0);p.available_balance_usd=float(validation.details.get('margin_free') or 0)
     if payload.activate:db.execute(update(BrokerProfile).where(BrokerProfile.user_id==p.user_id,BrokerProfile.provider==p.provider,BrokerProfile.id!=p.id).values(is_active=False));p.is_active=True
+    audit_account_change(db,user,p,'broker_connected')
     db.commit();db.refresh(p);warning_text=' '.join(validation.warnings);return BrokerConnectResult(profile=p,connected=True,message=(validation.message+(f' {warning_text}' if warning_text else '')),next_action=None)
 
 @router.post('',response_model=BrokerProfilePublic,status_code=status.HTTP_201_CREATED)
@@ -196,12 +213,33 @@ def create_account(payload:BrokerProfileCreate,user:User=Depends(get_current_use
     p=_new_profile(db,user,payload);db.commit();db.refresh(p);return p
 
 @router.put('/{profile_id}/credentials',response_model=BrokerProfilePublic)
-def save_credentials(profile_id:uuid.UUID,payload:BrokerCredentialsUpdate,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    p=_authorized_profile(db,user,profile_id);_save_creds(p,payload.api_key,payload.api_secret,payload.credentials);db.commit();db.refresh(p);return p
+async def save_credentials(profile_id:uuid.UUID,payload:BrokerCredentialsUpdate,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    p=_authorized_profile(db,user,profile_id)
+    admin_bridge_required(user,p.provider)
+    if p.provider=="IBKR":raise HTTPException(409,"Use the verified IBKR credentials workflow")
+    if p.provider=="BYBIT":assert_bybit_key_assignment(db,p.user_id,p.environment,payload.api_key,exclude=p.id)
+    if p.provider=='BYBIT':
+        validation=await _validate_raw(BrokerValidateRequest(provider='BYBIT',environment=p.environment,api_key=payload.api_key,api_secret=payload.api_secret))
+        assert_bybit_uid(db,validation.detected_account_ref,p.environment,exclude=p.id)
+        if p.credentials_configured:
+            metadata=json.loads(decrypt_secret(p.credential_blob_encrypted)) if p.credential_blob_encrypted else {}
+            previous_uid=metadata.get('bybit_verified_uid')
+            if not previous_uid:
+                old=await _bybit_client(p).api_key_info()
+                previous_uid=str(old.get('userID') or '')
+            if previous_uid!=validation.detected_account_ref:
+                raise HTTPException(409,'Changing the broker account requires a new profile')
+        p.external_account_ref=validation.detected_account_ref
+        p.execution_certified=False;p.execution_certification_buy_passed=False;p.execution_certification_sell_passed=False
+    _save_creds(p,payload.api_key,payload.api_secret,payload.credentials)
+    if p.provider=="BYBIT":p.credential_blob_encrypted=encrypt_secret(json.dumps({"bybit_verified_uid":validation.detected_account_ref}))
+    audit_account_change(db,user,p,"broker_credentials_replaced")
+    db.commit();db.refresh(p);return p
 
 @router.post('/{profile_id}/activate',response_model=BrokerProfilePublic)
 def activate(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     p=_authorized_profile(db,user,profile_id)
+    if not p.is_enabled:raise HTTPException(409,'Administrator must enable this account first')
     if p.last_connection_status!='CONNECTED':raise HTTPException(409,'only a successfully connected account can be made active')
     db.execute(update(BrokerProfile).where(BrokerProfile.user_id==p.user_id,BrokerProfile.provider==p.provider).values(is_active=False));p.is_active=True;db.commit();db.refresh(p);return p
 
@@ -281,8 +319,3 @@ async def sync(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Sessi
     except HTTPException:raise
     except Exception as exc:p.last_connection_status='FAILED';db.commit();raise HTTPException(400,f'sync failed: {str(exc)[:300]}') from exc
 
-@router.delete('/{profile_id}')
-def remove(profile_id:uuid.UUID,user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    p=_authorized_profile(db,user,profile_id)
-    if p.live_execution_enabled:raise HTTPException(409,'disable live execution before removing this account')
-    db.delete(p);db.commit();return {'deleted':True,'profile_id':str(profile_id)}
