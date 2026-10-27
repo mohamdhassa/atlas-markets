@@ -70,7 +70,7 @@ async def workspace_quotes(provider:str=Query(pattern='^(IBKR|BYBIT|MT5)$'),mark
     try:creds=json.loads(decrypt_secret(p.credential_blob_encrypted))
     except Exception as exc:return _payload(provider,market_set,[],[{'error':f'{provider}_CREDENTIAL_READ_ERROR: {str(exc)[:160]}'}])
     if provider=='IBKR':
-        broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),settings.market_data_timeout_seconds)
+        broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),settings.market_data_timeout_seconds, expected_account_id=creds.get("account_id"))
         for cfg in strategies:
             symbol=_canon(cfg.symbol)
             try:

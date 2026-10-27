@@ -117,7 +117,7 @@ class BybitPrivateClient:
             raise BybitPrivateError(f"SPOT_QTY_STEP_MISSING:{symbol}")
         return qty_step, min_qty
 
-    async def place_test_spot_market_order(self,*,symbol:str,side:str,qty:float,order_link_id:str|None=None)->dict:
+    async def place_test_spot_market_order(self,*,symbol:str,side:str,qty:float,order_link_id:str|None=None,before_submit=None)->dict:
         if self.base_url.rstrip("/") not in {"https://api-testnet.bybit.com","https://api-demo.bybit.com"}:raise BybitPrivateError("ATLAS refuses Spot certification outside Bybit TESTNET/DEMO")
         symbol=str(symbol or '').strip().upper().replace('/','').replace(' ','')
         if side not in {'Buy','Sell'}:raise BybitPrivateError('INVALID_SPOT_SIDE')
@@ -130,6 +130,9 @@ class BybitPrivateClient:
             payload={"category":"spot","symbol":symbol,"side":side,"orderType":"Market","qty":normalized_qty}
             if side=='Buy':payload["marketUnit"]="baseCoin"
             if order_link_id:payload["orderLinkId"]=order_link_id[:36]
+            if before_submit is not None:
+                blocker=before_submit()
+                if blocker:raise BybitPrivateError(blocker)
             return await self.post("/v5/order/create",payload)
 
     async def place_demo_market_order(self,*,symbol:str,side:str,qty:float,stop_loss:float|None=None,take_profit:float|None=None,order_link_id:str|None=None)->dict:

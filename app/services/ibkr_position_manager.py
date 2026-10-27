@@ -269,7 +269,7 @@ async def protect_saved_entry(db,entry):
     if _has_pending_exit(db,profile,entry.symbol):
         return {'status':'PROTECTION_BLOCKED','reason':'PENDING_EXIT_RECONCILIATION_REQUIRED'}
     creds=_secret(profile)
-    broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),get_settings().market_data_timeout_seconds)
+    broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),get_settings().market_data_timeout_seconds, expected_account_id=creds.get("account_id"))
     item={'symbol':entry.symbol,'position_side':'LONG' if entry.side=='BUY' else 'SHORT','quantity':float(entry.quantity or 0)}
     try:return await _ensure_native_protection(db,entry,broker,item,creds.get('account_id'))
     except Exception as exc:return {'status':'PROTECTION_BLOCKED','reason':_protection_error_reason(exc)}
@@ -336,7 +336,7 @@ async def run_ibkr_position_manager():
         scan=AutomationScan(status='RUNNING',symbols_count=0,accounts_count=len(profiles));db.add(scan);db.commit();db.refresh(scan);results=[];default=_default_strategy(db)
         try:
             for profile in profiles:
-                creds=_secret(profile);broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),get_settings().market_data_timeout_seconds);health=await broker.health()
+                creds=_secret(profile);broker=IbkrBridgeClient(creds.get('bridge_url') or 'http://host.docker.internal:8766',creds.get('bridge_token'),get_settings().market_data_timeout_seconds, expected_account_id=creds.get("account_id"));health=await broker.health()
                 if not health.get('connected') or not health.get('simulation'):continue
                 executions=(await broker.executions(30)).get('list',[])
                 _reconcile_submitted_entries(db,profile,executions,creds.get('account_id'))

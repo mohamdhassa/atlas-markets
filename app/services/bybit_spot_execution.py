@@ -16,6 +16,7 @@ from app.brokers.bybit_private import BybitPrivateError
 from app.core.config import get_settings
 from app.core.crypto import decrypt_secret
 from app.db.models.broker import BrokerProfile
+from app.services.account_access import active_owner, entry_owner_blocker
 from app.db.models.automation import AutomationAction
 from app.db.models.bybit_inventory import BybitManagedInventory
 
@@ -381,6 +382,7 @@ async def execute_managed_spot_order(
         side="Buy" if side == "BUY" else "Sell",
         qty=quantity,
         order_link_id=order_link_id,
+        before_submit=lambda: entry_owner_blocker(db,profile),
     )
     verification_error = None
     try:

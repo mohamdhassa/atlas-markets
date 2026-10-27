@@ -220,3 +220,8 @@ def test_cancelled_remainder_cannot_release_a_partial_or_unknown_fill(filled,exp
             return {'status':{'status':'Cancelled','filled':filled,'remaining':0}}
     status,_=asyncio.run(engine._verify_ibkr_fill(Broker(),491,128))
     assert status==expected
+
+
+@pytest.fixture(autouse=True)
+def active_account_owner(monkeypatch):
+    monkeypatch.setattr(engine, "active_owner", lambda *args: True)

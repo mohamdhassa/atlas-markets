@@ -384,7 +384,7 @@ def test_manager_never_races_an_opposite_close_against_protection(monkeypatch,st
     monkeypatch.setattr(manager,'SessionLocal',lambda:db)
     monkeypatch.setattr(manager,'get_settings',lambda:NS(ibkr_native_protection_enabled=True,market_data_timeout_seconds=8))
     monkeypatch.setattr(manager,'get_or_create_state',lambda db:NS(enabled=True,killed=False,auto_execute_paper=True))
-    monkeypatch.setattr(manager,'IbkrBridgeClient',lambda *args:broker)
+    monkeypatch.setattr(manager,'IbkrBridgeClient',lambda *args,**kwargs:broker)
     monkeypatch.setattr(manager,'_secret',lambda p:{'account_id':'DU_TEST'})
     monkeypatch.setattr(manager,'_default_strategy',lambda db:None)
     monkeypatch.setattr(manager,'_latest_entry',lambda *args:NS(id=uuid.uuid4(),side='BUY',status='EXECUTED',quantity=3,broker_order_id='1'))
@@ -496,7 +496,7 @@ def test_new_entries_block_before_submission_when_protection_is_not_ready(monkey
         async def positions(self):return {'list':[{'account':'DU_TEST','symbol':'MSFT','quantity':3}]}
         async def orders(self):return {'list':[]}
         async def place_order(self,*args):raise AssertionError('must not place entry')
-    monkeypatch.setattr(execution,'IbkrBridgeClient',lambda *args:Broker())
+    monkeypatch.setattr(execution,'IbkrBridgeClient',lambda *args,**kwargs:Broker())
     monkeypatch.setattr(execution,'_secret',lambda *args:{'account_id':'DU_TEST'})
     monkeypatch.setattr(execution,'get_settings',lambda:NS(ibkr_native_protection_enabled=True,
                         ibkr_fractional_api_enabled=False,market_data_timeout_seconds=8))
@@ -568,3 +568,8 @@ def test_position_monitor_interval_bounds():
     for value in (0, 301):
         with pytest.raises(ValidationError):
             Settings(_env_file=None,ibkr_position_monitor_interval_seconds=value)
+
+
+@pytest.fixture(autouse=True)
+def active_account_owner(monkeypatch):
+    monkeypatch.setattr(execution, "active_owner", lambda *args: True)

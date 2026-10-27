@@ -58,7 +58,7 @@ def _mt5_simulation_client(a,settings):
  c=_bridge_creds(a);return Mt5BridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8765',c.get('bridge_token'),settings.market_data_timeout_seconds)
 def _ibkr_simulation_client(a,settings):
  if a.environment!='PAPER':raise RuntimeError('automation refuses IBKR Live Money execution')
- c=_bridge_creds(a);return IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),settings.market_data_timeout_seconds)
+ c=_bridge_creds(a);return IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),settings.market_data_timeout_seconds, expected_account_id=c.get("account_id"))
 def _wallet_numbers(wallet):
  a=(wallet.get('list') or [{}])[0];equity=float(a.get('totalEquity') or a.get('totalWalletBalance') or 0);available=float(a.get('totalAvailableBalance') or a.get('totalWalletBalance') or equity);return equity,available
 def _configs(db,account,state):

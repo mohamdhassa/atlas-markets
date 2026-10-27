@@ -139,12 +139,16 @@ def _persist_action(db, scan, user_id, item, result):
     return action
 
 
+from app.services.account_access import active_owner
+
 def _entry_authorization_blocker(db, profile, cfg):
     """Reload controls after slow provider reads; cached scan state is insufficient."""
     state = get_or_create_state(db)
     db.refresh(state)
     db.refresh(profile)
     db.refresh(cfg)
+    if not active_owner(db,profile.user_id):
+        return 'ACCOUNT_OWNER_DISABLED'
     if profile.provider != 'IBKR':
         return 'IBKR_PROFILE_REQUIRED'
     if state.killed:
@@ -291,6 +295,7 @@ async def _execute_mt5(db, *, user_id, item):
     check = await broker.order_check({"symbol": symbol, "side": side, "volume": volume, "stop_loss": stop_loss, "take_profit": take_profit, "comment": "ATLAS AUTO PREFLIGHT"})
     if int((check.get("result") or {}).get("retcode", -1)) not in {0, 10009}:
         return {"market": market, "symbol": symbol, "provider": "MT5", "status": "BLOCK", "reason": "BROKER_PREFLIGHT_REJECTED", "broker_check": check}
+    if not active_owner(db,user_id):return {'market':market,'symbol':symbol,'provider':'MT5','status':'BLOCK','reason':'ACCOUNT_OWNER_DISABLED'}
     result = await broker.place_demo_order(symbol=symbol, side=side, volume=volume, stop_loss=float(stop_loss), take_profit=float(take_profit), comment="ATLAS AUTO DEMO")
     return {"market": market, "symbol": symbol, "provider": "MT5", "environment": "DEMO", "status": "EXECUTED", "side": side, "volume": volume, "stop_loss": stop_loss, "take_profit": take_profit, "broker_result": result}
 
@@ -349,7 +354,7 @@ async def _execute_ibkr(db, *, user_id, item):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_FRACTIONAL_API_UNSUPPORTED"}
     shares = requested
     creds = _secret(profile)
-    broker = IbkrBridgeClient(creds.get("bridge_url") or "http://host.docker.internal:8766", creds.get("bridge_token"), get_settings().market_data_timeout_seconds)
+    broker = IbkrBridgeClient(creds.get("bridge_url") or "http://host.docker.internal:8766", creds.get("bridge_token"), get_settings().market_data_timeout_seconds, expected_account_id=creds.get("account_id"))
     health = await broker.health()
     if not health.get("connected") or not health.get("simulation"):
         return {"market": market, "symbol": symbol, "provider": "IBKR", "status": "BLOCK", "reason": "IBKR_PAPER_BRIDGE_REQUIRED"}
@@ -443,6 +448,7 @@ async def run_safe_scan():
         results = []
         try:
             for user_id in user_ids:
+                if not active_owner(db,user_id):continue
                 preflight = await autotrade_preflight(db, user_id=user_id)
                 for item in preflight.get("items", []):
                     provider = str(item.get("provider") or "").upper()

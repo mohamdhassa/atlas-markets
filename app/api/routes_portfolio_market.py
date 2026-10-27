@@ -49,7 +49,7 @@ async def portfolio_candles(
                 cfg.get("bridge_url") or "http://host.docker.internal:8766",
                 cfg.get("bridge_token"),
                 get_settings().market_data_timeout_seconds,
-            )
+            expected_account_id=cfg.get("account_id"))
             raw = await client.candles(symbol, timeframe=timeframe, limit=limit)
             rows = raw.get("list", []) if isinstance(raw, dict) else []
         elif p.provider == "BYBIT":

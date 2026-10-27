@@ -37,7 +37,7 @@ def route(monkeypatch):
     for module in (readiness, preflight, execution):
         monkeypatch.setattr(module, 'get_settings', lambda: settings)
         monkeypatch.setattr(module, '_secret', lambda p: {'account_id': 'DU123'})
-        monkeypatch.setattr(module, 'IbkrBridgeClient', lambda *args: Broker())
+        monkeypatch.setattr(module, 'IbkrBridgeClient', lambda *args, **kwargs: Broker())
     monkeypatch.setattr(readiness, '_refresh_ibkr_connection', refresh)
     monkeypatch.setattr(readiness, '_risk', lambda db: NS(max_open_positions=10))
     monkeypatch.setattr(readiness, '_strategy', lambda db: None)

@@ -124,3 +124,5 @@ follow root `AGENTS.md` before making changes.
 - [Offline IBKR ATR comparison](IBKR_ATR_COMPARISON.md) — read-only exports, long/short cost stress tests and explicit exploratory limits.
 
 - [Offline IBKR intraday comparison](IBKR_INTRADAY_COMPARISON.md) — frozen session cutoffs, four policy arms and sacrificed-winner accounting.
+
+- [Multi-user broker onboarding](RELEASE_MULTI_USER_ACCOUNTS.md) — user lifecycle, admin-provisioned IBKR nodes, Bybit identity and account isolation.

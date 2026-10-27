@@ -51,7 +51,7 @@ def _mt5(profile):
 
 def _ibkr(profile):
     c = _creds(profile)
-    return IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), get_settings().market_data_timeout_seconds)
+    return IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), get_settings().market_data_timeout_seconds, expected_account_id=c.get("account_id"))
 
 
 def _bybit(profile):

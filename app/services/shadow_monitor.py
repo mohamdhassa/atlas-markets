@@ -65,7 +65,7 @@ async def candles_for(profile: BrokerProfile, symbol: str, timeframe: str, limit
     settings = get_settings()
     credentials = _secret(profile)
     if profile.provider == "IBKR":
-        client = IbkrBridgeClient(credentials.get("bridge_url") or "http://host.docker.internal:8766", credentials.get("bridge_token"), settings.market_data_timeout_seconds)
+        client = IbkrBridgeClient(credentials.get("bridge_url") or "http://host.docker.internal:8766", credentials.get("bridge_token"), settings.market_data_timeout_seconds, expected_account_id=credentials.get("account_id"))
         return _rows(await client.candles(symbol, timeframe, limit))
     if profile.provider == "MT5":
         client = Mt5BridgeClient(credentials.get("bridge_url") or "http://host.docker.internal:8765", credentials.get("bridge_token"), settings.market_data_timeout_seconds)

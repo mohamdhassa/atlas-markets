@@ -72,3 +72,13 @@ This layered model is intentional. ADMIN is not a permission to skip these contr
 ## Live Money
 
 `ALLOW_LIVE_TRADING=false` remains the deployment default for the simulation period. Live Money requires a separate certification and explicit configuration; it is not enabled through role elevation alone.
+
+## Multi-user onboarding update (2026-10-27)
+
+See [Multi-user broker onboarding](RELEASE_MULTI_USER_ACCOUNTS.md). Ordinary
+users may connect their Bybit credentials; IBKR/MT5 bridge provisioning is
+ADMIN-only. Disabled accounts require ADMIN re-enabling. User suspension blocks
+new automated entries without removing existing broker protection. ADMIN may
+assign connections to active owners but cannot duplicate IBKR accounts across
+owners or bypass broker identity, certification or Live controls. The current
+MT5 node is shared infrastructure and cannot be assigned to independent owners.

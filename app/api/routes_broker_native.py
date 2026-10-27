@@ -54,7 +54,7 @@ def _mt5(p):
  if not url:raise RuntimeError('MT5 execution node is pending and has not been configured on the ATLAS server')
  return Mt5BridgeClient(url,(s.mt5_bridge_token or '').strip() or None,s.market_data_timeout_seconds)
 def _ibkr(p):
- c=_creds(p);return IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),get_settings().market_data_timeout_seconds)
+ c=_creds(p);return IbkrBridgeClient(c.get('bridge_url') or 'http://host.docker.internal:8766',c.get('bridge_token'),get_settings().market_data_timeout_seconds, expected_account_id=c.get("account_id"))
 def _f(v):
  try:return float(v or 0)
  except:return 0.0

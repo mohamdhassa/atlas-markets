@@ -132,7 +132,7 @@ async def _refresh_ibkr_connection(db, profile, settings) -> tuple[bool, str]:
             credentials.get("bridge_url") or "http://host.docker.internal:8766",
             credentials.get("bridge_token"),
             settings.market_data_timeout_seconds,
-        )
+        expected_account_id=credentials.get("account_id"))
         health = await broker.health()
         account = await broker.account() if health.get("connected") else {}
         connected, reason = _ibkr_connection_verdict(profile, credentials, health, account)
@@ -329,7 +329,7 @@ async def autotrade_readiness(db, *, user_id) -> dict:
                 sizing["symbol_info"] = info
             elif profile.provider == "IBKR":
                 c = _secret(profile)
-                broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds)
+                broker = IbkrBridgeClient(c.get("bridge_url") or "http://host.docker.internal:8766", c.get("bridge_token"), settings.market_data_timeout_seconds, expected_account_id=c.get("account_id"))
                 paper_delayed = await delayed_paper_mode(settings, profile.environment, broker)
                 normalized_candles = completed_ibkr_candles(await broker.candles(cfg.symbol, timeframe, 201, sec_type="STK"), timeframe)
                 base['market_data_quality'] = {'candles':entry_candle_quality(normalized_candles,timeframe,paper_delayed=paper_delayed)}
