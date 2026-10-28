@@ -128,3 +128,5 @@ follow root `AGENTS.md` before making changes.
 - [Multi-user broker onboarding](RELEASE_MULTI_USER_ACCOUNTS.md) — user lifecycle, admin-provisioned IBKR nodes, Bybit identity and account isolation.
 
 - [Guided IBKR Paper onboarding](RELEASE_IBKR_GUIDED_ONBOARDING.md) — approved setup queue, isolated operator worker and broker-login verification.
+
+- [Users and Accounts workspace polish](RELEASE_ACCOUNT_WORKSPACE_UI.md) — compact cards, on-demand forms and mobile setup progress.
